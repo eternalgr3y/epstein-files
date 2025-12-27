@@ -152,18 +152,21 @@ if FRONTEND_DIR.exists():
 @app.get("/", response_class=HTMLResponse)
 async def serve_landing():
     """Serve the landing page."""
-    landing_path = FRONTEND_DIR / "landing.html"
-    if landing_path.exists():
-        return HTMLResponse(content=landing_path.read_text(), status_code=200)
-    # Fallback to app if no landing page
-    return await serve_frontend()
+    # Try new design first, fall back to old
+    for filename in ["index-new.html", "landing.html", "index.html"]:
+        path = FRONTEND_DIR / filename
+        if path.exists():
+            return HTMLResponse(content=path.read_text(), status_code=200)
+    raise HTTPException(status_code=404, detail="Landing page not found")
 
 @app.get("/app", response_class=HTMLResponse)
 async def serve_frontend():
     """Serve the frontend application."""
-    index_path = FRONTEND_DIR / "index.html"
-    if index_path.exists():
-        return HTMLResponse(content=index_path.read_text(), status_code=200)
+    # Try new design first, fall back to old
+    for filename in ["app.html", "index.html"]:
+        path = FRONTEND_DIR / filename
+        if path.exists():
+            return HTMLResponse(content=path.read_text(), status_code=200)
     raise HTTPException(status_code=404, detail="Frontend not found")
 
 

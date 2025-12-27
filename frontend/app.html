@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epstein Files Search</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <a href="/" class="logo">Epstein Files <span>Search</span></a>
+                <nav class="flex gap-4">
+                    <a href="#" class="btn btn-ghost btn-sm" onclick="showSurvivorResources()">Survivor Resources</a>
+                    <a href="/api/docs" target="_blank" class="btn btn-ghost btn-sm">API</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container" style="padding-top: var(--space-8); padding-bottom: var(--space-16);">
+
+        <!-- Disclaimer Banner (Collapsible) -->
+        <div class="disclaimer-banner mb-6" id="disclaimer">
+            <strong>Important:</strong> Being mentioned in a document does NOT imply guilt or wrongdoing.
+            Roles indicate appearance in specific documents, not characterization.
+            <a href="#" onclick="event.preventDefault();">Read full disclaimers</a>
+        </div>
+
+        <!-- Search Section -->
+        <section class="mb-8">
+            <div class="search-container mb-6">
+                <svg class="search-icon" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input
+                    type="text"
+                    class="search-input"
+                    id="search-input"
+                    placeholder="Search documents, entities, or verify claims..."
+                    autocomplete="off"
+                >
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs mb-6" style="max-width: 500px; margin: 0 auto;">
+                <button class="tab active" data-tab="documents" onclick="switchTab('documents')">
+                    Documents
+                </button>
+                <button class="tab" data-tab="entities" onclick="switchTab('entities')">
+                    Entities
+                </button>
+                <button class="tab" data-tab="verify" onclick="switchTab('verify')">
+                    Verify Claim
+                </button>
+            </div>
+
+            <!-- Filters (Documents) -->
+            <div class="flex gap-4 justify-center mb-6" id="filters-documents">
+                <select class="input select" style="width: auto;" id="filter-dataset">
+                    <option value="">All Data Sets</option>
+                </select>
+                <select class="input select" style="width: auto;" id="filter-type">
+                    <option value="">All Types</option>
+                </select>
+                <button class="btn btn-primary" onclick="performSearch()">Search</button>
+            </div>
+
+            <!-- Filters (Entities) -->
+            <div class="flex gap-4 justify-center mb-6" id="filters-entities" style="display: none;">
+                <select class="input select" style="width: auto;" id="filter-role">
+                    <option value="">All Roles</option>
+                    <option value="victim">Victim</option>
+                    <option value="witness">Witness</option>
+                    <option value="investigator">Investigator</option>
+                    <option value="accused">Accused</option>
+                    <option value="mentioned">Mentioned</option>
+                </select>
+                <button class="btn btn-primary" onclick="searchEntities()">Search</button>
+            </div>
+
+            <!-- Verify Button -->
+            <div class="flex gap-4 justify-center mb-6" id="filters-verify" style="display: none;">
+                <button class="btn btn-primary" onclick="verifyClaim()">Check Claim</button>
+            </div>
+        </section>
+
+        <!-- Stats -->
+        <section class="stats-grid mb-8" id="stats-section">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-docs">--</div>
+                <div class="stat-label">Documents</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-processed">--</div>
+                <div class="stat-label">Processed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-entities">14K+</div>
+                <div class="stat-label">Entities</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-words">6.4M</div>
+                <div class="stat-label">Words</div>
+            </div>
+        </section>
+
+        <!-- Results Area -->
+        <section id="results-section">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="results-title" style="font-size: var(--text-xl);">Ready to search</h2>
+                <span class="text-muted text-small" id="results-count"></span>
+            </div>
+            <div id="results" class="flex flex-col gap-4">
+                <div class="empty-state">
+                    <p>Enter a search term above to find documents, entities, or verify claims.</p>
+                    <p class="text-small mt-4">Try: "Maxwell", "flight logs", or "Bill Clinton"</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>Open source research tool. <a href="https://codeberg.org/rillow/epstein-files" target="_blank">View Source</a></p>
+            <p class="mt-4">
+                <a href="#" onclick="showSurvivorResources(); return false;">Survivor Resources: RAINN 1-800-656-4673</a>
+            </p>
+        </div>
+    </footer>
+
+    <!-- Survivor Resources Modal -->
+    <div id="survivor-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; padding: var(--space-8);">
+        <div class="card card-survivor container-narrow" style="margin: var(--space-16) auto; max-width: 500px;">
+            <h2 style="color: var(--color-survivor); margin-bottom: var(--space-4);">Survivor Resources</h2>
+            <p>If you or someone you know is a survivor of sexual abuse:</p>
+            <div class="survivor-hotline">
+                <a href="tel:1-800-656-4673">RAINN: 1-800-656-4673</a>
+            </div>
+            <p>Free, confidential support available 24/7.</p>
+            <p><a href="https://www.rainn.org" target="_blank" style="color: var(--color-survivor);">www.rainn.org</a></p>
+            <button class="btn btn-secondary mt-6" onclick="closeSurvivorModal()" style="width: 100%;">Close</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        let currentTab = 'documents';
+        let previousState = { title: '', count: '', html: '' };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            document.getElementById('search-input').addEventListener('keypress', e => {
+                if (e.key === 'Enter') {
+                    if (currentTab === 'documents') performSearch();
+                    else if (currentTab === 'entities') searchEntities();
+                    else if (currentTab === 'verify') verifyClaim();
+                }
+            });
+        });
+
+        // Tab switching
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => {
+                t.classList.toggle('active', t.dataset.tab === tab);
+            });
+            document.getElementById('filters-documents').style.display = tab === 'documents' ? 'flex' : 'none';
+            document.getElementById('filters-entities').style.display = tab === 'entities' ? 'flex' : 'none';
+            document.getElementById('filters-verify').style.display = tab === 'verify' ? 'flex' : 'none';
+
+            // Update placeholder
+            const input = document.getElementById('search-input');
+            if (tab === 'documents') input.placeholder = 'Search document contents...';
+            else if (tab === 'entities') input.placeholder = 'Search for a person or organization...';
+            else if (tab === 'verify') input.placeholder = 'Enter a claim to verify...';
+        }
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const res = await fetch(`${API_BASE}/stats`);
+                const data = await res.json();
+                document.getElementById('stat-docs').textContent = (data.total || 0).toLocaleString();
+                document.getElementById('stat-processed').textContent = (data.by_status?.completed || 0).toLocaleString();
+
+                // Populate filters
+                const dsSelect = document.getElementById('filter-dataset');
+                for (const [ds, count] of Object.entries(data.by_data_set || {})) {
+                    const opt = document.createElement('option');
+                    opt.value = ds;
+                    opt.textContent = `${ds} (${count})`;
+                    dsSelect.appendChild(opt);
+                }
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+        }
+
+        // Document Search
+        async function performSearch() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+
+            showLoading();
+            try {
+                const params = new URLSearchParams({ q: query });
+                const docType = document.getElementById('filter-type').value;
+                const dataSet = document.getElementById('filter-dataset').value;
+                if (docType) params.append('document_type', docType);
+                if (dataSet) params.append('data_set', dataSet);
+
+                const res = await fetch(`${API_BASE}/search?${params}`);
+                const data = await res.json();
+                displaySearchResults(data);
+            } catch (e) {
+                showError('Search failed. Please try again.');
+            }
+        }
+
+        // Entity Search
+        async function searchEntities() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+
+            showLoading();
+            try {
+                const role = document.getElementById('filter-role').value;
+                const res = await fetch(`${API_BASE}/entities/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, role: role || null, limit: 50 })
+                });
+                const data = await res.json();
+                displayEntityResults(data);
+            } catch (e) {
+                showError('Entity search failed. Please try again.');
+            }
+        }
+
+        // Verify Claim
+        async function verifyClaim() {
+            const claim = document.getElementById('search-input').value.trim();
+            if (!claim) return;
+
+            showLoading();
+            try {
+                const res = await fetch(`${API_BASE}/verify?claim=${encodeURIComponent(claim)}`);
+                const data = await res.json();
+                displayVerifyResults(data);
+            } catch (e) {
+                showError('Verification failed. Please try again.');
+            }
+        }
+
+        // Display Results
+        function displaySearchResults(data) {
+            document.getElementById('results-title').textContent = 'Search Results';
+            document.getElementById('results-count').textContent = `${data.total_results} documents`;
+
+            if (!data.results?.length) {
+                document.getElementById('results').innerHTML = '<div class="empty-state"><p>No documents found.</p></div>';
+                return;
+            }
+
+            const html = data.results.map(r => `
+                <div class="result-card">
+                    <div class="result-title">
+                        <a href="${API_BASE}/documents/${r.document_id}/file" target="_blank">${escapeHtml(r.title || r.filename)}</a>
+                    </div>
+                    <div class="result-meta">
+                        <span class="badge">${r.document_type}</span>
+                        <span>${r.data_set || 'Unknown'}</span>
+                        <span>Score: ${r.relevance_score?.toFixed(1) || 'N/A'}</span>
+                    </div>
+                    ${r.snippet ? `<div class="result-snippet">${highlightTerms(escapeHtml(r.snippet))}</div>` : ''}
+                    <div class="flex gap-2 mt-4">
+                        <button class="btn btn-sm btn-secondary" onclick="viewDocument(${r.document_id})">View Text</button>
+                        <a href="${API_BASE}/documents/${r.document_id}/file" target="_blank" class="btn btn-sm btn-ghost">Download PDF</a>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('results').innerHTML = html;
+        }
+
+        function displayEntityResults(data) {
+            document.getElementById('results-title').textContent = 'Entity Results';
+            document.getElementById('results-count').textContent = `${data.total_results} entities`;
+
+            if (!data.results?.length) {
+                document.getElementById('results').innerHTML = '<div class="empty-state"><p>No entities found.</p></div>';
+                return;
+            }
+
+            const html = data.results.map(e => `
+                <div class="result-card">
+                    <div class="result-title">${escapeHtml(e.canonical_name)}</div>
+                    <div class="result-meta">
+                        <span class="badge">${e.entity_type}</span>
+                        <span>${e.mention_count} mentions</span>
+                    </div>
+                    <div class="mt-4">
+                        <p class="text-small text-muted mb-4">Documents mentioning this entity:</p>
+                        ${(e.mentions || []).slice(0, 5).map(m => `
+                            <div class="flex gap-2 items-center mb-2" style="padding: var(--space-2) var(--space-3); background: var(--color-bg-primary); border-radius: var(--radius-md);">
+                                <span class="badge badge-role-${m.role?.toLowerCase() || 'unknown'}">${m.role || 'Unknown'}</span>
+                                <a href="${API_BASE}/documents/${m.document_id}/file" target="_blank" class="text-small">${m.document_filename}</a>
+                                <button class="btn btn-sm btn-ghost" onclick="viewDocument(${m.document_id})">View</button>
+                            </div>
+                        `).join('')}
+                        ${e.mention_count > 5 ? `<p class="text-small text-muted mt-2">+ ${e.mention_count - 5} more mentions</p>` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('results').innerHTML = html;
+        }
+
+        function displayVerifyResults(data) {
+            document.getElementById('results-title').textContent = 'Verification Results';
+            document.getElementById('results-count').textContent = '';
+
+            const html = `
+                <div class="card card-warning mb-4">
+                    <p><strong>Claim:</strong> ${escapeHtml(data.claim || '')}</p>
+                    <p class="mt-2"><strong>Evidence:</strong> ${data.evidence_count || 0} documents found</p>
+                    <p class="text-small text-muted mt-2">Always read the source documents to verify any claim.</p>
+                </div>
+                ${(data.supporting_documents || []).map(d => `
+                    <div class="result-card">
+                        <div class="result-title">
+                            <a href="${API_BASE}/documents/${d.document_id}/file" target="_blank">${escapeHtml(d.filename)}</a>
+                        </div>
+                        ${d.snippet ? `<div class="result-snippet mt-2">${highlightTerms(escapeHtml(d.snippet))}</div>` : ''}
+                        <button class="btn btn-sm btn-secondary mt-4" onclick="viewDocument(${d.document_id})">Read Document</button>
+                    </div>
+                `).join('')}
+            `;
+
+            document.getElementById('results').innerHTML = html;
+        }
+
+        // Document Viewer
+        async function viewDocument(docId) {
+            saveState();
+            showLoading();
+
+            try {
+                const res = await fetch(`${API_BASE}/documents/${docId}/text`);
+                const data = await res.json();
+
+                document.getElementById('results-title').textContent = `Document ${docId}`;
+                document.getElementById('results-count').textContent = `${data.word_count || 0} words`;
+
+                document.getElementById('results').innerHTML = `
+                    <div class="document-viewer">
+                        <div class="document-header">
+                            <button class="btn btn-sm btn-secondary" onclick="goBack()">← Back</button>
+                            <a href="${API_BASE}/documents/${docId}/file" target="_blank" class="btn btn-sm btn-ghost">Download PDF</a>
+                        </div>
+                        <div class="document-content">
+                            ${escapeHtml(data.full_text || 'No text content available.')}
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                showError('Failed to load document.');
+            }
+        }
+
+        // State Management
+        function saveState() {
+            previousState = {
+                title: document.getElementById('results-title').textContent,
+                count: document.getElementById('results-count').textContent,
+                html: document.getElementById('results').innerHTML
+            };
+        }
+
+        function goBack() {
+            if (previousState.html) {
+                document.getElementById('results-title').textContent = previousState.title;
+                document.getElementById('results-count').textContent = previousState.count;
+                document.getElementById('results').innerHTML = previousState.html;
+            }
+        }
+
+        // UI Helpers
+        function showLoading() {
+            document.getElementById('results').innerHTML = '<div class="loading">Searching</div>';
+        }
+
+        function showError(msg) {
+            document.getElementById('results').innerHTML = `<div class="empty-state"><p style="color: var(--color-error);">${msg}</p></div>`;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/[&<>"']/g, m => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[m]));
+        }
+
+        function highlightTerms(text) {
+            // Highlight >>> <<< markers from FTS5
+            return text.replace(/&gt;&gt;&gt;(.+?)&lt;&lt;&lt;/g, '<mark>$1</mark>');
+        }
+
+        // Survivor Resources Modal
+        function showSurvivorResources() {
+            document.getElementById('survivor-modal').style.display = 'block';
+        }
+
+        function closeSurvivorModal() {
+            document.getElementById('survivor-modal').style.display = 'none';
+        }
+
+        // Close modal on backdrop click
+        document.getElementById('survivor-modal')?.addEventListener('click', e => {
+            if (e.target.id === 'survivor-modal') closeSurvivorModal();
+        });
+    </script>
+</body>
+</html>
