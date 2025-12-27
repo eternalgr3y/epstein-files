@@ -25,6 +25,10 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from security import (
+    SecurityMiddleware, abuse_tracker, request_log,
+    is_honeypot_path, sanitize_input
+)
 from models import (
     get_engine, get_session, Document, DocumentText, Entity,
     Mention, ProcessingStatus
@@ -133,6 +137,9 @@ app = FastAPI(
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Security middleware
+app.add_middleware(SecurityMiddleware)
 
 # CORS - configure for production
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
@@ -599,6 +606,83 @@ async def document_types():
 async def data_sets():
     """Get all data sets with counts."""
     return {"data_sets": get_data_sets()}
+
+
+# ============================================================================
+# SECURITY ENDPOINTS
+# ============================================================================
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "healthy"}
+
+
+@app.get("/api/security/stats")
+async def security_stats(request: Request):
+    """Get security statistics (admin only in production)."""
+    # In production, add auth check here
+    return {
+        "abuse_tracker": abuse_tracker.get_stats(),
+        "cache": search_cache.stats(),
+        "recent_requests": len(request_log.get_recent(100)),
+    }
+
+
+@app.get("/.well-known/security.txt")
+async def security_txt():
+    """Security contact information."""
+    return HTMLResponse(
+        content="""Contact: security@epsteinfiles.org
+Expires: 2026-12-31T23:59:59Z
+Preferred-Languages: en
+Canonical: https://epsteinfiles.org/.well-known/security.txt
+""",
+        media_type="text/plain"
+    )
+
+
+@app.get("/robots.txt")
+async def robots_txt():
+    """Robots.txt to limit crawler abuse."""
+    return HTMLResponse(
+        content="""User-agent: *
+Allow: /
+Disallow: /api/
+Crawl-delay: 10
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+""",
+        media_type="text/plain"
+    )
+
+
+# Honeypot endpoints - any access = immediate suspicion
+@app.api_route("/admin", methods=["GET", "POST"])
+@app.api_route("/wp-admin", methods=["GET", "POST"])
+@app.api_route("/wp-login.php", methods=["GET", "POST"])
+@app.api_route("/phpmyadmin", methods=["GET", "POST"])
+@app.api_route("/.env", methods=["GET"])
+@app.api_route("/.git/config", methods=["GET"])
+async def honeypot(request: Request):
+    """Honeypot endpoint - logs and blocks scanners."""
+    ip = request.client.host if request.client else "unknown"
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        ip = forwarded.split(",")[0].strip()
+
+    abuse_tracker.record_violation(ip, f"Honeypot access: {request.url.path}")
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 # ============================================================================
