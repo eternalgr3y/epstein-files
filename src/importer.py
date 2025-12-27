@@ -5,6 +5,7 @@ Reads metadata JSON files and populates the documents table.
 
 import json
 import logging
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -17,8 +18,10 @@ from models import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-METADATA_DIR = Path("/mnt/e/epstein-files/processed/metadata")
-RAW_DIR = Path("/mnt/e/epstein-files/raw")
+# Use environment variables or relative paths
+BASE_DIR = Path(os.getenv("EPSTEIN_BASE_DIR", Path(__file__).parent.parent))
+METADATA_DIR = BASE_DIR / "processed" / "metadata"
+RAW_DIR = BASE_DIR / "raw"
 
 
 def classify_document_type(filename: str, content_type: str, source_page: str) -> str:

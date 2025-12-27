@@ -383,8 +383,20 @@ class ProcessingLog(Base):
 # DATABASE SETUP
 # ============================================================================
 
-def get_engine(db_path: str = "/mnt/e/epstein-files/database/epstein_files.db"):
+import os
+from pathlib import Path
+
+# Default database path - use environment variable or relative path
+DEFAULT_DB_PATH = os.getenv(
+    "DATABASE_PATH",
+    str(Path(__file__).parent.parent / "database" / "epstein_files.db")
+)
+
+
+def get_engine(db_path: str = None):
     """Create database engine."""
+    if db_path is None:
+        db_path = DEFAULT_DB_PATH
     return create_engine(f"sqlite:///{db_path}", echo=False)
 
 
@@ -399,8 +411,10 @@ def get_session(engine):
     return Session()
 
 
-def init_database(db_path: str = "/mnt/e/epstein-files/database/epstein_files.db"):
+def init_database(db_path: str = None):
     """Initialize the database with all tables."""
+    if db_path is None:
+        db_path = DEFAULT_DB_PATH
     engine = get_engine(db_path)
     create_tables(engine)
     return engine
@@ -410,7 +424,7 @@ if __name__ == "__main__":
     # Initialize database when run directly
     print("Initializing database...")
     engine = init_database()
-    print(f"Database created at: /mnt/e/epstein-files/database/epstein_files.db")
+    print(f"Database created at: {DEFAULT_DB_PATH}")
     print("Tables created:")
     for table in Base.metadata.sorted_tables:
         print(f"  - {table.name}")

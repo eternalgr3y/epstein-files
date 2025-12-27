@@ -11,7 +11,7 @@ Usage:
 import asyncio
 import argparse
 import sys
-sys.path.insert(0, '/mnt/e/epstein-files/src')
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from scraper import DOJScraper
 

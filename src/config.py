@@ -2,18 +2,19 @@
 Configuration for Epstein Files Project
 """
 
+import os
 from pathlib import Path
 
-# Base paths - adjust if needed
-BASE_DIR = Path("/mnt/e/epstein-files")
+# Base paths - use environment variable or detect automatically
+BASE_DIR = Path(os.getenv("EPSTEIN_BASE_DIR", Path(__file__).parent.parent))
 RAW_DIR = BASE_DIR / "raw"
 PROCESSED_DIR = BASE_DIR / "processed"
 METADATA_DIR = PROCESSED_DIR / "metadata"
 TEXT_DIR = PROCESSED_DIR / "text"
 DATABASE_DIR = BASE_DIR / "database"
 
-# Database
-DATABASE_PATH = DATABASE_DIR / "epstein_files.db"
+# Database - can override with environment variable
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATABASE_DIR / "epstein_files.db"))
 
 # DOJ URLs
 DOJ_BASE_URL = "https://www.justice.gov/epstein"

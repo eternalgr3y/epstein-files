@@ -10,6 +10,7 @@ import aiofiles
 import json
 import hashlib
 import logging
+import os
 import re
 from pathlib import Path
 from datetime import datetime
@@ -19,11 +20,13 @@ from typing import Optional
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
-# Configuration
+# Configuration - use environment variables or relative paths
+BASE_DIR = Path(os.getenv("EPSTEIN_BASE_DIR", Path(__file__).parent.parent))
 BASE_URL = "https://www.justice.gov/epstein"
-DOWNLOAD_DIR = Path("/mnt/e/epstein-files/raw")
-METADATA_DIR = Path("/mnt/e/epstein-files/processed/metadata")
-STATE_FILE = Path("/mnt/e/epstein-files/scraper_state.json")
+DOWNLOAD_DIR = BASE_DIR / "raw"
+METADATA_DIR = BASE_DIR / "processed" / "metadata"
+STATE_FILE = BASE_DIR / "scraper_state.json"
+LOG_FILE = BASE_DIR / "scraper.log"
 
 # Rate limiting
 DELAY_BETWEEN_REQUESTS = 1.0  # seconds
@@ -34,7 +37,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/mnt/e/epstein-files/scraper.log'),
+        logging.FileHandler(str(LOG_FILE)),
         logging.StreamHandler()
     ]
 )

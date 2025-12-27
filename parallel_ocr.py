@@ -19,7 +19,8 @@ from ocr_pipeline import process_document, save_extraction_result
 # Enable SQLite WAL mode for better concurrency
 import sqlite3
 
-DB_PATH = "/mnt/e/epstein-files/database/epstein_files.db"
+# Use environment variable or relative path
+DB_PATH = os.environ.get("DATABASE_PATH", str(Path(__file__).parent / "database" / "epstein_files.db"))
 
 def enable_wal_mode():
     """Enable WAL mode for better concurrent access."""

@@ -4,6 +4,7 @@ Entity Extraction - Simple parallel version
 """
 
 import sys
+import os
 import re
 import time
 import logging
@@ -14,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from models import get_engine, get_session, Document, DocumentText, Entity, Mention, ProcessingStatus
 
-DB_PATH = "/mnt/e/epstein-files/database/epstein_files.db"
+# Use environment variable or relative path
+DB_PATH = os.environ.get("DATABASE_PATH", str(Path(__file__).parent / "database" / "epstein_files.db"))
 
 # Name patterns - multiple for different formats
 # Two-word names: "Donald Trump"
