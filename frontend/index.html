@@ -251,6 +251,47 @@
         currentPage = 0;
         document.getElementById('results').innerHTML = '<div class="loading">Loading</div>';
         try {
+            const doc = await fetch(`${API}/documents/${id}`).then(r => r.json());
+
+            // Audio file
+            if (doc.content_type?.startsWith('audio/') || doc.filename?.endsWith('.wav') || doc.filename?.endsWith('.mp3')) {
+                document.getElementById('results').innerHTML = `
+                    <div class="doc-viewer">
+                        <div class="doc-header">
+                            <button class="btn" onclick="back()">Back</button>
+                            <a href="${API}/documents/${id}/file" download class="btn">Download</a>
+                        </div>
+                        <div style="padding:2rem;text-align:center;">
+                            <h3 style="margin-bottom:1rem;">${esc(doc.title || doc.filename)}</h3>
+                            <audio controls style="width:100%;max-width:600px;">
+                                <source src="${API}/documents/${id}/file" type="${doc.content_type || 'audio/wav'}">
+                            </audio>
+                            <p style="margin-top:1rem;color:var(--text3);">${(doc.file_size/1024/1024).toFixed(1)} MB</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            // Video file
+            if (doc.content_type?.startsWith('video/') || doc.filename?.endsWith('.mp4')) {
+                document.getElementById('results').innerHTML = `
+                    <div class="doc-viewer">
+                        <div class="doc-header">
+                            <button class="btn" onclick="back()">Back</button>
+                            <a href="${API}/documents/${id}/file" download class="btn">Download</a>
+                        </div>
+                        <div style="padding:1rem;text-align:center;">
+                            <video controls style="width:100%;max-width:800px;">
+                                <source src="${API}/documents/${id}/file" type="${doc.content_type || 'video/mp4'}">
+                            </video>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            // PDF/text document
             const d = await fetch(`${API}/documents/${id}/text`).then(r => r.json());
             const totalPages = d.total_pages || 1;
             document.getElementById('results').innerHTML = `
