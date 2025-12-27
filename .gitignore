@@ -4,14 +4,16 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.pytest_cache/
 venv/
 .venv/
 ENV/
 
 # Database (too large for git, transfer separately)
 database/*.db
-database/*.db-journal
+database/*.db-shm
 database/*.db-wal
+database/*.db-journal
 
 # Environment
 .env

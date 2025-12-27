@@ -25,19 +25,7 @@ def main():
     parser.add_argument('--reload', action='store_true', help='Auto-reload on changes')
     args = parser.parse_args()
 
-    print(f"""
-    ╔════════════════════════════════════════════════════════════╗
-    ║             EPSTEIN FILES API SERVER                       ║
-    ╠════════════════════════════════════════════════════════════╣
-    ║  API:      http://{args.host}:{args.port}                           ║
-    ║  Docs:     http://{args.host}:{args.port}/docs                      ║
-    ║  Frontend: Open frontend/index.html in browser             ║
-    ╠════════════════════════════════════════════════════════════╣
-    ║  IMPORTANT: This tool is for research and verification.    ║
-    ║  Being mentioned does NOT imply guilt.                     ║
-    ║  Survivor support: RAINN 1-800-656-4673                    ║
-    ╚════════════════════════════════════════════════════════════╝
-    """)
+    print(f"Epstein Files API: http://{args.host}:{args.port}")
 
     uvicorn.run(
         "api:app",
