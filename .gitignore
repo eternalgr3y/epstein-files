@@ -41,5 +41,6 @@ pdfs/
 extracted/
 processed/
 raw/
+thumbnails/
 scraper_state.json
 epstein_files.sql.gz

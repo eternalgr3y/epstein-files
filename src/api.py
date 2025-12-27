@@ -434,6 +434,104 @@ async def get_document_file(document_id: int):
         session.close()
 
 
+# =============================================================================
+# IMAGE API
+# =============================================================================
+
+THUMBNAIL_DIR = Path(__file__).parent.parent / "thumbnails"
+THUMBNAIL_DIR.mkdir(exist_ok=True)
+
+def generate_page_image(pdf_path: Path, page: int, width: int = 800) -> Path:
+    """Generate image from PDF page using PyMuPDF."""
+    import fitz
+
+    cache_name = f"{pdf_path.stem}_p{page}_w{width}.png"
+    cache_path = THUMBNAIL_DIR / cache_name
+
+    if cache_path.exists():
+        return cache_path
+
+    doc = fitz.open(str(pdf_path))
+    if page < 0 or page >= len(doc):
+        doc.close()
+        raise ValueError(f"Page {page} out of range")
+
+    pg = doc[page]
+    # Scale to target width
+    scale = width / pg.rect.width
+    mat = fitz.Matrix(scale, scale)
+    pix = pg.get_pixmap(matrix=mat)
+    pix.save(str(cache_path))
+    doc.close()
+
+    return cache_path
+
+
+@app.get("/api/documents/{document_id}/thumbnail")
+async def get_document_thumbnail(
+    document_id: int,
+    width: int = Query(400, ge=100, le=1200)
+):
+    """Get thumbnail of document's first page."""
+    engine = get_engine()
+    session = get_session(engine)
+
+    try:
+        doc = session.query(Document).get(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        file_path = Path(doc.local_path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if not file_path.suffix.lower() == '.pdf':
+            raise HTTPException(status_code=400, detail="Thumbnails only for PDFs")
+
+        try:
+            img_path = generate_page_image(file_path, 0, width)
+            return FileResponse(str(img_path), media_type="image/png")
+        except Exception as e:
+            logger.error(f"Thumbnail generation failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate thumbnail")
+    finally:
+        session.close()
+
+
+@app.get("/api/documents/{document_id}/pages/{page}/image")
+async def get_page_image(
+    document_id: int,
+    page: int,
+    width: int = Query(800, ge=100, le=2000)
+):
+    """Get image of a specific page."""
+    engine = get_engine()
+    session = get_session(engine)
+
+    try:
+        doc = session.query(Document).get(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        file_path = Path(doc.local_path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if not file_path.suffix.lower() == '.pdf':
+            raise HTTPException(status_code=400, detail="Page images only for PDFs")
+
+        try:
+            img_path = generate_page_image(file_path, page, width)
+            return FileResponse(str(img_path), media_type="image/png")
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            logger.error(f"Page image generation failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate image")
+    finally:
+        session.close()
+
+
 @app.post("/api/entities/search")
 @limiter.limit("30/minute")
 async def search_entities_post(request: Request, body: EntitySearchRequest):
