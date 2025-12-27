@@ -215,7 +215,7 @@
                                 <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
                             </div>
                         `).join('')}
-                        ${e.mention_count > 3 ? `<div class="mention-row" style="color: var(--text3);">+ ${e.mention_count - 3} more</div>` : ''}
+                        ${e.mention_count > 3 ? `<div class="mention-row"><a href="#" onclick="viewEntity(${e.entity_id}); return false;" class="btn" style="font-size: 0.75rem;">+ ${e.mention_count - 3} more</a></div>` : ''}
                     </div>
                 </div>
             `).join('');
@@ -253,6 +253,35 @@
             `;
         } catch (e) {
             document.getElementById('results').innerHTML = '<div class="empty"><p>Failed to load.</p></div>';
+        }
+    }
+
+    async function viewEntity(id) {
+        document.getElementById('results').innerHTML = '<div class="loading">Loading mentions</div>';
+        try {
+            const [entity, mentions] = await Promise.all([
+                fetch(`${API}/entities/${id}`).then(r => r.json()),
+                fetch(`${API}/entities/${id}/mentions?limit=100`).then(r => r.json())
+            ]);
+            document.getElementById('results').innerHTML = `
+                <div class="doc-viewer">
+                    <div class="doc-header">
+                        <button class="btn" onclick="back()">Back</button>
+                        <span style="color: var(--text2);">${esc(entity.canonical_name)} - ${mentions.total_mentions} mentions</span>
+                    </div>
+                    <div style="padding: 1rem;">
+                        ${mentions.mentions.map(m => `
+                            <div class="mention-row">
+                                <span class="role-badge">${m.role || '?'}</span>
+                                <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
+                                <span style="color: var(--text3); font-size: 0.75rem;">${m.data_set || ''}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            document.getElementById('results').innerHTML = '<div class="empty"><p>Failed to load mentions.</p></div>';
         }
     }
 
