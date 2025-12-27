@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+
+# Database (too large for git, transfer separately)
+database/*.db
+database/*.db-journal
+database/*.db-wal
+
+# Environment
+.env
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSL/Certs (generated on deploy)
+nginx/ssl/
+certbot/
+
+# PDFs (transfer separately)
+pdfs/
+*.pdf
+
+# Large data directories (transfer separately)
+extracted/
+processed/
+raw/
+scraper_state.json

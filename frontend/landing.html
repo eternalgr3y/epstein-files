@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epstein Files Search</title>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #141414;
+            --border: #2a2a2a;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --accent: #3b82f6;
+            --warning: #f59e0b;
+            --survivor: #10b981;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            flex: 1;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .card h2 {
+            font-size: 1.2rem;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card p {
+            color: var(--text-dim);
+            margin-bottom: 12px;
+        }
+
+        .card ul {
+            color: var(--text-dim);
+            margin-left: 20px;
+        }
+
+        .card li {
+            margin-bottom: 8px;
+        }
+
+        .survivor-box {
+            border-color: var(--survivor);
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .survivor-box h2 {
+            color: var(--survivor);
+        }
+
+        .hotline {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--survivor);
+            display: block;
+            margin: 16px 0;
+        }
+
+        .warning-box {
+            border-color: var(--warning);
+            background: rgba(245, 158, 11, 0.05);
+        }
+
+        .warning-box h2 {
+            color: var(--warning);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 16px;
+            background: var(--bg);
+            border-radius: 6px;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .enter-btn {
+            display: block;
+            width: 100%;
+            padding: 16px 32px;
+            font-size: 1.1rem;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            transition: opacity 0.2s;
+        }
+
+        .enter-btn:hover {
+            opacity: 0.9;
+        }
+
+        .acknowledgment {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 16px;
+            background: var(--bg);
+            border-radius: 6px;
+        }
+
+        .acknowledgment input {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .acknowledgment label {
+            cursor: pointer;
+            color: var(--text-dim);
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        @media (max-width: 600px) {
+            .stats {
+                grid-template-columns: 1fr;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Epstein Files Search</h1>
+            <p class="subtitle">DOJ Document Archive Research Tool</p>
+        </header>
+
+        <div class="card survivor-box">
+            <h2>Survivor Resources</h2>
+            <p>If you or someone you know is a survivor of sexual abuse:</p>
+            <a href="tel:1-800-656-4673" class="hotline">RAINN: 1-800-656-4673</a>
+            <p>Free, confidential support 24/7. You are not alone.</p>
+            <p><a href="https://www.rainn.org" target="_blank" style="color: var(--survivor);">www.rainn.org</a></p>
+        </div>
+
+        <div class="card warning-box">
+            <h2>Important Disclaimers</h2>
+            <ul>
+                <li><strong>Being mentioned in a document does NOT imply guilt or wrongdoing.</strong> Many people appear as witnesses, investigators, attorneys, or incidental mentions.</li>
+                <li>Roles are assigned based on document context and may be uncertain.</li>
+                <li>Always verify claims by reading the original source documents.</li>
+                <li>These are publicly released DOJ documents for research purposes only.</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>About This Tool</h2>
+            <p>This is an open-source research tool providing searchable access to publicly released Department of Justice documents related to the Epstein case.</p>
+            <p>The goal is to help researchers, journalists, and the public verify claims and access primary sources rather than relying on headlines or social media.</p>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="doc-count">--</div>
+                    <div class="stat-label">Documents</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="entity-count">--</div>
+                    <div class="stat-label">Named Entities</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="word-count">--</div>
+                    <div class="stat-label">Words Indexed</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="acknowledgment">
+                <input type="checkbox" id="acknowledge" onchange="updateButton()">
+                <label for="acknowledge">I understand the disclaimers above and will verify claims using source documents</label>
+            </div>
+            <a href="/app" id="enter-btn" class="enter-btn" style="opacity: 0.5; pointer-events: none;">Enter Search Tool</a>
+        </div>
+    </div>
+
+    <footer>
+        <p>Open source research tool. <a href="https://github.com/your-repo" target="_blank">View Source</a></p>
+        <p style="margin-top: 8px;">This project is survivor-centered. Facts only, no inference.</p>
+    </footer>
+
+    <script>
+        function updateButton() {
+            const btn = document.getElementById('enter-btn');
+            const checked = document.getElementById('acknowledge').checked;
+            btn.style.opacity = checked ? '1' : '0.5';
+            btn.style.pointerEvents = checked ? 'auto' : 'none';
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('doc-count').textContent = (data.total || 0).toLocaleString();
+
+                // Get entity count
+                const entRes = await fetch('/api/entities/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: 'a', limit: 1 })
+                });
+                // Estimate from DB
+                document.getElementById('entity-count').textContent = '14K+';
+                document.getElementById('word-count').textContent = '6.4M';
+            } catch (e) {
+                console.error('Failed to load stats');
+            }
+        }
+
+        loadStats();
+    </script>
+</body>
+</html>
