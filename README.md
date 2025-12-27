@@ -43,20 +43,35 @@ https://www.rainn.org
 
 See [DEPLOY.md](DEPLOY.md) for full instructions.
 
-Quick start:
+### Quick Start
+
 ```bash
 # Clone
-git clone https://codeberg.org/YOUR_USERNAME/epstein-files.git
+git clone https://codeberg.org/rillow/epstein-files.git
 cd epstein-files
 
-# Get database (not in git due to size)
-# Contact maintainer or rebuild from PDFs
+# Download and rebuild database (36MB download → 140MB database)
+python rebuild_database.py --download
 
 # Run locally
 docker compose -f docker-compose.local.yml up --build
 
 # Visit http://localhost:8000
 ```
+
+### Database
+
+The database is hosted on archive.org due to size (~140MB). The `rebuild_database.py` script handles download and setup:
+
+```bash
+# Download from archive.org and rebuild
+python rebuild_database.py --download
+
+# Or if you already have epstein_files.sql.gz
+python rebuild_database.py
+```
+
+**Direct download**: https://archive.org/download/epstein-files-db/epstein_files.sql.gz
 
 ## API Endpoints
 
