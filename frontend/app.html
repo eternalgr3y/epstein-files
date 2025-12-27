@@ -43,7 +43,7 @@
                     type="text"
                     class="search-input"
                     id="search-input"
-                    placeholder="Search documents, entities, or verify claims..."
+                    placeholder="Search documents or entities..."
                     autocomplete="off"
                 >
             </div>
@@ -55,9 +55,6 @@
                 </button>
                 <button class="tab" data-tab="entities" onclick="switchTab('entities')">
                     Entities
-                </button>
-                <button class="tab" data-tab="verify" onclick="switchTab('verify')">
-                    Verify Claim
                 </button>
             </div>
 
@@ -85,10 +82,6 @@
                 <button class="btn btn-primary" onclick="searchEntities()">Search</button>
             </div>
 
-            <!-- Verify Button -->
-            <div class="flex gap-4 justify-center mb-6" id="filters-verify" style="display: none;">
-                <button class="btn btn-primary" onclick="verifyClaim()">Check Claim</button>
-            </div>
         </section>
 
         <!-- Stats -->
@@ -163,7 +156,6 @@
                 if (e.key === 'Enter') {
                     if (currentTab === 'documents') performSearch();
                     else if (currentTab === 'entities') searchEntities();
-                    else if (currentTab === 'verify') verifyClaim();
                 }
             });
         });
@@ -176,13 +168,11 @@
             });
             document.getElementById('filters-documents').style.display = tab === 'documents' ? 'flex' : 'none';
             document.getElementById('filters-entities').style.display = tab === 'entities' ? 'flex' : 'none';
-            document.getElementById('filters-verify').style.display = tab === 'verify' ? 'flex' : 'none';
 
             // Update placeholder
             const input = document.getElementById('search-input');
             if (tab === 'documents') input.placeholder = 'Search document contents...';
             else if (tab === 'entities') input.placeholder = 'Search for a person or organization...';
-            else if (tab === 'verify') input.placeholder = 'Enter a claim to verify...';
         }
 
         // Load stats
@@ -247,21 +237,6 @@
             }
         }
 
-        // Verify Claim
-        async function verifyClaim() {
-            const claim = document.getElementById('search-input').value.trim();
-            if (!claim) return;
-
-            showLoading();
-            try {
-                const res = await fetch(`${API_BASE}/verify?claim=${encodeURIComponent(claim)}`);
-                const data = await res.json();
-                displayVerifyResults(data);
-            } catch (e) {
-                showError('Verification failed. Please try again.');
-            }
-        }
-
         // Display Results
         function displaySearchResults(data) {
             document.getElementById('results-title').textContent = 'Search Results';
@@ -322,30 +297,6 @@
                     </div>
                 </div>
             `).join('');
-
-            document.getElementById('results').innerHTML = html;
-        }
-
-        function displayVerifyResults(data) {
-            document.getElementById('results-title').textContent = 'Verification Results';
-            document.getElementById('results-count').textContent = '';
-
-            const html = `
-                <div class="card card-warning mb-4">
-                    <p><strong>Claim:</strong> ${escapeHtml(data.claim || '')}</p>
-                    <p class="mt-2"><strong>Evidence:</strong> ${data.evidence_count || 0} documents found</p>
-                    <p class="text-small text-muted mt-2">Always read the source documents to verify any claim.</p>
-                </div>
-                ${(data.supporting_documents || []).map(d => `
-                    <div class="result-card">
-                        <div class="result-title">
-                            <a href="${API_BASE}/documents/${d.document_id}/file" target="_blank">${escapeHtml(d.filename)}</a>
-                        </div>
-                        ${d.snippet ? `<div class="result-snippet mt-2">${highlightTerms(escapeHtml(d.snippet))}</div>` : ''}
-                        <button class="btn btn-sm btn-secondary mt-4" onclick="viewDocument(${d.document_id})">Read Document</button>
-                    </div>
-                `).join('')}
-            `;
 
             document.getElementById('results').innerHTML = html;
         }

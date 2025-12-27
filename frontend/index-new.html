@@ -128,20 +128,10 @@
         </header>
 
         <main class="container hero-content">
-            <!-- Survivor Resources - First and Prominent -->
-            <div class="survivor-banner mb-8" style="max-width: 600px;">
-                <p class="text-small" style="color: var(--color-survivor);">SURVIVOR RESOURCES</p>
-                <div class="survivor-hotline">
-                    <a href="tel:1-800-656-4673">RAINN: 1-800-656-4673</a>
-                </div>
-                <p class="text-small">Free, confidential support 24/7. <a href="https://www.rainn.org" target="_blank" style="color: var(--color-survivor);">www.rainn.org</a></p>
-            </div>
-
             <!-- Hero -->
             <h1 class="hero-title">DOJ Epstein Files<br><span style="color: var(--color-text-muted);">Research Archive</span></h1>
             <p class="hero-subtitle">
                 Searchable access to publicly released Department of Justice documents.
-                Verify claims with primary sources.
             </p>
 
             <!-- Stats -->
@@ -178,27 +168,17 @@
                         </svg>
                     </div>
                     <h3 class="feature-title">Entity Lookup</h3>
-                    <p class="feature-desc">Find all documents mentioning a person or organization. See context and roles.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">Verify Claims</h3>
-                    <p class="feature-desc">Check claims against source documents. Don't rely on headlines.</p>
+                    <p class="feature-desc">Find all documents mentioning a person or organization.</p>
                 </div>
             </div>
 
             <!-- Disclaimers -->
             <div class="card card-warning mb-6" style="max-width: 600px;">
-                <h3 style="color: var(--color-warning); margin-bottom: var(--space-3);">Important Disclaimers</h3>
+                <h3 style="color: var(--color-warning); margin-bottom: var(--space-3);">Important</h3>
                 <ul style="color: var(--color-text-secondary); margin-left: var(--space-5); font-size: var(--text-sm);">
                     <li style="margin-bottom: var(--space-2);"><strong>Being mentioned does NOT imply guilt.</strong> Many appear as witnesses, investigators, or incidental mentions.</li>
-                    <li style="margin-bottom: var(--space-2);">Roles indicate appearance in specific documents, not overall characterization.</li>
-                    <li style="margin-bottom: var(--space-2);">Always verify by reading the original source documents.</li>
-                    <li>These are publicly released DOJ documents for research purposes.</li>
+                    <li style="margin-bottom: var(--space-2);">Always read the original source documents.</li>
+                    <li>These are publicly released DOJ documents.</li>
                 </ul>
             </div>
 
@@ -206,7 +186,7 @@
             <div class="acknowledgment-section">
                 <div class="checkbox-row" onclick="toggleAcknowledge()">
                     <input type="checkbox" id="acknowledge" onchange="updateEnterButton()">
-                    <label for="acknowledge">I understand these disclaimers and will verify claims using source documents</label>
+                    <label for="acknowledge">I understand that being mentioned does not imply guilt</label>
                 </div>
                 <a href="/app" id="enter-btn" class="btn btn-primary btn-lg enter-button" disabled>
                     Enter Search Tool
@@ -217,7 +197,7 @@
         <footer class="footer">
             <div class="container">
                 <p>Open source. <a href="https://codeberg.org/rillow/epstein-files" target="_blank">View on Codeberg</a></p>
-                <p class="mt-2 text-xs">Facts only. No inference. Source everything.</p>
+                <p class="mt-2 text-xs">Survivor support: <a href="https://www.rainn.org" target="_blank">RAINN</a> 1-800-656-4673</p>
             </div>
         </footer>
     </div>

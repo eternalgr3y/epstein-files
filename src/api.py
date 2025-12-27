@@ -31,7 +31,7 @@ from models import (
 )
 from search import (
     search_documents, search_entities, get_entity_mentions,
-    verify_claim, get_document_types, get_data_sets
+    get_document_types, get_data_sets
 )
 from importer import get_document_stats
 
@@ -189,11 +189,6 @@ class EntitySearchRequest(BaseModel):
     limit: int = 50
 
 
-class VerifyClaimRequest(BaseModel):
-    claim: str
-    entity_name: Optional[str] = None
-
-
 class DocumentResponse(BaseModel):
     id: int
     filename: str
@@ -226,7 +221,6 @@ async def api_info():
             "search": "/api/search",
             "documents": "/api/documents",
             "entities": "/api/entities",
-            "verify": "/api/verify",
             "stats": "/api/stats"
         }
     }
@@ -541,32 +535,6 @@ async def get_mentions(
         }
     finally:
         session.close()
-
-
-@app.post("/api/verify")
-async def verify(request: VerifyClaimRequest):
-    """
-    Verify a claim by searching for evidence in documents.
-
-    Use this to fact-check claims you see on social media or elsewhere.
-    Always read the source documents to verify.
-    """
-    result = verify_claim(
-        claim_query=request.claim,
-        entity_name=request.entity_name
-    )
-
-    return result
-
-
-@app.get("/api/verify")
-async def verify_get(
-    claim: str = Query(..., description="The claim to verify"),
-    entity: Optional[str] = Query(None, description="Entity name to filter by")
-):
-    """Verify a claim (GET endpoint)."""
-    result = verify_claim(claim_query=claim, entity_name=entity)
-    return result
 
 
 @app.get("/api/roles")
