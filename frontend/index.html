@@ -239,20 +239,55 @@
     }
 
     async function viewDoc(id) {
+        currentPage = 0;
         document.getElementById('results').innerHTML = '<div class="loading">Loading</div>';
         try {
             const d = await fetch(`${API}/documents/${id}/text`).then(r => r.json());
+            const totalPages = d.total_pages || 1;
             document.getElementById('results').innerHTML = `
                 <div class="doc-viewer">
                     <div class="doc-header">
                         <button class="btn" onclick="back()">Back</button>
-                        <a href="${API}/documents/${id}/file" target="_blank" class="btn">Download PDF</a>
+                        <div style="display:flex;gap:0.5rem;">
+                            <button class="btn" onclick="toggleView(${id})">Toggle Image</button>
+                            <a href="${API}/documents/${id}/file" target="_blank" class="btn">PDF</a>
+                        </div>
                     </div>
-                    <div class="doc-content">${esc(d.full_text || 'No text available.')}</div>
+                    <div id="doc-img" style="display:none;padding:1rem;text-align:center;">
+                        <div style="margin-bottom:0.5rem;">
+                            <button class="btn" onclick="prevPage(${id})">←</button>
+                            <span id="page-num">1</span> / ${totalPages}
+                            <button class="btn" onclick="nextPage(${id}, ${totalPages})">→</button>
+                        </div>
+                        <img id="page-img" src="${API}/documents/${id}/pages/0/image?width=700" style="max-width:100%;border:1px solid var(--border);border-radius:4px;">
+                    </div>
+                    <div id="doc-text" class="doc-content">${esc(d.full_text || 'No text available.')}</div>
                 </div>
             `;
         } catch (e) {
             document.getElementById('results').innerHTML = '<div class="empty"><p>Failed to load.</p></div>';
+        }
+    }
+
+    let currentPage = 0;
+    function toggleView(id) {
+        const img = document.getElementById('doc-img');
+        const txt = document.getElementById('doc-text');
+        img.style.display = img.style.display === 'none' ? 'block' : 'none';
+        txt.style.display = txt.style.display === 'none' ? 'block' : 'none';
+    }
+    function prevPage(id) {
+        if (currentPage > 0) {
+            currentPage--;
+            document.getElementById('page-img').src = `${API}/documents/${id}/pages/${currentPage}/image?width=700`;
+            document.getElementById('page-num').textContent = currentPage + 1;
+        }
+    }
+    function nextPage(id, total) {
+        if (currentPage < total - 1) {
+            currentPage++;
+            document.getElementById('page-img').src = `${API}/documents/${id}/pages/${currentPage}/image?width=700`;
+            document.getElementById('page-num').textContent = currentPage + 1;
         }
     }
 
