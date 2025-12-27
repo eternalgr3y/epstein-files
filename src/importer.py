@@ -142,34 +142,51 @@ def get_documents_needing_ocr(session, limit: int = 100):
     ).limit(limit).all()
 
 
+import time
+from sqlalchemy import func
+
+_stats_cache = {'data': None, 'expires': 0}
+STATS_CACHE_TTL = 300  # 5 minutes
+
 def get_document_stats(session) -> dict:
-    """Get statistics about documents in the database."""
-    total = session.query(Document).count()
-    by_type = {}
-    for doc_type in DocumentType:
-        count = session.query(Document).filter_by(document_type=doc_type.value).count()
-        if count > 0:
-            by_type[doc_type.value] = count
+    """Get statistics about documents in the database (cached)."""
+    now = time.time()
 
-    by_status = {}
-    for status in ProcessingStatus:
-        count = session.query(Document).filter_by(processing_status=status.value).count()
-        if count > 0:
-            by_status[status.value] = count
+    # Return cached if valid
+    if _stats_cache['data'] and now < _stats_cache['expires']:
+        return _stats_cache['data']
 
-    by_data_set = {}
-    data_sets = session.query(Document.data_set).distinct().all()
-    for (ds,) in data_sets:
-        if ds:
-            count = session.query(Document).filter_by(data_set=ds).count()
-            by_data_set[ds] = count
+    # Single query for total
+    total = session.query(func.count(Document.id)).scalar()
 
-    return {
+    # Group by type (single query)
+    by_type = dict(session.query(
+        Document.document_type, func.count(Document.id)
+    ).group_by(Document.document_type).all())
+
+    # Group by status (single query)
+    by_status = dict(session.query(
+        Document.processing_status, func.count(Document.id)
+    ).group_by(Document.processing_status).all())
+
+    # Group by data_set (single query)
+    by_data_set = dict(session.query(
+        Document.data_set, func.count(Document.id)
+    ).filter(Document.data_set.isnot(None)
+    ).group_by(Document.data_set).all())
+
+    result = {
         'total': total,
         'by_type': by_type,
         'by_status': by_status,
         'by_data_set': by_data_set
     }
+
+    # Cache it
+    _stats_cache['data'] = result
+    _stats_cache['expires'] = now + STATS_CACHE_TTL
+
+    return result
 
 
 if __name__ == "__main__":

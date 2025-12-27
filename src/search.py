@@ -356,42 +356,6 @@ def get_entity_mentions(
         session.close()
 
 
-def verify_claim(claim_query: str, entity_name: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Verify a claim by searching for evidence in documents.
-    """
-    # Search documents for the claim
-    supporting_docs = search_documents(claim_query, limit=20)
-
-    # If entity specified, filter for mentions of that entity
-    if entity_name:
-        entity_results = search_entities(entity_name, limit=5)
-
-    result = {
-        'claim': claim_query,
-        'entity': entity_name,
-        'supporting_documents': [],
-        'total_matches': len(supporting_docs),
-        'verification_status': 'unverified',
-        'note': 'This is an automated search. Verify by reading the source documents.'
-    }
-
-    for doc in supporting_docs[:10]:
-        result['supporting_documents'].append({
-            'document_id': doc.document_id,
-            'filename': doc.filename,
-            'title': doc.title,
-            'source_url': doc.source_url,
-            'snippet': doc.snippet,
-            'relevance_score': doc.relevance_score
-        })
-
-    if len(supporting_docs) > 0:
-        result['verification_status'] = 'evidence_found'
-
-    return result
-
-
 def get_document_types() -> List[Dict[str, Any]]:
     """Get all document types with counts."""
     engine = get_engine()

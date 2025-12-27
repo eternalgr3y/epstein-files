@@ -393,11 +393,23 @@ DEFAULT_DB_PATH = os.getenv(
 )
 
 
+_engine_cache = {}
+
 def get_engine(db_path: str = None):
-    """Create database engine."""
+    """Create database engine with connection pooling."""
     if db_path is None:
         db_path = DEFAULT_DB_PATH
-    return create_engine(f"sqlite:///{db_path}", echo=False)
+
+    if db_path not in _engine_cache:
+        _engine_cache[db_path] = create_engine(
+            f"sqlite:///{db_path}",
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+            connect_args={"check_same_thread": False}
+        )
+    return _engine_cache[db_path]
 
 
 def create_tables(engine):
