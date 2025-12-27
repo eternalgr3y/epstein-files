@@ -215,6 +215,29 @@ async def api_info():
     }
 
 
+@app.get("/api/browse")
+async def browse_documents(
+    limit: int = Query(24, le=100, ge=1),
+    offset: int = Query(0, ge=0)
+):
+    """Browse all documents with pagination."""
+    engine = get_engine()
+    session = get_session(engine)
+    try:
+        total = session.query(Document).count()
+        docs = session.query(Document).order_by(Document.id.desc()).offset(offset).limit(limit).all()
+        return {
+            "total": total,
+            "offset": offset,
+            "results": [
+                {"document_id": d.id, "filename": d.filename, "title": d.title, "data_set": d.data_set}
+                for d in docs
+            ]
+        }
+    finally:
+        session.close()
+
+
 @app.get("/api/stats")
 async def get_stats():
     """Get overall statistics about the document collection."""
