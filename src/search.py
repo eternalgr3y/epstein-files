@@ -20,11 +20,10 @@ from models import (
     get_engine, get_session, Document, DocumentText, Entity,
     Mention, MentionRole, DocumentType
 )
+from config import DATABASE_PATH as DB_PATH
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-DB_PATH = Path(__file__).parent.parent / "database" / "epstein_files.db"
 
 
 @dataclass
@@ -53,11 +52,11 @@ class EntitySearchResult:
 
 def escape_fts5_query(query: str) -> str:
     """Escape special FTS5 characters to prevent syntax errors."""
-    # FTS5 special chars: " * - + ( ) : ^
-    # We quote the whole query to treat it as a phrase
-    # Remove any existing quotes and problematic chars
-    cleaned = query.replace('"', '').replace("'", "")
-    # Escape for phrase search
+    # FTS5 phrase search: wrap in double quotes
+    # Inside a phrase, apostrophes are fine - only double quotes need escaping
+    # Escape double quotes by doubling them (FTS5 standard)
+    cleaned = query.replace('"', '""')
+    # Wrap in double quotes for phrase search
     return f'"{cleaned}"'
 
 
@@ -278,15 +277,16 @@ def search_entities(
 
         results = []
         for entity in q.all():
-            # Get mentions
-            mentions_q = session.query(Mention).filter(Mention.entity_id == entity.id)
+            # Get mentions with documents in a single query (avoids N+1)
+            mentions_q = session.query(Mention, Document).join(
+                Document, Mention.document_id == Document.id
+            ).filter(Mention.entity_id == entity.id)
 
             if role:
                 mentions_q = mentions_q.filter(Mention.role == role)
 
             mentions = []
-            for mention in mentions_q.limit(20).all():
-                doc = session.query(Document).get(mention.document_id)
+            for mention, doc in mentions_q.limit(20).all():
                 mentions.append({
                     'document_id': mention.document_id,
                     'document_filename': doc.filename if doc else None,

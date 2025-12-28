@@ -10,7 +10,6 @@ import aiofiles
 import json
 import hashlib
 import logging
-import os
 import re
 from pathlib import Path
 from datetime import datetime
@@ -20,17 +19,14 @@ from typing import Optional
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
-# Configuration - use environment variables or relative paths
-BASE_DIR = Path(os.getenv("EPSTEIN_BASE_DIR", Path(__file__).parent.parent))
-BASE_URL = "https://www.justice.gov/epstein"
-DOWNLOAD_DIR = BASE_DIR / "raw"
-METADATA_DIR = BASE_DIR / "processed" / "metadata"
-STATE_FILE = BASE_DIR / "scraper_state.json"
-LOG_FILE = BASE_DIR / "scraper.log"
+from config import (
+    RAW_DIR as DOWNLOAD_DIR, METADATA_DIR, STATE_FILE, LOG_FILE,
+    DOJ_BASE_URL as BASE_URL, DOWNLOAD_DELAY, REQUEST_TIMEOUT
+)
 
 # Rate limiting
-DELAY_BETWEEN_REQUESTS = 1.0  # seconds
-REQUEST_TIMEOUT = 120000  # milliseconds
+DELAY_BETWEEN_REQUESTS = DOWNLOAD_DELAY
+REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT * 1000  # config is in seconds, Playwright uses ms
 
 # Logging
 logging.basicConfig(
@@ -284,7 +280,7 @@ class DOJScraper:
             response = None
             nav_error = None
             try:
-                response = await page.goto(url, timeout=REQUEST_TIMEOUT, wait_until='commit')
+                response = await page.goto(url, timeout=REQUEST_TIMEOUT_MS, wait_until='commit')
             except Exception as e:
                 nav_error = e
                 # Wait a moment for download to be captured

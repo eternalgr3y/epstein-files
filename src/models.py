@@ -383,14 +383,10 @@ class ProcessingLog(Base):
 # DATABASE SETUP
 # ============================================================================
 
-import os
-from pathlib import Path
+from config import DATABASE_PATH
 
-# Default database path - use environment variable or relative path
-DEFAULT_DB_PATH = os.getenv(
-    "DATABASE_PATH",
-    str(Path(__file__).parent.parent / "database" / "epstein_files.db")
-)
+# Convert Path to string for SQLAlchemy
+DEFAULT_DB_PATH = str(DATABASE_PATH)
 
 
 _engine_cache = {}

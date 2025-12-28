@@ -34,6 +34,7 @@ from search import (
     get_document_types, get_data_sets
 )
 from importer import get_document_stats
+from config import FRONTEND_DIR, THUMBNAIL_DIR
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -145,7 +146,6 @@ app.add_middleware(
 )
 
 # Frontend - serve static files
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
@@ -380,7 +380,7 @@ async def get_document(document_id: int):
     session = get_session(engine)
 
     try:
-        doc = session.query(Document).get(document_id)
+        doc = session.get(Document, document_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
@@ -417,7 +417,7 @@ async def get_document_text(document_id: int, page: Optional[int] = None):
     session = get_session(engine)
 
     try:
-        doc = session.query(Document).get(document_id)
+        doc = session.get(Document, document_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
@@ -453,7 +453,7 @@ async def get_document_file(document_id: int):
     session = get_session(engine)
 
     try:
-        doc = session.query(Document).get(document_id)
+        doc = session.get(Document, document_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
@@ -473,9 +473,6 @@ async def get_document_file(document_id: int):
 # =============================================================================
 # IMAGE API
 # =============================================================================
-
-THUMBNAIL_DIR = Path(__file__).parent.parent / "thumbnails"
-THUMBNAIL_DIR.mkdir(exist_ok=True)
 
 def generate_page_image(pdf_path: Path, page: int, width: int = 800) -> Path:
     """Generate image from PDF page using PyMuPDF."""
@@ -503,17 +500,89 @@ def generate_page_image(pdf_path: Path, page: int, width: int = 800) -> Path:
     return cache_path
 
 
+def generate_video_thumbnail(video_path: Path, width: int = 400) -> Path:
+    """Generate thumbnail from video first frame using opencv."""
+    cache_name = f"{video_path.stem}_thumb_w{width}.png"
+    cache_path = THUMBNAIL_DIR / cache_name
+
+    if cache_path.exists():
+        return cache_path
+
+    try:
+        import cv2
+        cap = cv2.VideoCapture(str(video_path))
+        ret, frame = cap.read()
+        cap.release()
+
+        if ret:
+            # Resize to target width
+            h, w = frame.shape[:2]
+            new_h = int(h * width / w)
+            resized = cv2.resize(frame, (width, new_h))
+            cv2.imwrite(str(cache_path), resized)
+            return cache_path
+    except ImportError:
+        pass  # opencv not available
+
+    # Fallback: create placeholder
+    return create_placeholder_image("VIDEO", width, cache_path)
+
+
+def generate_audio_thumbnail(audio_path: Path, width: int = 400) -> Path:
+    """Generate placeholder for audio files."""
+    cache_name = f"{audio_path.stem}_audio_w{width}.png"
+    cache_path = THUMBNAIL_DIR / cache_name
+
+    if cache_path.exists():
+        return cache_path
+
+    return create_placeholder_image("AUDIO", width, cache_path)
+
+
+def create_placeholder_image(text: str, width: int, cache_path: Path) -> Path:
+    """Create a simple placeholder image with text."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        height = int(width * 0.75)
+        img = Image.new('RGB', (width, height), color=(30, 30, 35))
+        draw = ImageDraw.Draw(img)
+
+        # Draw text centered
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", width // 10)
+        except:
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        draw.text(((width - text_w) / 2, (height - text_h) / 2), text, fill=(100, 100, 110), font=font)
+
+        img.save(str(cache_path))
+        return cache_path
+    except ImportError:
+        # PIL not available - create minimal PNG
+        # Return a 1x1 gray pixel as fallback
+        cache_path.write_bytes(
+            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+            b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00'
+            b'\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00'
+            b'\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
+        )
+        return cache_path
+
+
 @app.get("/api/documents/{document_id}/thumbnail")
 async def get_document_thumbnail(
     document_id: int,
     width: int = Query(400, ge=100, le=1200)
 ):
-    """Get thumbnail of document's first page."""
+    """Get thumbnail of document (PDF, video, or audio placeholder)."""
     engine = get_engine()
     session = get_session(engine)
 
     try:
-        doc = session.query(Document).get(document_id)
+        doc = session.get(Document, document_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
@@ -521,11 +590,20 @@ async def get_document_thumbnail(
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found")
 
-        if not file_path.suffix.lower() == '.pdf':
-            raise HTTPException(status_code=400, detail="Thumbnails only for PDFs")
+        suffix = file_path.suffix.lower()
 
         try:
-            img_path = generate_page_image(file_path, 0, width)
+            if suffix == '.pdf':
+                img_path = generate_page_image(file_path, 0, width)
+            elif suffix in ('.mp4', '.mov', '.avi', '.mkv', '.webm'):
+                img_path = generate_video_thumbnail(file_path, width)
+            elif suffix in ('.wav', '.mp3', '.m4a', '.flac', '.ogg'):
+                img_path = generate_audio_thumbnail(file_path, width)
+            else:
+                # Unknown type - create generic placeholder
+                cache_path = THUMBNAIL_DIR / f"{file_path.stem}_doc_w{width}.png"
+                img_path = create_placeholder_image("DOC", width, cache_path)
+
             return FileResponse(str(img_path), media_type="image/png")
         except Exception as e:
             logger.error(f"Thumbnail generation failed: {e}")
@@ -545,7 +623,7 @@ async def get_page_image(
     session = get_session(engine)
 
     try:
-        doc = session.query(Document).get(document_id)
+        doc = session.get(Document, document_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
@@ -602,7 +680,7 @@ async def get_entity(entity_id: int):
     session = get_session(engine)
 
     try:
-        entity = session.query(Entity).get(entity_id)
+        entity = session.get(Entity, entity_id)
         if not entity:
             raise HTTPException(status_code=404, detail="Entity not found")
 
@@ -642,7 +720,7 @@ async def get_mentions(
     session = get_session(engine)
 
     try:
-        entity = session.query(Entity).get(entity_id)
+        entity = session.get(Entity, entity_id)
         if not entity:
             raise HTTPException(status_code=404, detail="Entity not found")
 

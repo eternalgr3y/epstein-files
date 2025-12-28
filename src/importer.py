@@ -5,7 +5,6 @@ Reads metadata JSON files and populates the documents table.
 
 import json
 import logging
-import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -14,14 +13,10 @@ from models import (
     get_engine, get_session, Document, DocumentType,
     ProcessingStatus, ProcessingLog
 )
+from config import BASE_DIR, METADATA_DIR, RAW_DIR
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Use environment variables or relative paths
-BASE_DIR = Path(os.getenv("EPSTEIN_BASE_DIR", Path(__file__).parent.parent))
-METADATA_DIR = BASE_DIR / "processed" / "metadata"
-RAW_DIR = BASE_DIR / "raw"
 
 
 def classify_document_type(filename: str, content_type: str, source_page: str) -> str:
@@ -132,14 +127,6 @@ def import_all_metadata():
 
     logger.info(f"Import complete: {imported} imported, {skipped} skipped, {errors} errors")
     return imported, skipped, errors
-
-
-def get_documents_needing_ocr(session, limit: int = 100):
-    """Get documents that need OCR processing."""
-    return session.query(Document).filter(
-        Document.needs_ocr == True,
-        Document.processing_status == ProcessingStatus.PENDING.value
-    ).limit(limit).all()
 
 
 import time

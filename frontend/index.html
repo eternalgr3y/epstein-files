@@ -167,8 +167,12 @@
 
     <script>
     const API = '/api';
-    let lastResults = null;
+    let navStack = [];  // Navigation history stack
     let debounce = null;
+
+    function pushNav(type, data) {
+        navStack.push({ type, data, scroll: window.scrollY });
+    }
 
     document.getElementById('q').addEventListener('input', e => {
         clearTimeout(debounce);
@@ -202,7 +206,7 @@
                     body: JSON.stringify({query: q, limit: 5})
                 }).then(r => r.json())
             ]);
-            lastResults = { docs, ents };
+            navStack = [{ type: 'search', data: { docs, ents }, scroll: 0 }];  // Reset stack on new search
             render(docs, ents);
         } catch (e) {
             document.getElementById('results').innerHTML = '<div class="empty"><p>Search failed.</p></div>';
@@ -248,6 +252,12 @@
     }
 
     async function viewDoc(id) {
+        // Push current view to nav stack before navigating
+        if (navStack.length > 0) {
+            navStack[navStack.length - 1].scroll = window.scrollY;
+        }
+        pushNav('doc', { id });
+
         currentPage = 0;
         document.getElementById('results').innerHTML = '<div class="loading">Loading</div>';
         try {
@@ -342,6 +352,12 @@
     }
 
     async function viewEntity(id) {
+        // Push current view to nav stack before navigating
+        if (navStack.length > 0) {
+            navStack[navStack.length - 1].scroll = window.scrollY;
+        }
+        pushNav('entity', { id });
+
         document.getElementById('results').innerHTML = '<div class="loading">Loading mentions</div>';
         try {
             const [entity, mentions] = await Promise.all([
@@ -370,12 +386,56 @@
         }
     }
 
-    function back() { if (lastResults) render(lastResults.docs, lastResults.ents); }
+    function back() {
+        if (navStack.length <= 1) {
+            // Nothing to go back to - show home
+            document.getElementById('hero').classList.remove('hidden');
+            document.getElementById('stats').classList.remove('hidden');
+            document.getElementById('results').innerHTML = '';
+            navStack = [];
+            return;
+        }
+
+        // Pop current view
+        navStack.pop();
+        const prev = navStack[navStack.length - 1];
+
+        // Restore previous view
+        if (prev.type === 'search') {
+            render(prev.data.docs, prev.data.ents);
+        } else if (prev.type === 'browse') {
+            browseImages(prev.data.offset, prev.data.filter, true);
+        } else if (prev.type === 'doc') {
+            viewDoc(prev.data.id);
+            navStack.pop();  // viewDoc will push again, so remove the duplicate
+        } else if (prev.type === 'entity') {
+            viewEntity(prev.data.id);
+            navStack.pop();  // viewEntity will push again
+        }
+
+        // Restore scroll position after a brief delay
+        if (prev.scroll) {
+            setTimeout(() => window.scrollTo(0, prev.scroll), 50);
+        }
+    }
 
     let galleryOffset = 0;
     let galleryFilter = null;
 
-    async function browseImages(offset = 0, filter = galleryFilter) {
+    async function browseImages(offset = 0, filter = galleryFilter, fromNav = false) {
+        // Only push to nav stack if not coming from back() navigation
+        if (!fromNav) {
+            if (navStack.length > 0) {
+                navStack[navStack.length - 1].scroll = window.scrollY;
+            }
+            // For browse, we replace the stack entry if already browsing, otherwise push
+            if (navStack.length === 0 || navStack[navStack.length - 1].type !== 'browse') {
+                pushNav('browse', { offset, filter });
+            } else {
+                navStack[navStack.length - 1].data = { offset, filter };
+            }
+        }
+
         galleryOffset = offset;
         galleryFilter = filter;
         document.getElementById('hero').classList.add('hidden');

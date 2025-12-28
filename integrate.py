@@ -37,9 +37,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Paths
-RAW_DIR = Path("Path(__file__).parent/raw")
-EXTRACTED_DIR = Path("Path(__file__).parent/extracted")
-DB_PATH = Path("Path(__file__).parent/database/epstein_files.db")
+RAW_DIR = Path(__file__).parent / "raw"
+EXTRACTED_DIR = Path(__file__).parent / "extracted"
+DB_PATH = Path(__file__).parent / "database" / "epstein_files.db"
 
 
 def extract_zips(raw_dir: Path, output_dir: Path, skip_duplicates: bool = True) -> int:
