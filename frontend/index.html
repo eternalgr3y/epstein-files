@@ -373,20 +373,39 @@
     function back() { if (lastResults) render(lastResults.docs, lastResults.ents); }
 
     let galleryOffset = 0;
-    async function browseImages(offset = 0) {
+    let galleryFilter = null;
+
+    async function browseImages(offset = 0, filter = galleryFilter) {
         galleryOffset = offset;
+        galleryFilter = filter;
         document.getElementById('hero').classList.add('hidden');
         document.getElementById('stats').classList.add('hidden');
-        document.getElementById('results').innerHTML = '<div class="loading">Loading documents</div>';
+        document.getElementById('results').innerHTML = '<div class="loading">Loading</div>';
 
         try {
-            const r = await fetch(`${API}/browse?limit=24&offset=${offset}`).then(r => r.json());
+            let url = `${API}/browse?limit=24&offset=${offset}`;
+            if (filter) url += `&filter=${filter}`;
+            const r = await fetch(url).then(r => r.json());
             const docs = r.results || [];
+
+            const filters = [
+                {id: null, label: 'All'},
+                {id: 'photos', label: 'Photos'},
+                {id: 'videos', label: 'Videos'},
+                {id: 'audio', label: 'Audio'},
+                {id: 'docs', label: 'Documents'}
+            ];
 
             let html = `
                 <div class="results-header">
-                    <h2>Browse Documents</h2>
-                    <span class="results-count">${r.total} total</span>
+                    <h2>Browse</h2>
+                    <span class="results-count">${r.total.toLocaleString()} items</span>
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
+                    ${filters.map(f => `
+                        <button class="btn" style="${f.id === filter ? 'background:var(--accent);color:white;' : ''}"
+                                onclick="browseImages(0, ${f.id ? `'${f.id}'` : 'null'})">${f.label}</button>
+                    `).join('')}
                 </div>
                 <div class="gallery">
                     ${docs.map(d => `
@@ -398,7 +417,7 @@
                 </div>
                 <div class="gallery-nav">
                     ${offset > 0 ? `<button class="btn" onclick="browseImages(${offset - 24})">← Previous</button>` : ''}
-                    <button class="btn" onclick="browseImages(${offset + 24})">Next →</button>
+                    ${docs.length === 24 ? `<button class="btn" onclick="browseImages(${offset + 24})">Next →</button>` : ''}
                 </div>
             `;
             document.getElementById('results').innerHTML = html;

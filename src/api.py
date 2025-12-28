@@ -218,17 +218,30 @@ async def api_info():
 @app.get("/api/browse")
 async def browse_documents(
     limit: int = Query(24, le=100, ge=1),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    filter: Optional[str] = Query(None, description="Filter: 'photos', 'videos', 'audio', 'docs'")
 ):
-    """Browse all documents with pagination."""
+    """Browse all documents with pagination and optional filter."""
     engine = get_engine()
     session = get_session(engine)
     try:
-        total = session.query(Document).count()
-        docs = session.query(Document).order_by(Document.id.desc()).offset(offset).limit(limit).all()
+        q = session.query(Document)
+
+        if filter == "photos":
+            q = q.filter(Document.category == "photo")
+        elif filter == "videos":
+            q = q.filter(Document.filename.like('%.mp4'))
+        elif filter == "audio":
+            q = q.filter(Document.content_type.like('audio/%'))
+        elif filter == "docs":
+            q = q.filter(Document.category == "document")
+
+        total = q.count()
+        docs = q.order_by(Document.id.desc()).offset(offset).limit(limit).all()
         return {
             "total": total,
             "offset": offset,
+            "filter": filter,
             "results": [
                 {"document_id": d.id, "filename": d.filename, "title": d.title, "data_set": d.data_set}
                 for d in docs
