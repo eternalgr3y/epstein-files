@@ -230,9 +230,9 @@ async def browse_documents(
         if filter == "photos":
             q = q.filter(Document.category == "photo")
         elif filter == "videos":
-            q = q.filter(Document.filename.like('%.mp4'))
+            q = q.filter(Document.category == "video")
         elif filter == "audio":
-            q = q.filter(Document.content_type.like('audio/%'))
+            q = q.filter(Document.category == "audio")
         elif filter == "docs":
             q = q.filter(Document.category == "document")
 
