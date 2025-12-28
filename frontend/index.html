@@ -131,8 +131,8 @@
             <a href="/" class="logo">Epstein Files</a>
             <nav>
                 <a href="#" onclick="browseImages(); return false;">Browse</a>
+                <a href="#" onclick="showAbout(); return false;">About</a>
                 <a href="https://codeberg.org/rillow/epstein-files" target="_blank">Source</a>
-                <a href="/api/docs" target="_blank">API</a>
             </nav>
         </div>
     </header>
@@ -485,6 +485,47 @@
             document.getElementById('results').innerHTML = '<div class="empty">Failed to load.</div>';
         }
     }
+
+    function showAbout() {
+        document.getElementById('hero').classList.add('hidden');
+        document.getElementById('stats').classList.add('hidden');
+        document.getElementById('results').innerHTML = `
+            <div class="doc-viewer">
+                <div class="doc-header">
+                    <button class="btn" onclick="location.reload()">Back</button>
+                    <span style="color: var(--text2);">About This Project</span>
+                </div>
+                <div class="doc-content" style="font-family: inherit; line-height: 1.8;">
+<h2 style="margin-bottom: 1rem;">What is this?</h2>
+<p>A searchable archive of documents released by the U.S. Department of Justice related to the Jeffrey Epstein case. All documents are sourced directly from <a href="https://www.justice.gov/epstein" target="_blank">justice.gov/epstein</a>.</p>
+
+<h2 style="margin: 1.5rem 0 1rem;">What's included?</h2>
+<ul style="margin-left: 1.5rem;">
+<li><strong>15,000+ documents</strong> from DOJ Data Sets 1-8</li>
+<li><strong>419 videos</strong> from surveillance and depositions</li>
+<li><strong>11 audio files</strong> from the Maxwell interview</li>
+<li><strong>Full-text search</strong> across all OCR-processed documents</li>
+</ul>
+
+<h2 style="margin: 1.5rem 0 1rem;">What this is NOT</h2>
+<ul style="margin-left: 1.5rem;">
+<li>Not a news site or investigation</li>
+<li>Not affiliated with DOJ, law enforcement, or any media outlet</li>
+<li>Not making claims - just making documents searchable</li>
+</ul>
+
+<h2 style="margin: 1.5rem 0 1rem;">Technical</h2>
+<p>Open source, built with Python/FastAPI and SQLite FTS5. All code at <a href="https://codeberg.org/rillow/epstein-files" target="_blank">codeberg.org/rillow/epstein-files</a>.</p>
+
+<h2 style="margin: 1.5rem 0 1rem;">Updates</h2>
+<p>DOJ has announced 1M+ additional documents pending release. This archive will be updated as new data sets become available.</p>
+
+<p style="margin-top: 2rem; color: var(--text3); font-size: 0.9rem;">If you or someone you know has been affected by sexual abuse, contact <a href="https://rainn.org" target="_blank">RAINN</a> at 1-800-656-4673.</p>
+                </div>
+            </div>
+        `;
+    }
+
     function esc(s) { if (!s) return ''; return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function highlight(s) { return s.replace(/&gt;&gt;&gt;(.+?)&lt;&lt;&lt;/g, '<mark>$1</mark>'); }
     </script>
