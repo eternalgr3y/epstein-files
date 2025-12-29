@@ -87,6 +87,48 @@ def highlight_match(text: str, query: str, context_chars: int = 150) -> str:
     return snippet
 
 
+def highlight_match_with_markers(text: str, query: str, filename: str = "", context_chars: int = 150) -> str:
+    """Extract a snippet around the match and add >>> <<< markers for highlighting."""
+    pattern = re.compile(re.escape(query), re.IGNORECASE)
+
+    # First try to find match in text
+    if text:
+        match = pattern.search(text)
+        if match:
+            start = max(0, match.start() - context_chars)
+            end = min(len(text), match.end() + context_chars)
+
+            # Get the snippet
+            before = text[start:match.start()]
+            matched = text[match.start():match.end()]
+            after = text[match.end():end]
+
+            snippet = before + ">>>" + matched + "<<<" + after
+
+            # Add ellipsis if truncated
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text):
+                snippet = snippet + "..."
+
+            return snippet
+
+    # Check if match is in filename
+    if filename:
+        match = pattern.search(filename)
+        if match:
+            before = filename[:match.start()]
+            matched = filename[match.start():match.end()]
+            after = filename[match.end():]
+            return "Filename: " + before + ">>>" + matched + "<<<" + after
+
+    # Fallback: return beginning of text
+    if text:
+        return text[:context_chars * 2] + "..." if len(text) > context_chars * 2 else text
+
+    return filename or ""
+
+
 def search_documents_fts(
     query: str,
     document_type: Optional[str] = None,
@@ -108,8 +150,8 @@ def search_documents_fts(
         # Escape query for FTS5
         fts_query = escape_fts5_query(query.strip())
 
-        # Build query with optional filters
-        # Note: contentless FTS5 uses rowid, not column values
+        # Build query - join to document_texts for snippet generation
+        # (FTS5 contentless tables don't support snippet())
         sql = """
             SELECT
                 d.id as document_id,
@@ -118,10 +160,11 @@ def search_documents_fts(
                 d.data_set,
                 d.document_type,
                 d.source_url,
-                snippet(document_fts, 2, '>>>', '<<<', '...', 50) as snippet,
+                dt.full_text,
                 bm25(document_fts) as rank
             FROM document_fts fts
             JOIN documents d ON d.id = fts.rowid
+            LEFT JOIN document_texts dt ON dt.document_id = d.id
             WHERE document_fts MATCH ?
         """
         params = [fts_query]
@@ -141,10 +184,13 @@ def search_documents_fts(
         rows = cur.fetchall()
 
         results = []
+        raw_query = query.strip()
+
         for row in rows:
-            # Clean up snippet markers
-            snippet = row['snippet'] or ""
-            snippet = snippet.replace('>>>', '**').replace('<<<', '**')
+            # Generate snippet with markers from actual text or filename
+            full_text = row['full_text'] or ""
+            filename = row['filename'] or ""
+            snippet = highlight_match_with_markers(full_text, raw_query, filename)
 
             results.append(SearchResult(
                 document_id=row['document_id'],

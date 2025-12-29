@@ -131,6 +131,7 @@ def import_all_metadata():
 
 import time
 from sqlalchemy import func
+from models import Entity, DocumentText
 
 _stats_cache = {'data': None, 'expires': 0}
 STATS_CACHE_TTL = 300  # 5 minutes
@@ -143,7 +144,7 @@ def get_document_stats(session) -> dict:
     if _stats_cache['data'] and now < _stats_cache['expires']:
         return _stats_cache['data']
 
-    # Single query for total
+    # Single query for total documents
     total = session.query(func.count(Document.id)).scalar()
 
     # Group by type (single query)
@@ -162,8 +163,16 @@ def get_document_stats(session) -> dict:
     ).filter(Document.data_set.isnot(None)
     ).group_by(Document.data_set).all())
 
+    # Entity count
+    entity_count = session.query(func.count(Entity.id)).scalar() or 0
+
+    # Total word count across all documents
+    total_words = session.query(func.sum(DocumentText.word_count)).scalar() or 0
+
     result = {
         'total': total,
+        'entity_count': entity_count,
+        'total_words': total_words,
         'by_type': by_type,
         'by_status': by_status,
         'by_data_set': by_data_set
