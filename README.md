@@ -4,12 +4,13 @@ Searchable archive of DOJ Epstein case documents. All documents sourced from [ju
 
 ## What's Included
 
-| Type | Count | Source |
-|------|-------|--------|
-| Documents | 14,672 PDFs | DOJ Data Sets 1-8 |
-| Videos | 419 | Surveillance, depositions |
-| Audio | 11 | Maxwell interview |
-| **Total** | **15,102** | |
+| Type | Count |
+|------|-------|
+| Documents | 14,672 PDFs |
+| Videos | 419 |
+| Audio | 11 |
+| Extracted Entities | 31,000+ |
+| Entity Mentions | 199,000+ |
 
 ## Quick Start
 
@@ -46,19 +47,21 @@ Many people appear as witnesses, investigators, attorneys, or incidental mention
 
 ```
 src/
-├── api.py          # REST API endpoints
-├── models.py       # SQLAlchemy models
-├── search.py       # FTS5 search logic
-├── scraper.py      # DOJ document scraper
-├── ocr_pipeline.py # PDF text extraction
-├── importer.py     # Database import
-└── config.py       # Centralized paths/settings
+├── api.py              # REST API endpoints
+├── models.py           # SQLAlchemy models
+├── search.py           # FTS5 search logic
+├── entity_extractor.py # spaCy NER pipeline
+├── entity_dedup.py     # Entity deduplication
+├── scraper.py          # DOJ document scraper
+├── ocr_pipeline.py     # PDF text extraction
+├── importer.py         # Database import
+└── config.py           # Centralized paths/settings
 
 frontend/
-└── index.html      # Single-page app
+└── index.html          # Single-page app (CSS/JS inline)
 
 database/
-└── epstein_files.db  # SQLite database (gitignored)
+└── epstein_files.db    # SQLite database (gitignored)
 ```
 
 ## API
@@ -85,14 +88,14 @@ python full_system_test.py # 36 integration tests
 
 ### Areas that need work
 
-- [ ] Entity extraction pipeline (tables exist, no NER yet)
 - [ ] Better OCR for low-quality scans
 - [ ] Timeline visualization
 - [ ] Document relationship mapping
+- [ ] Co-occurrence analysis (who appears with whom)
 
 ## License
 
-Public domain. Government documents, public interest tool.
+MIT License. See [LICENSE](LICENSE).
 
 ---
 
