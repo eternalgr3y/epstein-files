@@ -4,559 +4,1452 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Epstein Files</title>
+    <meta name="description" content="Search 20,000+ documents from the DOJ Epstein Files release. Every document, every name, searchable.">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         :root {
-            --bg: #0a0a0b; --bg2: #141417; --bg3: #1c1c21;
-            --border: #2a2a30; --text: #e4e4e7; --text2: #a1a1aa; --text3: #71717a;
-            --accent: #3b82f6; --accent2: #2563eb;
-            --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+            --bg-dark: #08090a;
+            --bg-card: rgba(255, 255, 255, 0.03);
+            --bg-card-hover: rgba(255, 255, 255, 0.06);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --text: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --text-dim: #52525b;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.4);
+            --red: #ef4444;
+            --gradient-1: #0f172a;
+            --gradient-2: #1e1b4b;
         }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
-            /* Safe area for notched phones */
-            padding-left: env(safe-area-inset-left);
-            padding-right: env(safe-area-inset-right);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        /* Skip link for accessibility */
-        .skip-link {
-            position: absolute; top: -40px; left: 0; padding: 8px 16px;
-            background: var(--accent); color: white; z-index: 1000;
-            transition: top 0.2s;
+        /* Background layers */
+        .bg-gradient {
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -20%, var(--gradient-2), transparent),
+                radial-gradient(ellipse 60% 40% at 100% 0%, rgba(59, 130, 246, 0.15), transparent),
+                radial-gradient(ellipse 50% 30% at 0% 100%, rgba(139, 92, 246, 0.1), transparent),
+                var(--bg-dark);
+            z-index: -2;
         }
-        .skip-link:focus { top: 0; }
 
-        /* Focus styles for keyboard navigation */
-        a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible {
-            outline: none; box-shadow: var(--focus-ring);
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: -1;
+            mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
         }
-
-        a { color: var(--accent); text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        .container { max-width: 900px; margin: 0 auto; padding: 0 1.5rem; }
 
         /* Header */
         header {
-            border-bottom: 1px solid var(--border); padding: 1rem 0;
-            position: sticky; top: 0; background: var(--bg); z-index: 100;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 1rem 2rem;
+            background: rgba(8, 9, 10, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
         }
-        header .container { display: flex; justify-content: space-between; align-items: center; }
-        .logo { font-weight: 700; font-size: 1.1rem; color: var(--text); }
-        .logo:hover { text-decoration: none; }
-        header nav { display: flex; gap: 1.5rem; font-size: 0.9rem; }
-        header nav a { color: var(--text2); }
+
+        .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            letter-spacing: -0.02em;
+        }
+
+        .logo span {
+            color: var(--accent);
+        }
+
+        nav {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        nav a {
+            padding: 0.5rem 1rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        nav a:hover {
+            color: var(--text);
+            background: var(--bg-card);
+        }
+
+        nav a.active {
+            color: var(--text);
+            background: var(--bg-card);
+        }
+
+        /* Main content */
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 8rem 2rem 4rem;
+        }
 
         /* Hero */
-        .hero { text-align: center; padding: 4rem 0 2rem; }
-        .hero h1 { font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 0.75rem; }
-        .hero p { color: var(--text2); font-size: 1.1rem; }
-        .hero.hidden { display: none; }
+        .hero {
+            text-align: center;
+            padding: 4rem 0 3rem;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-badge .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--accent);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.15rem;
+            color: var(--text-muted);
+            max-width: 500px;
+            margin: 0 auto 2.5rem;
+        }
 
         /* Search */
-        .search-wrap { max-width: 600px; margin: 2rem auto; position: relative; }
-        .search-input {
-            width: 100%; padding: 1rem 1rem 1rem 3rem; font-size: 1.1rem;
-            background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
-            color: var(--text); outline: none; transition: border-color 0.2s;
+        .search-container {
+            max-width: 600px;
+            margin: 0 auto;
         }
-        .search-input:focus { border-color: var(--accent); }
-        .search-input::placeholder { color: var(--text3); }
-        .search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text3); }
 
-        /* Filters */
-        .filters { display: flex; justify-content: center; gap: 0.75rem; margin-top: 1rem; }
-        .filters select {
-            padding: 0.5rem 1rem; font-size: 0.85rem; border-radius: 6px;
-            background: var(--bg2); border: 1px solid var(--border); color: var(--text2);
-            cursor: pointer; outline: none;
+        .search-box {
+            position: relative;
+            display: flex;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 0.25rem;
+            transition: all 0.3s;
         }
-        .filters select:focus { border-color: var(--accent); }
-        .filters.hidden { display: none; }
 
-        /* Stats */
-        .stats { display: flex; justify-content: center; gap: 3rem; padding: 1.5rem 0; color: var(--text3); font-size: 0.9rem; }
-        .stats span strong { color: var(--text); font-size: 1.1rem; }
-        .stats.hidden { display: none; }
+        .search-box:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px var(--accent-glow);
+        }
 
-        /* Results */
-        .results { padding: 1rem 0 4rem; }
+        .search-box input {
+            flex: 1;
+            padding: 1rem 1.25rem;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text);
+            font-size: 1rem;
+        }
+
+        .search-box input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .search-btn {
+            padding: 0.875rem 1.5rem;
+            background: var(--accent);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .search-btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        /* Featured sections */
+        .featured {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-top: 4rem;
+        }
+
+        .featured-card {
+            position: relative;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            overflow: hidden;
+        }
+
+        .featured-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.03) 100%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .featured-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .featured-card:hover::before {
+            opacity: 1;
+        }
+
+        .card-icon {
+            width: 56px;
+            height: 56px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-icon svg {
+            width: 28px;
+            height: 28px;
+            color: var(--accent);
+        }
+
+        .featured-card h3 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .featured-card p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-stat {
+            display: flex;
+            align-items: baseline;
+            gap: 0.5rem;
+        }
+
+        .card-stat .number {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--accent);
+        }
+
+        .card-stat .label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        /* Results area */
+        .results-container {
+            display: none;
+        }
+
+        .results-container.active {
+            display: block;
+        }
+
         .results-header {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
         }
-        .results-header h2 { font-size: 1rem; font-weight: 500; color: var(--text2); }
-        .results-count { font-size: 0.85rem; color: var(--text3); }
 
-        /* Result Cards */
-        .result {
-            padding: 1.25rem; background: var(--bg2); border: 1px solid var(--border);
-            border-radius: 8px; margin-bottom: 0.75rem; transition: border-color 0.2s;
+        .results-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
         }
-        .result:hover { border-color: var(--accent); }
-        .result-title { font-weight: 600; margin-bottom: 0.5rem; }
-        .result-title a { color: var(--text); }
-        .result-title a:hover { color: var(--accent); text-decoration: none; }
-        .result-meta { font-size: 0.8rem; color: var(--text3); margin-bottom: 0.75rem; }
-        .result-meta span { margin-right: 1rem; }
-        .result-snippet { font-size: 0.9rem; color: var(--text2); line-height: 1.7; }
-        .result-snippet mark { background: rgba(59, 130, 246, 0.3); color: var(--text); padding: 0.1em 0.2em; border-radius: 2px; }
-        .result-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
+
+        .results-count {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 1.5rem;
+        }
+
+        .back-btn:hover {
+            background: var(--bg-card-hover);
+            color: var(--text);
+        }
+
+        /* Result cards */
+        .result-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .result-card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .result-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .result-title a {
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .result-title a:hover {
+            color: var(--accent);
+        }
+
+        .result-meta {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 0.75rem;
+        }
+
+        .result-snippet {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+
+        .result-snippet mark {
+            background: var(--accent-glow);
+            color: var(--text);
+            padding: 0.1em 0.3em;
+            border-radius: 3px;
+        }
+
+        /* Video grid */
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .video-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .video-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .video-card img {
+            width: 100%;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            background: var(--gradient-1);
+        }
+
+        .video-card .info {
+            padding: 1rem;
+        }
+
+        .video-card .info p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Tape list */
+        .tape-section {
+            margin-bottom: 2rem;
+        }
+
+        .tape-section h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tape-card {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tape-card:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+        }
+
+        .tape-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .tape-icon svg {
+            width: 22px;
+            height: 22px;
+            color: white;
+        }
+
+        .tape-info {
+            flex: 1;
+        }
+
+        .tape-info h4 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .tape-info span {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .tape-badge {
+            padding: 0.25rem 0.75rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        /* Document viewer */
+        .doc-viewer {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .doc-content {
+            padding: 2rem;
+            font-family: 'Georgia', serif;
+            font-size: 1rem;
+            line-height: 1.9;
+            white-space: pre-wrap;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .media-player {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .media-player video,
+        .media-player audio {
+            width: 100%;
+            border-radius: 12px;
+        }
 
         /* Buttons */
         .btn {
-            display: inline-block; padding: 0.5rem 1rem; font-size: 0.85rem; border-radius: 6px;
-            border: 1px solid var(--border); background: var(--bg3); color: var(--text2);
-            cursor: pointer; transition: all 0.2s;
-        }
-        .btn:hover { background: var(--border); color: var(--text); text-decoration: none; }
-
-        /* Document Viewer */
-        .doc-viewer { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-        .doc-header {
-            padding: 1rem; border-bottom: 1px solid var(--border);
-            display: flex; justify-content: space-between; align-items: center; background: var(--bg3);
-        }
-        .doc-content {
-            padding: 2rem; font-family: 'Georgia', serif; font-size: 1rem; line-height: 1.9;
-            white-space: pre-wrap; max-height: 70vh; overflow-y: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
         }
 
-        /* Entity */
-        .entity-mentions { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
-        .mention-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; font-size: 0.85rem; }
-        .mention-row + .mention-row { border-top: 1px solid var(--border); }
-        .role-badge { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: var(--bg3); color: var(--text3); text-transform: uppercase; }
+        .btn:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-hover);
+            color: var(--text);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 0.75rem;
+            margin-top: 2rem;
+        }
+
+        /* Image grid */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 1rem;
+        }
+
+        .image-card {
+            position: relative;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+            aspect-ratio: 1;
+        }
+
+        .image-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .image-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 0.75rem;
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .image-card:hover .image-overlay {
+            opacity: 1;
+        }
+
+        .image-overlay span {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        /* Image modal */
+        .image-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .image-modal-content {
+            position: relative;
+            max-width: 90vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .image-modal-content img {
+            max-width: 100%;
+            max-height: calc(90vh - 80px);
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .image-modal-close {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            width: 36px;
+            height: 36px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            color: var(--text);
+            font-size: 1.5rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .image-modal-close:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .image-modal-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        /* Entity badges */
+        .entity-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .mention-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 0;
+            border-top: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+
+        .mention-row:first-child {
+            border-top: none;
+        }
+
+        .mention-row a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .mention-row a:hover {
+            text-decoration: underline;
+        }
 
         /* States */
-        .empty { text-align: center; padding: 3rem; color: var(--text3); }
-        .loading { text-align: center; padding: 3rem; color: var(--text3); }
-        .loading::after { content: ''; animation: dots 1.5s infinite; }
-        @keyframes dots { 0%, 20% { content: ''; } 40% { content: '.'; } 60% { content: '..'; } 80%, 100% { content: '...'; } }
+        .loading {
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-dim);
+        }
 
-        /* Screen reader only */
-        .sr-only {
-            position: absolute; width: 1px; height: 1px; padding: 0;
-            margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0);
-            white-space: nowrap; border: 0;
+        .loading::after {
+            content: '';
+            animation: dots 1.5s infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+
+        .empty {
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-dim);
         }
 
         /* Footer */
-        footer { border-top: 1px solid var(--border); padding: 2rem 0; text-align: center; font-size: 0.85rem; color: var(--text3); padding-bottom: calc(2rem + env(safe-area-inset-bottom)); }
-        footer a { color: var(--text2); }
-
-        /* Media players - responsive */
-        .media-player { width: 100%; max-width: 800px; margin: 0 auto; }
-        .media-player audio, .media-player video { width: 100%; }
-
-        /* Gallery */
-        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
-        .gallery-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; cursor: pointer; transition: border-color 0.2s; }
-        .gallery-item:hover { border-color: var(--accent); }
-        .gallery-item img { width: 100%; height: 150px; object-fit: cover; border-bottom: 1px solid var(--border); }
-        .gallery-item p { padding: 0.5rem; font-size: 0.75rem; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .gallery-nav { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
-
-        /* ===== MOBILE RESPONSIVE ===== */
-
-        /* Tablet: 768px and below */
-        @media (max-width: 768px) {
-            .container { padding: 0 1rem; }
-            .hero { padding: 2.5rem 0 1.5rem; }
-            .hero h1 { font-size: 2rem; }
-            .hero p { font-size: 1rem; }
-            .stats { gap: 2rem; }
-            .gallery { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
-            .doc-content { padding: 1.5rem; font-size: 0.95rem; }
+        footer {
+            margin-top: 6rem;
+            padding: 2rem;
+            text-align: center;
+            border-top: 1px solid var(--border);
         }
 
-        /* Mobile: 600px and below */
+        footer p {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            color: var(--accent);
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 900px) {
+            .featured {
+                grid-template-columns: 1fr;
+            }
+        }
+
         @media (max-width: 600px) {
-            /* Header: stack on very small, otherwise shrink */
-            header .container { flex-wrap: wrap; gap: 0.5rem; }
-            header nav { gap: 1rem; font-size: 0.85rem; }
+            header {
+                padding: 0.75rem 1rem;
+            }
 
-            /* Hero: compact */
-            .hero { padding: 1.5rem 0 1rem; }
-            .hero h1 { font-size: 1.5rem; }
-            .hero p { font-size: 0.9rem; }
+            .logo {
+                font-size: 1rem;
+            }
 
-            /* Search: full width, smaller */
-            .search-wrap { margin: 1rem auto; }
-            .search-input { padding: 0.875rem 0.875rem 0.875rem 2.75rem; font-size: 1rem; }
-            .search-icon { left: 0.875rem; }
+            nav a {
+                padding: 0.4rem 0.75rem;
+                font-size: 0.85rem;
+            }
 
-            /* Filters: stack vertically */
-            .filters { flex-direction: column; gap: 0.5rem; }
-            .filters select { width: 100%; padding: 0.75rem 1rem; font-size: 1rem; }
+            main {
+                padding: 6rem 1rem 2rem;
+            }
 
-            /* Stats: wrap nicely */
-            .stats { gap: 1rem; flex-wrap: wrap; justify-content: center; font-size: 0.85rem; }
-            .stats span { white-space: nowrap; }
+            .hero {
+                padding: 2rem 0;
+            }
 
-            /* Results: tighter spacing */
-            .results { padding: 0.5rem 0 3rem; }
-            .results-header { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+            .hero h1 {
+                font-size: 2rem;
+            }
 
-            /* Result cards: mobile-friendly */
-            .result { padding: 1rem; margin-bottom: 0.5rem; }
-            .result-title { font-size: 0.95rem; }
-            .result-meta { font-size: 0.75rem; }
-            .result-meta span { display: block; margin-right: 0; margin-bottom: 0.25rem; }
-            .result-snippet { font-size: 0.85rem; line-height: 1.6; }
-            .result-actions { flex-wrap: wrap; }
+            .hero p {
+                font-size: 1rem;
+            }
 
-            /* Buttons: larger touch targets */
-            .btn { padding: 0.625rem 1rem; font-size: 0.9rem; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+            .search-box {
+                flex-direction: column;
+                padding: 0.5rem;
+            }
 
-            /* Entity mentions */
-            .mention-row { flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 0; }
-            .role-badge { font-size: 0.65rem; }
+            .search-box input {
+                width: 100%;
+                text-align: center;
+            }
 
-            /* Document viewer */
-            .doc-viewer { border-radius: 0; margin: 0 -1rem; border-left: none; border-right: none; }
-            .doc-header { padding: 0.75rem; flex-wrap: wrap; gap: 0.5rem; }
-            .doc-content { padding: 1rem; font-size: 0.9rem; line-height: 1.7; max-height: 60vh; }
+            .search-btn {
+                width: 100%;
+            }
 
-            /* Gallery: 2 columns on mobile */
-            .gallery { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
-            .gallery-item img { height: 120px; }
-            .gallery-item p { font-size: 0.7rem; padding: 0.4rem; }
-            .gallery-nav { flex-wrap: wrap; }
+            .featured-card {
+                padding: 1.5rem;
+            }
 
-            /* Footer */
-            footer { padding: 1.5rem 0; }
+            .video-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.75rem;
+            }
+
+            .video-card .info {
+                padding: 0.75rem;
+            }
+
+            .video-card .info p {
+                font-size: 0.75rem;
+            }
+
+            .tape-card {
+                padding: 0.875rem 1rem;
+            }
+
+            .doc-viewer {
+                border-radius: 0;
+                margin: 0 -1rem;
+            }
+
+            .image-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 0.5rem;
+            }
+
+            .image-card {
+                border-radius: 8px;
+            }
         }
 
-        /* Small phones: 400px and below */
-        @media (max-width: 400px) {
-            header nav { font-size: 0.8rem; gap: 0.75rem; }
-            .hero h1 { font-size: 1.35rem; }
-            .stats span strong { font-size: 1rem; }
-            .btn { padding: 0.5rem 0.75rem; font-size: 0.85rem; }
-            .gallery { grid-template-columns: repeat(2, 1fr); }
+        /* Screen reader */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
         }
     </style>
 </head>
 <body>
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+
     <header>
-        <div class="container">
-            <a href="#" onclick="goHome(); return false;" class="logo" aria-label="Epstein Files - Home">Epstein Files</a>
-            <nav aria-label="Main navigation">
-                <a href="#" onclick="browseImages(); return false;">Browse</a>
-                <a href="#" onclick="showAbout(); return false;">About</a>
-                <a href="https://codeberg.org/rillow/epstein-files" target="_blank" rel="noopener noreferrer">Source Code</a>
+        <div class="header-inner">
+            <a href="#" onclick="goHome(); return false;" class="logo">Epstein<span>Files</span></a>
+            <nav>
+                <a href="#" onclick="showImages(); return false;" id="nav-images">Images</a>
+                <a href="#" onclick="showVideos(); return false;" id="nav-videos">Videos</a>
+                <a href="#" onclick="showMaxwellTapes(); return false;" id="nav-maxwell">Maxwell Tapes</a>
+                <a href="#" onclick="showDocuments(); return false;" id="nav-docs">Documents</a>
+                <a href="#" onclick="showAbout(); return false;" id="nav-about">About</a>
             </nav>
         </div>
     </header>
 
-    <main class="container" id="main-content">
-        <div class="hero" id="hero">
-            <h1>DOJ Document Archive</h1>
-            <p>Search 14,000+ publicly released documents</p>
+    <main>
+        <!-- Home -->
+        <div id="home-view">
+            <section class="hero">
+                <div class="hero-badge">
+                    <span class="dot"></span>
+                    <span>20,000+ DOJ Documents</span>
+                </div>
+                <h1>Epstein Files</h1>
+                <p>Every document. Every name. Finally searchable.</p>
+            </section>
+
+            <div class="search-container">
+                <div class="search-box">
+                    <input type="search" id="q" placeholder="Search documents, names, locations..." autofocus>
+                    <button class="search-btn" onclick="doSearch()">Search</button>
+                </div>
+            </div>
+
+            <div class="featured">
+                <div class="featured-card" onclick="showVideos()">
+                    <div class="card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                    </div>
+                    <h3>Videos</h3>
+                    <p>Video files from the DOJ release</p>
+                    <div class="card-stat">
+                        <span class="number" id="stat-videos">419</span>
+                        <span class="label">videos</span>
+                    </div>
+                </div>
+
+                <div class="featured-card" onclick="showMaxwellTapes()">
+                    <div class="card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                    </div>
+                    <h3>Maxwell Tapes</h3>
+                    <p>Ghislaine Maxwell deposition audio</p>
+                    <div class="card-stat">
+                        <span class="number">11</span>
+                        <span class="label">recordings</span>
+                    </div>
+                </div>
+
+                <div class="featured-card" onclick="showDocuments()">
+                    <div class="card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                    </div>
+                    <h3>Documents</h3>
+                    <p>Court records, emails, and evidence files</p>
+                    <div class="card-stat">
+                        <span class="number" id="stat-docs">20,428</span>
+                        <span class="label">files</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="featured" style="margin-top: 1.5rem; grid-template-columns: 1fr;">
+                <div class="featured-card" onclick="showImages()" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(249, 115, 22, 0.1));">
+                    <div style="display: flex; align-items: center; gap: 2rem;">
+                        <div class="card-icon" style="background: linear-gradient(135deg, #ef4444, #f97316);">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                        </div>
+                        <div style="flex: 1;">
+                            <h3 style="font-size: 1.5rem;">Images</h3>
+                            <p>Photos and scans extracted from every PDF</p>
+                        </div>
+                        <div class="card-stat">
+                            <span class="number" id="stat-images" style="color: #f97316;">--</span>
+                            <span class="label">images</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="search-wrap">
-            <svg class="search-icon" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-            </svg>
-            <input type="search" class="search-input" id="q" placeholder="Search documents and entities..." autofocus aria-label="Search documents and entities">
-        </div>
-        <div class="filters" id="filters">
-            <select id="f-type" aria-label="Filter by document type">
-                <option value="">All Types</option>
-            </select>
-            <select id="f-dataset" aria-label="Filter by data set">
-                <option value="">All Data Sets</option>
-            </select>
-        </div>
-
-        <div class="stats" id="stats">
-            <span><strong id="s-docs">--</strong> documents</span>
-            <span><strong id="s-ents">--</strong> entities</span>
-            <span><strong id="s-words">--</strong> words</span>
-        </div>
-
-        <div class="results" id="results" role="region" aria-live="polite" aria-label="Search results"></div>
-        <div id="sr-announce" class="sr-only" aria-live="assertive"></div>
+        <!-- Results container -->
+        <div id="results-view" class="results-container"></div>
     </main>
 
     <footer>
-        <div class="container">
-            <p><a href="https://rainn.org" target="_blank">RAINN</a> 1-800-656-4673</p>
-        </div>
+        <p>
+            <a href="https://rainn.org" target="_blank">RAINN</a> 1-800-656-4673 &nbsp;·&nbsp;
+            <a href="https://justice.gov/epstein" target="_blank">DOJ Source</a>
+        </p>
     </footer>
 
+    <div id="sr-announce" class="sr-only" aria-live="assertive"></div>
+
     <script>
-    const API = '/api';
-    let navStack = [];  // Navigation history stack
-    let debounce = null;
+    const API = 'https://epstein-files-api.protonuser597.workers.dev/api';
 
-    function pushNav(type, data) {
-        navStack.push({ type, data, scroll: window.scrollY });
-        updateHash(type, data);
-    }
+    // Navigation state
+    let currentView = 'home';
+    let navStack = [];
 
-    // === Shareable URLs ===
-    function updateHash(type, data) {
-        let hash = '';
-        if (type === 'search' && data.q) hash = `#search/${encodeURIComponent(data.q)}`;
-        else if (type === 'doc') hash = `#doc/${data.id}`;
-        else if (type === 'entity') hash = `#entity/${data.id}`;
-        else if (type === 'browse') hash = '#browse';
-        else if (type === 'about') hash = '#about';
-        if (hash && location.hash !== hash) history.pushState(null, '', hash);
+    // Elements
+    const homeView = document.getElementById('home-view');
+    const resultsView = document.getElementById('results-view');
+    const searchInput = document.getElementById('q');
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStats();
+        handleHash();
+
+        searchInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') doSearch();
+        });
+    });
+
+    window.addEventListener('popstate', handleHash);
+
+    function loadStats() {
+        fetch(`${API}/stats`).then(r => r.json()).then(data => {
+            document.getElementById('stat-docs').textContent = (data.total || 0).toLocaleString();
+        }).catch(() => {});
+
+        fetch(`${API}/images?limit=1`).then(r => r.json()).then(data => {
+            document.getElementById('stat-images').textContent = (data.total || 0).toLocaleString();
+        }).catch(() => {
+            document.getElementById('stat-images').textContent = '--';
+        });
     }
 
     function handleHash() {
         const hash = location.hash.slice(1);
-        if (!hash) return;
+        if (!hash || hash === 'home') { goHome(); return; }
+
         const [type, ...rest] = hash.split('/');
         const param = rest.join('/');
+
         if (type === 'search' && param) {
-            document.getElementById('q').value = decodeURIComponent(param);
-            search(decodeURIComponent(param));
+            searchInput.value = decodeURIComponent(param);
+            doSearch();
+        } else if (type === 'images') {
+            showImages();
+        } else if (type === 'videos') {
+            showVideos();
+        } else if (type === 'maxwell') {
+            showMaxwellTapes();
+        } else if (type === 'documents') {
+            showDocuments();
         } else if (type === 'doc' && param) {
-            viewDoc(parseInt(param), true);
-        } else if (type === 'entity' && param) {
-            viewEntity(parseInt(param), true);
-        } else if (type === 'browse') {
-            browseImages(0, null, true);
+            viewDoc(parseInt(param));
         } else if (type === 'about') {
             showAbout();
         }
     }
 
-    window.addEventListener('popstate', handleHash);
-    window.addEventListener('DOMContentLoaded', handleHash);
+    function setView(view) {
+        currentView = view;
+        homeView.style.display = view === 'home' ? 'block' : 'none';
+        resultsView.style.display = view === 'home' ? 'none' : 'block';
+        resultsView.classList.toggle('active', view !== 'home');
 
-    document.getElementById('q').addEventListener('input', e => {
-        clearTimeout(debounce);
-        debounce = setTimeout(() => search(e.target.value), 300);
-    });
-    document.getElementById('q').addEventListener('keydown', e => {
-        if (e.key === 'Enter') { clearTimeout(debounce); search(e.target.value); }
-    });
-
-    fetch(`${API}/stats`).then(r => r.json()).then(d => {
-        document.getElementById('s-docs').textContent = (d.total || 0).toLocaleString();
-        document.getElementById('s-ents').textContent = (d.entity_count || 0).toLocaleString();
-        // Format word count (e.g., 6.4M)
-        const words = d.total_words || 0;
-        const wordStr = words >= 1000000 ? (words / 1000000).toFixed(1) + 'M' : words.toLocaleString();
-        document.getElementById('s-words').textContent = wordStr;
-
-        // Populate filter dropdowns
-        const typeSelect = document.getElementById('f-type');
-        const datasetSelect = document.getElementById('f-dataset');
-
-        if (d.document_types) {
-            d.document_types.forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t.type;
-                opt.textContent = `${t.type} (${t.count})`;
-                typeSelect.appendChild(opt);
-            });
-        }
-
-        if (d.data_sets) {
-            d.data_sets.forEach(ds => {
-                const opt = document.createElement('option');
-                opt.value = ds.data_set;
-                opt.textContent = `${ds.data_set} (${ds.count})`;
-                datasetSelect.appendChild(opt);
-            });
-        }
-    }).catch(() => {});
-
-    // Re-search when filters change
-    document.getElementById('f-type').addEventListener('change', () => {
-        const q = document.getElementById('q').value;
-        if (q.trim()) search(q);
-    });
-    document.getElementById('f-dataset').addEventListener('change', () => {
-        const q = document.getElementById('q').value;
-        if (q.trim()) search(q);
-    });
-
-    async function search(q) {
-        q = q.trim();
-        if (!q) {
-            document.getElementById('hero').classList.remove('hidden');
-            document.getElementById('stats').classList.remove('hidden');
-            document.getElementById('filters').classList.remove('hidden');
-            document.getElementById('results').innerHTML = '';
-            return;
-        }
-        document.getElementById('hero').classList.add('hidden');
-        document.getElementById('stats').classList.add('hidden');
-        document.getElementById('filters').classList.remove('hidden');
-        document.getElementById('results').innerHTML = '<div class="loading">Searching</div>';
-
-        // Get filter values
-        const docType = document.getElementById('f-type').value;
-        const dataSet = document.getElementById('f-dataset').value;
-
-        // Build search URL with filters
-        let searchUrl = `${API}/search?q=${encodeURIComponent(q)}&limit=50`;
-        if (docType) searchUrl += `&document_type=${encodeURIComponent(docType)}`;
-        if (dataSet) searchUrl += `&data_set=${encodeURIComponent(dataSet)}`;
-
-        try {
-            const [docs, ents] = await Promise.all([
-                fetch(searchUrl).then(r => r.json()),
-                fetch(`${API}/entities/search`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({query: q, limit: 5})
-                }).then(r => r.json())
-            ]);
-            navStack = [{ type: 'search', data: { docs, ents, q, docType, dataSet }, scroll: 0 }];
-            updateHash('search', { q });
-            render(docs, ents);
-        } catch (e) {
-            document.getElementById('results').innerHTML = '<div class="empty"><p>Search failed.</p></div>';
-        }
+        // Update nav active state
+        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+        if (view === 'images') document.getElementById('nav-images').classList.add('active');
+        else if (view === 'videos') document.getElementById('nav-videos').classList.add('active');
+        else if (view === 'maxwell') document.getElementById('nav-maxwell').classList.add('active');
+        else if (view === 'documents') document.getElementById('nav-docs').classList.add('active');
+        else if (view === 'about') document.getElementById('nav-about').classList.add('active');
     }
 
-    function render(docs, ents) {
-        let html = '';
+    function goHome() {
+        setView('home');
+        searchInput.value = '';
+        if (location.hash) history.pushState(null, '', location.pathname);
+        navStack = [];
+    }
+
+    function doSearch() {
+        const q = searchInput.value.trim();
+        if (!q) return;
+
+        setView('search');
+        resultsView.innerHTML = '<div class="loading">Searching</div>';
+        history.pushState(null, '', `#search/${encodeURIComponent(q)}`);
+
+        Promise.all([
+            fetch(`${API}/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json()),
+            fetch(`${API}/entities/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: q, limit: 5 })
+            }).then(r => r.json())
+        ]).then(([docs, ents]) => {
+            renderSearchResults(q, docs, ents);
+        }).catch(() => {
+            resultsView.innerHTML = '<div class="empty">Search failed. Please try again.</div>';
+        });
+    }
+
+    function renderSearchResults(query, docs, ents) {
+        let html = `<button class="back-btn" onclick="goHome()">← Back</button>`;
+
         if (ents.results?.length) {
-            html += `<div class="results-header"><h2>People & Organizations</h2><span class="results-count">${ents.total_results} found</span></div>`;
-            html += ents.results.map(e => `
-                <div class="result">
-                    <div class="result-title">${esc(e.canonical_name)}</div>
-                    <div class="result-meta"><span>${e.entity_type}</span><span>${e.mention_count} mentions</span></div>
-                    <div class="entity-mentions">
+            html += `
+                <div class="results-header">
+                    <h2>People & Organizations</h2>
+                    <span class="results-count">${ents.total_results} found</span>
+                </div>
+            `;
+            ents.results.forEach(e => {
+                html += `
+                    <div class="entity-card">
+                        <div class="result-title">${esc(e.canonical_name)}</div>
+                        <div class="result-meta">${e.entity_type} · ${e.mention_count} mentions</div>
                         ${(e.mentions || []).slice(0, 3).map(m => `
                             <div class="mention-row">
                                 <span class="role-badge">${m.role || '?'}</span>
                                 <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
                             </div>
                         `).join('')}
-                        ${e.mention_count > 3 ? `<div class="mention-row"><a href="#" onclick="viewEntity(${e.entity_id}); return false;" class="btn" style="font-size: 0.75rem;">+ ${e.mention_count - 3} more</a></div>` : ''}
+                        ${e.mention_count > 3 ? `<div class="mention-row"><button class="btn" onclick="viewEntity(${e.entity_id})">View all ${e.mention_count} mentions</button></div>` : ''}
                     </div>
-                </div>
-            `).join('');
+                `;
+            });
         }
-        if (docs.results?.length) {
-            html += `<div class="results-header" style="margin-top: 2rem;"><h2>Documents</h2><span class="results-count">${docs.total_results} found</span></div>`;
-            html += docs.results.map(d => `
-                <div class="result">
-                    <div class="result-title"><a href="#" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
-                    <div class="result-meta"><span>${d.data_set || ''}</span></div>
-                    ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
-                    <div class="result-actions">
-                        <button class="btn" onclick="viewDoc(${d.document_id})">Read</button>
-                        <a href="${API}/documents/${d.document_id}/file" target="_blank" class="btn">PDF</a>
-                    </div>
-                </div>
-            `).join('');
-        }
-        if (!html) html = '<div class="empty"><p>No results found.</p></div>';
-        document.getElementById('results').innerHTML = html;
 
-        // Announce to screen readers
-        const docCount = docs.results?.length || 0;
-        const entCount = ents.results?.length || 0;
-        const announce = docCount + entCount > 0
-            ? `Found ${docCount} documents and ${entCount} entities`
-            : 'No results found';
-        document.getElementById('sr-announce').textContent = announce;
+        if (docs.results?.length) {
+            html += `
+                <div class="results-header" style="margin-top: 2rem;">
+                    <h2>Documents</h2>
+                    <span class="results-count">${docs.total_results} found</span>
+                </div>
+            `;
+            docs.results.forEach(d => {
+                html += `
+                    <div class="result-card">
+                        <div class="result-title"><a href="#" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
+                        <div class="result-meta">${d.data_set || ''}</div>
+                        ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
+                    </div>
+                `;
+            });
+        }
+
+        if (!ents.results?.length && !docs.results?.length) {
+            html += '<div class="empty">No results found.</div>';
+        }
+
+        resultsView.innerHTML = html;
     }
 
-    async function viewDoc(id, fromNav = false) {
-        // Push current view to nav stack before navigating (unless coming from back())
-        if (!fromNav) {
-            if (navStack.length > 0) {
-                navStack[navStack.length - 1].scroll = window.scrollY;
-            }
-            pushNav('doc', { id });
-        }
+    // === VIDEOS ===
+    async function showVideos(offset = 0) {
+        setView('videos');
+        resultsView.innerHTML = '<div class="loading">Loading videos</div>';
+        if (location.hash !== '#videos') history.pushState(null, '', '#videos');
 
-        currentPage = 0;  // Always reset page to 0 when viewing a document
-        document.getElementById('results').innerHTML = '<div class="loading">Loading</div>';
+        try {
+            const r = await fetch(`${API}/videos?limit=48&offset=${offset}`).then(r => r.json());
+
+            let html = `
+                <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="results-header">
+                    <h2>Video Evidence</h2>
+                    <span class="results-count">${r.total.toLocaleString()} videos</span>
+                </div>
+                <div class="video-grid">
+                    ${r.videos.map(v => `
+                        <div class="video-card" onclick="viewDoc(${v.id})">
+                            <img src="${API}/videos/${v.id}/thumb" loading="lazy" alt="${esc(v.title)}"
+                                 onerror="this.style.background='var(--gradient-1)'">
+                            <div class="info"><p>${esc(v.filename)}</p></div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="pagination">
+                    ${offset > 0 ? `<button class="btn" onclick="showVideos(${offset - 48})">← Previous</button>` : ''}
+                    ${r.videos.length === 48 ? `<button class="btn" onclick="showVideos(${offset + 48})">Next →</button>` : ''}
+                </div>
+            `;
+            resultsView.innerHTML = html;
+        } catch (e) {
+            resultsView.innerHTML = '<div class="empty">Failed to load videos.</div>';
+        }
+    }
+
+    // === MAXWELL TAPES ===
+    async function showMaxwellTapes() {
+        setView('maxwell');
+        resultsView.innerHTML = '<div class="loading">Loading</div>';
+        if (location.hash !== '#maxwell') history.pushState(null, '', '#maxwell');
+
+        try {
+            const r = await fetch(`${API}/maxwell-tapes`).then(r => r.json());
+            const day1 = r.tapes.filter(t => t.day === 'Day 1');
+            const day2 = r.tapes.filter(t => t.day === 'Day 2');
+
+            const micIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
+
+            const renderTapes = (tapes, dayLabel) => tapes.map(t => `
+                <div class="tape-card" onclick="viewDoc(${t.id})">
+                    <div class="tape-icon">${micIcon}</div>
+                    <div class="tape-info">
+                        <h4>Part ${t.part || '?'}</h4>
+                        <span>${esc(t.filename)}</span>
+                    </div>
+                    <span class="tape-badge">${dayLabel}</span>
+                </div>
+            `).join('');
+
+            let html = `
+                <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="results-header">
+                    <h2>Maxwell Deposition Tapes</h2>
+                    <span class="results-count">${r.total} recordings</span>
+                </div>
+                <p style="color: var(--text-muted); margin-bottom: 2rem;">
+                    Audio recordings from Ghislaine Maxwell's deposition.
+                </p>
+
+                <div class="tape-section">
+                    <h3>Day 1</h3>
+                    ${renderTapes(day1, 'Day 1')}
+                </div>
+
+                <div class="tape-section">
+                    <h3>Day 2</h3>
+                    ${renderTapes(day2, 'Day 2')}
+                </div>
+            `;
+            resultsView.innerHTML = html;
+        } catch (e) {
+            resultsView.innerHTML = '<div class="empty">Failed to load.</div>';
+        }
+    }
+
+    // === DOCUMENTS ===
+    async function showDocuments(offset = 0) {
+        setView('documents');
+        resultsView.innerHTML = '<div class="loading">Loading</div>';
+        if (location.hash !== '#documents') history.pushState(null, '', '#documents');
+
+        try {
+            const r = await fetch(`${API}/browse?limit=50&offset=${offset}&document_type=pdf`).then(r => r.json());
+
+            let html = `
+                <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="results-header">
+                    <h2>All Documents</h2>
+                    <span class="results-count">${r.total.toLocaleString()} files</span>
+                </div>
+            `;
+
+            r.results.forEach(d => {
+                html += `
+                    <div class="result-card" onclick="viewDoc(${d.document_id})" style="cursor:pointer;">
+                        <div class="result-title">${esc(d.title || d.filename)}</div>
+                        <div class="result-meta">${d.data_set || ''}</div>
+                    </div>
+                `;
+            });
+
+            html += `
+                <div class="pagination">
+                    ${offset > 0 ? `<button class="btn" onclick="showDocuments(${offset - 50})">← Previous</button>` : ''}
+                    ${r.results.length === 50 ? `<button class="btn" onclick="showDocuments(${offset + 50})">Next →</button>` : ''}
+                </div>
+            `;
+
+            resultsView.innerHTML = html;
+        } catch (e) {
+            resultsView.innerHTML = '<div class="empty">Failed to load.</div>';
+        }
+    }
+
+    // === IMAGES ===
+    async function showImages(offset = 0) {
+        setView('images');
+        resultsView.innerHTML = '<div class="loading">Loading images</div>';
+        if (location.hash !== '#images') history.pushState(null, '', '#images');
+
+        try {
+            const r = await fetch(`${API}/images?limit=60&offset=${offset}`).then(r => r.json());
+
+            if (r.status === 'extraction in progress') {
+                resultsView.innerHTML = `
+                    <button class="back-btn" onclick="goHome()">← Back</button>
+                    <div class="empty">Image extraction in progress. Check back soon!</div>
+                `;
+                return;
+            }
+
+            let html = `
+                <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="results-header">
+                    <h2>Images</h2>
+                    <span class="results-count">${r.total.toLocaleString()} images extracted from PDFs</span>
+                </div>
+                <div class="image-grid">
+                    ${r.images.map(img => `
+                        <div class="image-card" onclick="viewImage('${esc(img.filename)}', ${img.doc_id})">
+                            <img src="${API}/images/${img.filename}" loading="lazy" alt="Page ${img.page + 1}">
+                            <div class="image-overlay">
+                                <span>Doc #${img.doc_id} · Page ${img.page + 1}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="pagination">
+                    ${offset > 0 ? `<button class="btn" onclick="showImages(${offset - 60})">← Previous</button>` : ''}
+                    <span style="color: var(--text-dim); padding: 0.5rem 1rem;">${Math.floor(offset / 60) + 1} / ${Math.ceil(r.total / 60)}</span>
+                    ${r.images.length === 60 ? `<button class="btn" onclick="showImages(${offset + 60})">Next →</button>` : ''}
+                </div>
+            `;
+            resultsView.innerHTML = html;
+        } catch (e) {
+            resultsView.innerHTML = '<div class="empty">Failed to load images.</div>';
+        }
+    }
+
+    function viewImage(filename, docId) {
+        const modal = document.createElement('div');
+        modal.className = 'image-modal';
+        modal.innerHTML = `
+            <div class="image-modal-content">
+                <button class="image-modal-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                <img src="${API}/images/${filename}" alt="Full size">
+                <div class="image-modal-actions">
+                    <button class="btn" onclick="viewDoc(${docId}); this.closest('.image-modal').remove();">View Source Document</button>
+                    <a href="${API}/images/${filename}" download class="btn">Download Image</a>
+                </div>
+            </div>
+        `;
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        document.body.appendChild(modal);
+    }
+
+    // === DOCUMENT VIEWER ===
+    let currentPage = 0;
+
+    async function viewDoc(id) {
+        setView('doc');
+        resultsView.innerHTML = '<div class="loading">Loading</div>';
+        history.pushState(null, '', `#doc/${id}`);
+
         try {
             const doc = await fetch(`${API}/documents/${id}`).then(r => r.json());
 
-            // Audio file
-            if (doc.content_type?.startsWith('audio/') || doc.filename?.endsWith('.wav') || doc.filename?.endsWith('.mp3')) {
-                document.getElementById('results').innerHTML = `
+            // Audio
+            if (doc.content_type?.startsWith('audio/') || doc.filename?.match(/\.(wav|mp3|m4a)$/i)) {
+                resultsView.innerHTML = `
+                    <button class="back-btn" onclick="history.back()">← Back</button>
                     <div class="doc-viewer">
                         <div class="doc-header">
-                            <button class="btn" onclick="back()">Back</button>
+                            <span style="font-weight: 600;">${esc(doc.title || doc.filename)}</span>
                             <a href="${API}/documents/${id}/file" download class="btn">Download</a>
                         </div>
-                        <div class="doc-content" style="text-align:center;font-family:inherit;">
-                            <h3 style="margin-bottom:1rem;">${esc(doc.title || doc.filename)}</h3>
-                            <div class="media-player">
-                                <audio controls>
-                                    <source src="${API}/documents/${id}/file" type="${doc.content_type || 'audio/wav'}">
-                                </audio>
-                            </div>
-                            <p style="margin-top:1rem;color:var(--text3);">${(doc.file_size/1024/1024).toFixed(1)} MB</p>
+                        <div class="media-player">
+                            <audio controls autoplay>
+                                <source src="${API}/documents/${id}/file" type="${doc.content_type || 'audio/wav'}">
+                            </audio>
                         </div>
                     </div>
                 `;
                 return;
             }
 
-            // Video file
-            if (doc.content_type?.startsWith('video/') || doc.filename?.endsWith('.mp4')) {
-                document.getElementById('results').innerHTML = `
+            // Video
+            if (doc.content_type?.startsWith('video/') || doc.filename?.match(/\.(mp4|mov|avi)$/i)) {
+                resultsView.innerHTML = `
+                    <button class="back-btn" onclick="history.back()">← Back</button>
                     <div class="doc-viewer">
                         <div class="doc-header">
-                            <button class="btn" onclick="back()">Back</button>
+                            <span style="font-weight: 600;">${esc(doc.filename)}</span>
                             <a href="${API}/documents/${id}/file" download class="btn">Download</a>
                         </div>
-                        <div class="doc-content" style="text-align:center;font-family:inherit;">
-                            <div class="media-player">
-                                <video controls>
-                                    <source src="${API}/documents/${id}/file" type="${doc.content_type || 'video/mp4'}">
-                                </video>
-                            </div>
+                        <div class="media-player">
+                            <video controls>
+                                <source src="${API}/documents/${id}/file" type="${doc.content_type || 'video/mp4'}">
+                            </video>
                         </div>
                     </div>
                 `;
                 return;
             }
 
-            // PDF/text document
-            const d = await fetch(`${API}/documents/${id}/text`).then(r => r.json());
-            const totalPages = d.total_pages || 1;
-            document.getElementById('results').innerHTML = `
+            // PDF/Text
+            const text = await fetch(`${API}/documents/${id}/text`).then(r => r.json()).catch(() => null);
+            const totalPages = text?.total_pages || 1;
+            currentPage = 0;
+
+            resultsView.innerHTML = `
+                <button class="back-btn" onclick="history.back()">← Back</button>
                 <div class="doc-viewer">
                     <div class="doc-header">
-                        <button class="btn" onclick="back()">Back</button>
+                        <span style="font-weight: 600;">${esc(doc.title || doc.filename)}</span>
                         <div style="display:flex;gap:0.5rem;">
-                            <button class="btn" onclick="toggleView(${id})">Toggle Image</button>
+                            <button class="btn" onclick="toggleDocView(${id})">Toggle Image</button>
                             <a href="${API}/documents/${id}/file" target="_blank" class="btn">PDF</a>
                         </div>
                     </div>
-                    <div id="doc-img" style="display:none;padding:1rem;text-align:center;">
-                        <div style="margin-bottom:0.75rem;display:flex;justify-content:center;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                    <div id="doc-img" style="display:none;padding:1.5rem;text-align:center;">
+                        <div style="margin-bottom:1rem;display:flex;justify-content:center;align-items:center;gap:0.75rem;">
                             <button class="btn" onclick="prevPage(${id})">← Prev</button>
-                            <span style="min-width:60px;text-align:center;"><span id="page-num">1</span> / ${totalPages}</span>
+                            <span><span id="page-num">1</span> / ${totalPages}</span>
                             <button class="btn" onclick="nextPage(${id}, ${totalPages})">Next →</button>
                         </div>
-                        <img id="page-img" src="${API}/documents/${id}/pages/0/image?width=900" style="max-width:100%;border:1px solid var(--border);border-radius:4px;">
+                        <img id="page-img" src="${API}/documents/${id}/pages/0/image?width=900" style="max-width:100%;border-radius:8px;">
                     </div>
-                    <div id="doc-text" class="doc-content">${esc(d.full_text || 'No text available.')}</div>
+                    <div id="doc-text" class="doc-content">${esc(text?.full_text || 'No text available.')}</div>
                 </div>
             `;
         } catch (e) {
-            document.getElementById('results').innerHTML = '<div class="empty"><p>Failed to load.</p></div>';
+            resultsView.innerHTML = '<div class="empty">Failed to load document.</div>';
         }
     }
 
-    let currentPage = 0;
-    function toggleView(id) {
+    function toggleDocView(id) {
         const img = document.getElementById('doc-img');
         const txt = document.getElementById('doc-text');
         img.style.display = img.style.display === 'none' ? 'block' : 'none';
         txt.style.display = txt.style.display === 'none' ? 'block' : 'none';
     }
+
     function prevPage(id) {
         if (currentPage > 0) {
             currentPage--;
@@ -564,6 +1457,7 @@
             document.getElementById('page-num').textContent = currentPage + 1;
         }
     }
+
     function nextPage(id, total) {
         if (currentPage < total - 1) {
             currentPage++;
@@ -572,204 +1466,109 @@
         }
     }
 
-    async function viewEntity(id, fromNav = false) {
-        // Push current view to nav stack before navigating (unless coming from back())
-        if (!fromNav) {
-            if (navStack.length > 0) {
-                navStack[navStack.length - 1].scroll = window.scrollY;
-            }
-            pushNav('entity', { id });
-        }
+    // === ENTITY ===
+    async function viewEntity(id) {
+        setView('entity');
+        resultsView.innerHTML = '<div class="loading">Loading</div>';
 
-        document.getElementById('results').innerHTML = '<div class="loading">Loading mentions</div>';
         try {
             const [entity, mentions] = await Promise.all([
                 fetch(`${API}/entities/${id}`).then(r => r.json()),
                 fetch(`${API}/entities/${id}/mentions?limit=100`).then(r => r.json())
             ]);
-            document.getElementById('results').innerHTML = `
-                <div class="doc-viewer">
-                    <div class="doc-header">
-                        <button class="btn" onclick="back()">Back</button>
-                        <span style="color: var(--text2);">${esc(entity.canonical_name)} - ${mentions.total_mentions} mentions</span>
-                    </div>
-                    <div style="padding: 1rem;">
-                        ${mentions.mentions.map(m => `
-                            <div class="mention-row">
-                                <span class="role-badge">${m.role || '?'}</span>
-                                <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
-                                <span style="color: var(--text3); font-size: 0.75rem;">${m.data_set || ''}</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        } catch (e) {
-            document.getElementById('results').innerHTML = '<div class="empty"><p>Failed to load mentions.</p></div>';
-        }
-    }
-
-    function back() {
-        if (navStack.length <= 1) {
-            // Nothing to go back to - show home
-            goHome();
-            return;
-        }
-
-        // Pop current view
-        navStack.pop();
-        const prev = navStack[navStack.length - 1];
-
-        // Restore previous view (fromNav=true prevents re-pushing to stack)
-        if (prev.type === 'search') {
-            // Restore filter values
-            if (prev.data.docType !== undefined) {
-                document.getElementById('f-type').value = prev.data.docType || '';
-            }
-            if (prev.data.dataSet !== undefined) {
-                document.getElementById('f-dataset').value = prev.data.dataSet || '';
-            }
-            if (prev.data.q) {
-                document.getElementById('q').value = prev.data.q;
-            }
-            render(prev.data.docs, prev.data.ents);
-        } else if (prev.type === 'browse') {
-            browseImages(prev.data.offset, prev.data.filter, true);
-        } else if (prev.type === 'doc') {
-            viewDoc(prev.data.id, true);  // fromNav=true
-        } else if (prev.type === 'entity') {
-            viewEntity(prev.data.id, true);  // fromNav=true
-        }
-
-        // Restore scroll position after a brief delay
-        if (prev.scroll) {
-            setTimeout(() => window.scrollTo(0, prev.scroll), 50);
-        }
-    }
-
-    function goHome() {
-        document.getElementById('hero').classList.remove('hidden');
-        document.getElementById('stats').classList.remove('hidden');
-        document.getElementById('filters').classList.remove('hidden');
-        document.getElementById('results').innerHTML = '';
-        document.getElementById('q').value = '';
-        document.getElementById('f-type').value = '';
-        document.getElementById('f-dataset').value = '';
-        navStack = [];
-        if (location.hash) history.pushState(null, '', location.pathname);
-    }
-
-    let galleryOffset = 0;
-    let galleryFilter = null;
-
-    async function browseImages(offset = 0, filter = galleryFilter, fromNav = false) {
-        // Only push to nav stack if not coming from back() navigation
-        if (!fromNav) {
-            if (navStack.length > 0) {
-                navStack[navStack.length - 1].scroll = window.scrollY;
-            }
-            // For browse, we replace the stack entry if already browsing, otherwise push
-            if (navStack.length === 0 || navStack[navStack.length - 1].type !== 'browse') {
-                pushNav('browse', { offset, filter });
-            } else {
-                navStack[navStack.length - 1].data = { offset, filter };
-            }
-        }
-
-        galleryOffset = offset;
-        galleryFilter = filter;
-        document.getElementById('hero').classList.add('hidden');
-        document.getElementById('stats').classList.add('hidden');
-        document.getElementById('results').innerHTML = '<div class="loading">Loading</div>';
-
-        try {
-            let url = `${API}/browse?limit=24&offset=${offset}`;
-            if (filter) url += `&filter=${filter}`;
-            const r = await fetch(url).then(r => r.json());
-            const docs = r.results || [];
-
-            const filters = [
-                {id: null, label: 'All'},
-                {id: 'photos', label: 'Photos'},
-                {id: 'videos', label: 'Videos'},
-                {id: 'audio', label: 'Audio'},
-                {id: 'docs', label: 'Documents'}
-            ];
 
             let html = `
+                <button class="back-btn" onclick="history.back()">← Back</button>
                 <div class="results-header">
-                    <h2>Browse</h2>
-                    <span class="results-count">${r.total.toLocaleString()} items</span>
-                </div>
-                <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
-                    ${filters.map(f => `
-                        <button class="btn" style="${f.id === filter ? 'background:var(--accent);color:white;' : ''}"
-                                onclick="browseImages(0, ${f.id ? `'${f.id}'` : 'null'})">${f.label}</button>
-                    `).join('')}
-                </div>
-                <div class="gallery">
-                    ${docs.map(d => `
-                        <div class="gallery-item" onclick="viewDoc(${d.document_id})">
-                            <img src="${API}/documents/${d.document_id}/thumbnail?width=300" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23222%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2212%22>No preview</text></svg>'">
-                            <p>${esc(d.filename)}</p>
-                        </div>
-                    `).join('')}
-                </div>
-                <div class="gallery-nav">
-                    ${offset > 0 ? `<button class="btn" onclick="browseImages(${offset - 24})">← Previous</button>` : ''}
-                    ${docs.length === 24 ? `<button class="btn" onclick="browseImages(${offset + 24})">Next →</button>` : ''}
+                    <h2>${esc(entity.canonical_name)}</h2>
+                    <span class="results-count">${mentions.total_mentions} mentions</span>
                 </div>
             `;
-            document.getElementById('results').innerHTML = html;
+
+            mentions.mentions.forEach(m => {
+                html += `
+                    <div class="mention-row" style="padding: 1rem 0;">
+                        <span class="role-badge">${m.role || '?'}</span>
+                        <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
+                        <span style="color: var(--text-dim); font-size: 0.8rem;">${m.data_set || ''}</span>
+                    </div>
+                `;
+            });
+
+            resultsView.innerHTML = html;
         } catch (e) {
-            document.getElementById('results').innerHTML = '<div class="empty">Failed to load.</div>';
+            resultsView.innerHTML = '<div class="empty">Failed to load.</div>';
         }
     }
 
+    // === ABOUT ===
     function showAbout() {
-        document.getElementById('hero').classList.add('hidden');
-        document.getElementById('stats').classList.add('hidden');
-        document.getElementById('filters').classList.add('hidden');
+        setView('about');
         if (location.hash !== '#about') history.pushState(null, '', '#about');
-        document.getElementById('results').innerHTML = `
-            <div class="doc-viewer">
-                <div class="doc-header">
-                    <button class="btn" onclick="goHome()">Back</button>
-                    <span style="color: var(--text2);">About This Project</span>
+
+        resultsView.innerHTML = `
+            <div style="max-width: 700px; margin: 0 auto;">
+                <button class="back-btn" onclick="goHome()">← Back</button>
+
+                <h1 style="font-size: 2.5rem; font-weight: 800; margin-bottom: 1.5rem; letter-spacing: -0.02em;">About</h1>
+
+                <p style="font-size: 1.15rem; color: var(--text-muted); line-height: 1.8; margin-bottom: 2rem;">
+                    This site makes it easy to search and browse the Epstein files released by the
+                    U.S. Department of Justice. All documents come directly from
+                    <a href="https://www.justice.gov/epstein" target="_blank" style="color: var(--accent);">justice.gov</a>.
+                </p>
+
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 3rem;">
+                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+                        <div style="font-size: 2rem; font-weight: 800; color: var(--accent);">20,428</div>
+                        <div style="color: var(--text-muted); font-size: 0.9rem;">Documents</div>
+                    </div>
+                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+                        <div style="font-size: 2rem; font-weight: 800; color: #f97316;">37K+</div>
+                        <div style="color: var(--text-muted); font-size: 0.9rem;">Images extracted</div>
+                    </div>
+                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+                        <div style="font-size: 2rem; font-weight: 800; color: var(--accent);">419</div>
+                        <div style="color: var(--text-muted); font-size: 0.9rem;">Videos</div>
+                    </div>
+                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
+                        <div style="font-size: 2rem; font-weight: 800; color: var(--accent);">12K+</div>
+                        <div style="color: var(--text-muted); font-size: 0.9rem;">People & orgs identified</div>
+                    </div>
                 </div>
-                <div class="doc-content" style="font-family: inherit; line-height: 1.8;">
-<h2 style="margin-bottom: 1rem;">What is this?</h2>
-<p>A searchable archive of documents released by the U.S. Department of Justice related to the Jeffrey Epstein case. All documents are sourced directly from <a href="https://www.justice.gov/epstein" target="_blank">justice.gov/epstein</a>.</p>
 
-<h2 style="margin: 1.5rem 0 1rem;">What's included?</h2>
-<ul style="margin-left: 1.5rem;">
-<li><strong>15,000+ documents</strong> from DOJ Data Sets 1-8</li>
-<li><strong>419 videos</strong> from surveillance and depositions</li>
-<li><strong>11 audio files</strong> from the Maxwell interview</li>
-<li><strong>Full-text search</strong> across all OCR-processed documents</li>
-</ul>
+                <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">What we don't do</h2>
+                <p style="color: var(--text-muted); line-height: 1.8; margin-bottom: 2.5rem;">
+                    We're not journalists, investigators, or affiliated with anyone. We don't make claims
+                    or draw conclusions. This is just a search tool that makes public documents easier to find.
+                </p>
 
-<h2 style="margin: 1.5rem 0 1rem;">What this is NOT</h2>
-<ul style="margin-left: 1.5rem;">
-<li>Not a news site or investigation</li>
-<li>Not affiliated with DOJ, law enforcement, or any media outlet</li>
-<li>Not making claims - just making documents searchable</li>
-</ul>
+                <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">More files coming</h2>
+                <p style="color: var(--text-muted); line-height: 1.8; margin-bottom: 2.5rem;">
+                    The DOJ has announced over 1 million additional documents will be released.
+                    We'll add them as they become available.
+                </p>
 
-<h2 style="margin: 1.5rem 0 1rem;">Technical</h2>
-<p>Open source, built with Python/FastAPI and SQLite FTS5. All code at <a href="https://codeberg.org/rillow/epstein-files" target="_blank">codeberg.org/rillow/epstein-files</a>.</p>
-
-<h2 style="margin: 1.5rem 0 1rem;">Updates</h2>
-<p>DOJ has announced 1M+ additional documents pending release. This archive will be updated as new data sets become available.</p>
-
-<p style="margin-top: 2rem; color: var(--text3); font-size: 0.9rem;">If you or someone you know has been affected by sexual abuse, contact <a href="https://rainn.org" target="_blank">RAINN</a> at 1-800-656-4673.</p>
+                <div style="padding: 2rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; text-align: center;">
+                    <p style="color: var(--text-muted); margin-bottom: 0.5rem;">Need support?</p>
+                    <p style="font-size: 1.25rem; font-weight: 600;">
+                        <a href="https://rainn.org" target="_blank" style="color: var(--accent);">RAINN</a>
+                        <span style="color: var(--text-muted);">1-800-656-4673</span>
+                    </p>
                 </div>
             </div>
         `;
     }
 
-    function esc(s) { if (!s) return ''; return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function highlight(s) { return s.replace(/&gt;&gt;&gt;(.+?)&lt;&lt;&lt;/g, '<mark>$1</mark>'); }
+    // Utilities
+    function esc(s) {
+        if (!s) return '';
+        return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function highlight(s) {
+        return s.replace(/&gt;&gt;&gt;(.+?)&lt;&lt;&lt;/g, '<mark>$1</mark>');
+    }
     </script>
 </body>
 </html>

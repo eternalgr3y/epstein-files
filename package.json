@@ -1,0 +1,23 @@
+{
+  "name": "epstein-files",
+  "version": "1.0.0",
+  "description": "Searchable archive of DOJ Epstein case documents. All documents sourced from [justice.gov/epstein](https://www.justice.gov/epstein).",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://codeberg.org/rillow/epstein-files.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "wrangler": "^4.54.0"
+  }
+}

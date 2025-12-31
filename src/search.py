@@ -137,7 +137,7 @@ def search_documents_fts(
     offset: int = 0
 ) -> List[SearchResult]:
     """
-    Fast full-text search using FTS5.
+    Fast full-text search using FTS5, plus filename matching.
     """
     if not query or not query.strip():
         return []
@@ -145,13 +145,15 @@ def search_documents_fts(
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    raw_query = query.strip()
+    results = []
+    seen_ids = set()
 
     try:
         # Escape query for FTS5
-        fts_query = escape_fts5_query(query.strip())
+        fts_query = escape_fts5_query(raw_query)
 
-        # Build query - join to document_texts for snippet generation
-        # (FTS5 contentless tables don't support snippet())
+        # FTS5 full-text search
         sql = """
             SELECT
                 d.id as document_id,
@@ -181,13 +183,8 @@ def search_documents_fts(
         params.extend([limit, offset])
 
         cur.execute(sql, params)
-        rows = cur.fetchall()
 
-        results = []
-        raw_query = query.strip()
-
-        for row in rows:
-            # Generate snippet with markers from actual text or filename
+        for row in cur.fetchall():
             full_text = row['full_text'] or ""
             filename = row['filename'] or ""
             snippet = highlight_match_with_markers(full_text, raw_query, filename)
@@ -202,15 +199,54 @@ def search_documents_fts(
                 relevance_score=abs(row['rank']) if row['rank'] else 0.0,
                 snippet=snippet
             ))
-
-        return results
+            seen_ids.add(row['document_id'])
 
     except sqlite3.OperationalError as e:
-        logger.warning(f"FTS5 query failed: {e}, falling back to LIKE")
-        conn.close()
-        return search_documents_like(query, document_type, data_set, limit, offset)
-    finally:
-        conn.close()
+        logger.warning(f"FTS5 query failed: {e}")
+
+    # Also search by filename/title (catches videos, audio, etc. without text)
+    if len(results) < limit:
+        remaining = limit - len(results)
+        sql = """
+            SELECT d.id, d.filename, d.title, d.data_set, d.document_type, d.source_url
+            FROM documents d
+            WHERE (d.filename LIKE ? OR d.title LIKE ?)
+        """
+        params = [f'%{raw_query}%', f'%{raw_query}%']
+
+        if document_type:
+            sql += " AND d.document_type = ?"
+            params.append(document_type)
+
+        if data_set:
+            sql += " AND d.data_set = ?"
+            params.append(data_set)
+
+        sql += " ORDER BY d.id DESC LIMIT ?"
+        params.append(remaining + len(seen_ids))  # Get extra to account for duplicates
+
+        cur.execute(sql, params)
+
+        for row in cur.fetchall():
+            if row['id'] not in seen_ids and len(results) < limit:
+                filename = row['filename'] or ""
+                title = row['title'] or ""
+                snippet = highlight_match_with_markers(title, raw_query, filename)
+
+                results.append(SearchResult(
+                    document_id=row['id'],
+                    filename=row['filename'],
+                    title=row['title'],
+                    data_set=row['data_set'],
+                    document_type=row['document_type'],
+                    source_url=row['source_url'],
+                    relevance_score=0.5,  # Lower score for filename-only matches
+                    snippet=snippet
+                ))
+                seen_ids.add(row['id'])
+
+    conn.close()
+    return results
 
 
 def search_documents_like(
@@ -295,10 +331,12 @@ def search_entities(
     query: str,
     role: Optional[str] = None,
     entity_type: Optional[str] = None,
+    document_type: Optional[str] = None,
     limit: int = 50
 ) -> List[EntitySearchResult]:
     """
     Search for entities by name.
+    Optionally filter to only show entities with mentions in specific document types.
     """
     engine = get_engine()
     session = get_session(engine)
@@ -331,6 +369,10 @@ def search_entities(
             if role:
                 mentions_q = mentions_q.filter(Mention.role == role)
 
+            # Filter by document type if specified
+            if document_type:
+                mentions_q = mentions_q.filter(Document.document_type == document_type)
+
             mentions = []
             for mention, doc in mentions_q.limit(20).all():
                 mentions.append({
@@ -343,13 +385,26 @@ def search_entities(
                     'page_number': mention.page_number
                 })
 
-            results.append(EntitySearchResult(
-                entity_id=entity.id,
-                canonical_name=entity.canonical_name,
-                entity_type=entity.entity_type,
-                mention_count=entity.mention_count,
-                mentions=mentions
-            ))
+            # Only include entity if it has mentions matching the filter
+            if mentions or not document_type:
+                # Get filtered mention count if document_type specified
+                if document_type:
+                    filtered_count = session.query(func.count(Mention.id)).join(
+                        Document, Mention.document_id == Document.id
+                    ).filter(
+                        Mention.entity_id == entity.id,
+                        Document.document_type == document_type
+                    ).scalar() or 0
+                else:
+                    filtered_count = entity.mention_count
+
+                results.append(EntitySearchResult(
+                    entity_id=entity.id,
+                    canonical_name=entity.canonical_name,
+                    entity_type=entity.entity_type,
+                    mention_count=filtered_count,
+                    mentions=mentions
+                ))
 
         return results
 

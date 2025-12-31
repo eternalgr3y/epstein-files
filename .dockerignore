@@ -1,0 +1,35 @@
+# Raw files - now on R2
+raw/
+images/
+thumbnails/
+extracted/
+processed/
+
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.env
+
+# Logs and state
+*.log
+scraper_state.json
+*.sql.gz
+
+# Tests
+tests/
+*_test.py
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Docs
+*.md
+LICENSE

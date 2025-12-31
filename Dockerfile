@@ -2,24 +2,27 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Install system dependencies for PyMuPDF
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
+    libmupdf-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for caching
+# Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application code
 COPY src/ ./src/
 COPY frontend/ ./frontend/
-COPY database/ ./database/
 
-# Environment
+# Copy database (213MB)
+COPY database/epstein_files.db ./database/epstein_files.db
+
+# Don't copy raw files - they're on R2 CDN now
+
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
+ENV EPSTEIN_BASE_DIR=/app
 
 EXPOSE 8000
 

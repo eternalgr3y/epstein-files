@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any
 import os
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
@@ -34,7 +34,22 @@ from search import (
     get_document_types, get_data_sets
 )
 from importer import get_document_stats
-from config import FRONTEND_DIR, THUMBNAIL_DIR
+from config import FRONTEND_DIR, THUMBNAIL_DIR, BASE_DIR, R2_PUBLIC_URL
+
+IMAGES_DIR = BASE_DIR / "images"
+RAW_DIR = BASE_DIR / "raw"
+
+
+def get_r2_url(local_path: Path) -> Optional[str]:
+    """Convert local path to R2 CDN URL if R2 is configured."""
+    if not R2_PUBLIC_URL:
+        return None
+    try:
+        # Get path relative to BASE_DIR
+        rel_path = local_path.relative_to(BASE_DIR)
+        return f"{R2_PUBLIC_URL}/{rel_path}"
+    except ValueError:
+        return None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -175,6 +190,7 @@ class EntitySearchRequest(BaseModel):
     query: str
     role: Optional[str] = None
     entity_type: Optional[str] = None
+    document_type: Optional[str] = None
     limit: int = 50
 
 
@@ -219,7 +235,8 @@ async def api_info():
 async def browse_documents(
     limit: int = Query(24, le=100, ge=1),
     offset: int = Query(0, ge=0),
-    filter: Optional[str] = Query(None, description="Filter: 'photos', 'videos', 'audio', 'docs'")
+    filter: Optional[str] = Query(None, description="Filter: 'photos', 'videos', 'audio', 'docs'"),
+    document_type: Optional[str] = Query(None, description="Filter by document_type: 'pdf', 'video', 'audio'")
 ):
     """Browse all documents with pagination and optional filter."""
     engine = get_engine()
@@ -227,7 +244,10 @@ async def browse_documents(
     try:
         q = session.query(Document)
 
-        if filter == "photos":
+        # Support both old category filter and new document_type filter
+        if document_type:
+            q = q.filter(Document.document_type == document_type)
+        elif filter == "photos":
             q = q.filter(Document.category == "photo")
         elif filter == "videos":
             q = q.filter(Document.category == "video")
@@ -304,7 +324,7 @@ async def search(request: SearchRequest):
 @limiter.limit("30/minute")
 async def search_get(
     request: Request,
-    q: str = Query(..., description="Search query", min_length=1, max_length=200),
+    q: str = Query("", description="Search query", max_length=200),
     document_type: Optional[str] = Query(None, description="Filter by document type"),
     data_set: Optional[str] = Query(None, description="Filter by data set"),
     limit: int = Query(50, le=100, ge=1),
@@ -313,6 +333,40 @@ async def search_get(
     """Search documents (GET endpoint for simple queries)."""
     # Sanitize input
     q = q.strip()
+
+    # If no query but filters provided, browse by filter
+    if not q and (document_type or data_set):
+        engine = get_engine()
+        session = get_session(engine)
+        try:
+            query = session.query(Document)
+            if document_type:
+                query = query.filter(Document.document_type == document_type)
+            if data_set:
+                query = query.filter(Document.data_set == data_set)
+            total = query.count()
+            docs = query.order_by(Document.id.desc()).offset(offset).limit(limit).all()
+            return {
+                "query": "",
+                "total_results": total,
+                "cached": False,
+                "results": [
+                    {
+                        "document_id": d.id,
+                        "filename": d.filename,
+                        "title": d.title,
+                        "data_set": d.data_set,
+                        "document_type": d.document_type,
+                        "source_url": d.source_url,
+                        "relevance_score": 1.0,
+                        "snippet": d.title or d.filename or ""
+                    }
+                    for d in docs
+                ]
+            }
+        finally:
+            session.close()
+
     if not q:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
@@ -458,6 +512,13 @@ async def get_document_file(document_id: int):
             raise HTTPException(status_code=404, detail="Document not found")
 
         file_path = Path(doc.local_path)
+
+        # Redirect to R2 CDN if configured
+        r2_url = get_r2_url(file_path)
+        if r2_url:
+            return RedirectResponse(url=r2_url, status_code=302)
+
+        # Fallback to local file
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -654,6 +715,7 @@ async def search_entities_post(request: Request, body: EntitySearchRequest):
         query=body.query,
         role=body.role,
         entity_type=body.entity_type,
+        document_type=body.document_type,
         limit=body.limit
     )
 
@@ -762,6 +824,161 @@ async def get_roles():
 async def document_types():
     """Get all document types with counts."""
     return {"document_types": get_document_types()}
+
+
+# =============================================================================
+# VIDEO & MAXWELL TAPES ENDPOINTS
+# =============================================================================
+
+@app.get("/api/videos")
+async def list_videos(
+    limit: int = Query(100, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """List all videos with thumbnail info."""
+    engine = get_engine()
+    session = get_session(engine)
+
+    try:
+        query = session.query(Document).filter(Document.document_type == "video")
+        total = query.count()
+        videos = query.order_by(Document.id).offset(offset).limit(limit).all()
+
+        return {
+            "total": total,
+            "offset": offset,
+            "videos": [
+                {
+                    "id": v.id,
+                    "filename": v.filename,
+                    "title": v.title or v.filename,
+                    "data_set": v.data_set,
+                    "has_thumbnail": (THUMBNAIL_DIR / f"{v.id}.jpg").exists()
+                }
+                for v in videos
+            ]
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/videos/{document_id}/thumb")
+async def get_video_thumbnail(document_id: int):
+    """Get pre-generated video thumbnail."""
+    thumb_path = THUMBNAIL_DIR / f"{document_id}.jpg"
+
+    # Redirect to R2 CDN if configured
+    r2_url = get_r2_url(thumb_path)
+    if r2_url:
+        return RedirectResponse(url=r2_url, status_code=302)
+
+    # Fallback to local
+    if thumb_path.exists():
+        return FileResponse(str(thumb_path), media_type="image/jpeg")
+
+    # Fallback to dynamic generation
+    return await get_document_thumbnail(document_id, width=320)
+
+
+@app.get("/api/maxwell-tapes")
+async def list_maxwell_tapes():
+    """Get all Maxwell interview audio files."""
+    engine = get_engine()
+    session = get_session(engine)
+
+    try:
+        tapes = session.query(Document).filter(
+            Document.document_type == "audio",
+            Document.data_set == "maxwell-interview"
+        ).order_by(Document.filename).all()
+
+        return {
+            "total": len(tapes),
+            "description": "Ghislaine Maxwell deposition recordings from July 2025",
+            "tapes": [
+                {
+                    "id": t.id,
+                    "filename": t.filename,
+                    "title": t.title or t.filename,
+                    "day": "Day 1" if "Day 1" in (t.title or "") else "Day 2" if "Day 2" in (t.title or "") else "Unknown",
+                    "part": t.title.split("Part")[1].split("-")[0].strip() if "Part" in (t.title or "") else None
+                }
+                for t in tapes
+            ]
+        }
+    finally:
+        session.close()
+
+
+# =============================================================================
+# IMAGES API
+# =============================================================================
+
+@app.get("/api/images")
+async def list_images(
+    limit: int = Query(60, le=200),
+    offset: int = Query(0, ge=0)
+):
+    """List extracted images from PDFs."""
+    import json
+
+    manifest_path = IMAGES_DIR / "manifest.json"
+    if not manifest_path.exists():
+        return {"total": 0, "images": [], "status": "extraction in progress"}
+
+    try:
+        with open(manifest_path) as f:
+            data = json.load(f)
+
+        total = data.get("total_images", 0)
+        images = data.get("images", [])
+
+        # Paginate
+        page_images = images[offset:offset + limit]
+
+        return {
+            "total": total,
+            "offset": offset,
+            "images": page_images
+        }
+    except Exception as e:
+        logger.error(f"Error loading images manifest: {e}")
+        return {"total": 0, "images": [], "error": str(e)}
+
+
+@app.get("/api/images/{filename}")
+async def get_image(filename: str):
+    """Serve an extracted image."""
+    # Sanitize filename
+    if ".." in filename or "/" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    image_path = IMAGES_DIR / filename
+
+    # Redirect to R2 CDN if configured
+    r2_url = get_r2_url(image_path)
+    if r2_url:
+        return RedirectResponse(url=r2_url, status_code=302)
+
+    # Fallback to local
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Determine media type
+    ext = filename.split(".")[-1].lower()
+    media_types = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "tiff": "image/tiff",
+        "tif": "image/tiff"
+    }
+
+    return FileResponse(
+        str(image_path),
+        media_type=media_types.get(ext, "application/octet-stream")
+    )
 
 
 @app.get("/api/data-sets")

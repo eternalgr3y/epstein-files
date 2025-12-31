@@ -44,3 +44,18 @@ raw/
 thumbnails/
 scraper_state.json
 epstein_files.sql.gz
+
+# Node
+node_modules/
+package-lock.json
+
+# Generated images
+images/
+
+# Local database
+*.db
+*.db-shm
+*.db-wal
+
+# Fly.io (not using)
+fly.toml

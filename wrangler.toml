@@ -1,0 +1,16 @@
+name = "epstein-files-api"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+workers_dev = true
+
+[vars]
+R2_PUBLIC_URL = "https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "epstein-files-db"
+database_id = "ae344bab-8a31-422d-bb07-fc07d5d69189"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "epstein-files"
