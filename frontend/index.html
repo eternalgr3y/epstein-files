@@ -3,57 +3,107 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Epstein Files</title>
-    <meta name="description" content="Search 20,000+ documents from the DOJ Epstein Files release. Every document, every name, searchable.">
+
+    <!-- Primary Meta Tags -->
+    <title>Epstein Files - Search 20,000+ DOJ Documents | EpsteinProject.org</title>
+    <meta name="title" content="Epstein Files - Search 20,000+ DOJ Documents | EpsteinProject.org">
+    <meta name="description" content="Search and browse 20,000+ declassified documents from the DOJ Epstein Files release. Court records, depositions, emails, and evidence files. Every document, every name, searchable.">
+    <meta name="keywords" content="Epstein files, DOJ documents, Epstein documents, Ghislaine Maxwell, court records, declassified documents, Epstein case, document search">
+    <meta name="robots" content="index, follow">
+    <meta name="author" content="Epstein Project">
+    <link rel="canonical" href="https://epsteinproject.org/">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://epsteinproject.org/">
+    <meta property="og:title" content="Epstein Files - Search 20,000+ DOJ Documents">
+    <meta property="og:description" content="Search and browse 20,000+ declassified documents from the DOJ Epstein Files release. Court records, depositions, emails, and evidence files.">
+    <meta property="og:image" content="https://epsteinproject.org/og-image.png">
+    <meta property="og:site_name" content="Epstein Project">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://epsteinproject.org/">
+    <meta property="twitter:title" content="Epstein Files - Search 20,000+ DOJ Documents">
+    <meta property="twitter:description" content="Search and browse 20,000+ declassified documents from the DOJ Epstein Files release. Every document, every name, searchable.">
+    <meta property="twitter:image" content="https://epsteinproject.org/og-image.png">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Epstein Project",
+        "alternateName": "Epstein Files",
+        "url": "https://epsteinproject.org/",
+        "description": "Search and browse 20,000+ declassified documents from the DOJ Epstein Files release",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://epsteinproject.org/#search/{search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+        }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": "DOJ Epstein Files",
+        "description": "Declassified documents from the U.S. Department of Justice related to the Jeffrey Epstein case",
+        "url": "https://epsteinproject.org/",
+        "license": "https://www.usa.gov/government-works",
+        "creator": {
+            "@type": "Organization",
+            "name": "U.S. Department of Justice"
+        },
+        "distribution": {
+            "@type": "DataDownload",
+            "encodingFormat": "PDF",
+            "contentUrl": "https://www.justice.gov/epstein"
+        }
+    }
+    </script>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+
+    <!-- Google AdSense - Replace ca-pub-XXXXXXX with your publisher ID -->
+    <!-- <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script> -->
+
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-            --bg-dark: #08090a;
-            --bg-card: rgba(255, 255, 255, 0.03);
-            --bg-card-hover: rgba(255, 255, 255, 0.06);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-hover: rgba(255, 255, 255, 0.15);
-            --text: #f4f4f5;
-            --text-muted: #a1a1aa;
-            --text-dim: #52525b;
-            --accent: #3b82f6;
-            --accent-glow: rgba(59, 130, 246, 0.4);
-            --red: #ef4444;
-            --gradient-1: #0f172a;
-            --gradient-2: #1e1b4b;
+            --bg: #0a0908;
+            --bg-elevated: #12110f;
+            --border: rgba(201, 165, 92, 0.12);
+            --border-hover: rgba(201, 165, 92, 0.25);
+            --text: #ebe7e0;
+            --text-muted: #8a857d;
+            --text-dim: #5c5850;
+            --accent: #c9a55c;
+            --accent-hover: #d4b06a;
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg-dark);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: var(--bg);
             color: var(--text);
-            line-height: 1.6;
+            line-height: 1.7;
             min-height: 100vh;
             overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* Background layers */
-        .bg-gradient {
-            position: fixed;
-            inset: 0;
-            background:
-                radial-gradient(ellipse 80% 50% at 50% -20%, var(--gradient-2), transparent),
-                radial-gradient(ellipse 60% 40% at 100% 0%, rgba(59, 130, 246, 0.15), transparent),
-                radial-gradient(ellipse 50% 30% at 0% 100%, rgba(139, 92, 246, 0.1), transparent),
-                var(--bg-dark);
-            z-index: -2;
-        }
-
-        .bg-grid {
-            position: fixed;
-            inset: 0;
-            background-image:
-                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-            background-size: 60px 60px;
-            z-index: -1;
-            mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+        /* Background */
+        .bg-gradient, .bg-grid {
+            display: none;
         }
 
         /* Header */
@@ -63,10 +113,8 @@
             left: 0;
             right: 0;
             z-index: 100;
-            padding: 1rem 2rem;
-            background: rgba(8, 9, 10, 0.8);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 3rem;
+            background: transparent;
         }
 
         .header-inner {
@@ -78,11 +126,13 @@
         }
 
         .logo {
-            font-size: 1.1rem;
-            font-weight: 700;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1rem;
+            font-weight: 400;
             color: var(--text);
             text-decoration: none;
-            letter-spacing: -0.02em;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
         }
 
         .logo span {
@@ -91,90 +141,157 @@
 
         nav {
             display: flex;
-            gap: 0.5rem;
+            gap: 2.5rem;
         }
 
         nav a {
-            padding: 0.5rem 1rem;
+            padding: 0;
             color: var(--text-muted);
             text-decoration: none;
-            font-size: 0.9rem;
-            font-weight: 500;
-            border-radius: 8px;
-            transition: all 0.2s;
+            font-size: 0.7rem;
+            font-weight: 400;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            transition: color 0.3s ease;
         }
 
         nav a:hover {
-            color: var(--text);
-            background: var(--bg-card);
+            color: var(--accent);
         }
 
         nav a.active {
             color: var(--text);
-            background: var(--bg-card);
+        }
+
+        /* Mobile hamburger menu */
+        .hamburger {
+            display: none;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.5rem;
+            z-index: 101;
+        }
+
+        .hamburger span {
+            display: block;
+            width: 24px;
+            height: 2px;
+            background: var(--text);
+            margin: 5px 0;
+            transition: all 0.3s;
+        }
+
+        .hamburger.open span:nth-child(1) {
+            transform: rotate(45deg) translate(5px, 5px);
+        }
+
+        .hamburger.open span:nth-child(2) {
+            opacity: 0;
+        }
+
+        .hamburger.open span:nth-child(3) {
+            transform: rotate(-45deg) translate(5px, -5px);
+        }
+
+        @media (max-width: 768px) {
+            .hamburger {
+                display: block;
+            }
+
+            nav {
+                position: fixed;
+                top: 0;
+                right: -100%;
+                width: 80%;
+                max-width: 320px;
+                height: 100vh;
+                background: var(--bg);
+                flex-direction: column;
+                padding: 6rem 2.5rem 2rem;
+                gap: 0;
+                transition: right 0.4s ease;
+                border-left: 1px solid var(--border);
+            }
+
+            nav.open {
+                right: 0;
+            }
+
+            nav a {
+                padding: 1.25rem 0;
+                font-size: 0.8rem;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .nav-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.7);
+                z-index: 99;
+            }
+
+            .nav-overlay.open {
+                display: block;
+            }
+
+            header {
+                padding: 1.25rem 1.5rem;
+            }
         }
 
         /* Main content */
         main {
-            max-width: 1200px;
+            max-width: 900px;
             margin: 0 auto;
-            padding: 8rem 2rem 4rem;
+            padding: 0 2rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
 
         /* Hero */
         .hero {
             text-align: center;
-            padding: 4rem 0 3rem;
+            padding: 8rem 0 4rem;
         }
 
         .hero-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.4rem 1rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 100px;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-bottom: 1.5rem;
+            display: block;
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            margin-bottom: 3rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
         }
 
         .hero-badge .dot {
-            width: 6px;
-            height: 6px;
-            background: var(--accent);
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            display: none;
         }
 
         .hero h1 {
-            font-size: clamp(2.5rem, 6vw, 4rem);
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
-            margin-bottom: 1rem;
-            background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: clamp(2.5rem, 7vw, 4.5rem);
+            font-weight: 400;
+            letter-spacing: -0.01em;
+            line-height: 1.05;
+            margin-bottom: 1.5rem;
+            color: var(--text);
         }
 
         .hero p {
-            font-size: 1.15rem;
+            font-size: 1rem;
             color: var(--text-muted);
-            max-width: 500px;
-            margin: 0 auto 2.5rem;
+            max-width: 420px;
+            margin: 0 auto 4rem;
+            line-height: 1.8;
         }
 
         /* Search */
         .search-container {
-            max-width: 600px;
+            max-width: 480px;
             margin: 0 auto;
         }
 
@@ -182,26 +299,25 @@
             position: relative;
             display: flex;
             align-items: center;
-            background: var(--bg-card);
+            background: transparent;
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 0.25rem;
-            transition: all 0.3s;
+            padding: 0;
+            transition: border-color 0.3s ease;
         }
 
         .search-box:focus-within {
             border-color: var(--accent);
-            box-shadow: 0 0 0 4px var(--accent-glow);
         }
 
         .search-box input {
             flex: 1;
-            padding: 1rem 1.25rem;
+            padding: 1.25rem 1.5rem;
             background: transparent;
             border: none;
             outline: none;
             color: var(--text);
-            font-size: 1rem;
+            font-size: 0.95rem;
+            letter-spacing: 0.01em;
         }
 
         .search-box input::placeholder {
@@ -209,105 +325,48 @@
         }
 
         .search-btn {
-            padding: 0.875rem 1.5rem;
-            background: var(--accent);
+            padding: 1.25rem 1.75rem;
+            background: transparent;
             border: none;
-            border-radius: 12px;
-            color: white;
-            font-weight: 600;
-            font-size: 0.9rem;
+            border-left: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            font-weight: 400;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s ease;
         }
 
         .search-btn:hover {
-            background: #2563eb;
-            transform: translateY(-1px);
+            color: var(--accent);
+            background: rgba(201, 165, 92, 0.05);
         }
 
-        /* Featured sections */
-        .featured {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.5rem;
-            margin-top: 4rem;
-        }
-
-        .featured-card {
-            position: relative;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 2rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            overflow: hidden;
-        }
-
-        .featured-card::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.03) 100%);
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        .featured-card:hover {
-            border-color: var(--border-hover);
-            transform: translateY(-4px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .featured-card:hover::before {
-            opacity: 1;
-        }
-
-        .card-icon {
-            width: 56px;
-            height: 56px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 14px;
+        /* Browse links */
+        .browse-links {
             display: flex;
-            align-items: center;
             justify-content: center;
-            margin-bottom: 1.5rem;
+            align-items: center;
+            gap: 1.5rem;
+            margin-top: 5rem;
         }
 
-        .card-icon svg {
-            width: 28px;
-            height: 28px;
-            color: var(--accent);
-        }
-
-        .featured-card h3 {
-            font-size: 1.25rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .featured-card p {
+        .browse-links a {
             color: var(--text-muted);
-            font-size: 0.9rem;
-            margin-bottom: 1.5rem;
+            text-decoration: none;
+            font-size: 0.8rem;
+            letter-spacing: 0.08em;
+            transition: color 0.3s ease;
         }
 
-        .card-stat {
-            display: flex;
-            align-items: baseline;
-            gap: 0.5rem;
-        }
-
-        .card-stat .number {
-            font-size: 2rem;
-            font-weight: 800;
+        .browse-links a:hover {
             color: var(--accent);
         }
 
-        .card-stat .label {
+        .browse-links .sep {
             color: var(--text-dim);
-            font-size: 0.85rem;
+            font-size: 0.6rem;
         }
 
         /* Results area */
@@ -317,69 +376,79 @@
 
         .results-container.active {
             display: block;
+            padding-top: 10rem;
+            min-height: 100vh;
         }
 
         .results-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
+            align-items: baseline;
+            margin-bottom: 3rem;
+            padding-bottom: 1.5rem;
             border-bottom: 1px solid var(--border);
         }
 
         .results-header h2 {
-            font-size: 1.25rem;
-            font-weight: 600;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1.5rem;
+            font-weight: 400;
+            color: var(--text);
         }
 
         .results-count {
             color: var(--text-dim);
-            font-size: 0.9rem;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
         }
 
         .back-btn {
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.5rem 1rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            color: var(--text-muted);
-            font-size: 0.9rem;
+            padding: 0;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: all 0.2s;
-            margin-bottom: 1.5rem;
+            transition: color 0.3s ease;
+            margin-bottom: 3rem;
         }
 
         .back-btn:hover {
-            background: var(--bg-card-hover);
-            color: var(--text);
+            color: var(--accent);
         }
 
         /* Result cards */
         .result-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 1.25rem;
-            margin-bottom: 0.75rem;
-            transition: all 0.2s;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid var(--border);
+            padding: 2rem 0;
+            margin-bottom: 0;
+            transition: all 0.3s ease;
         }
 
         .result-card:hover {
-            border-color: var(--border-hover);
+            padding-left: 1rem;
+            border-color: var(--accent);
         }
 
         .result-title {
-            font-weight: 600;
-            margin-bottom: 0.5rem;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1.1rem;
+            font-weight: 400;
+            margin-bottom: 0.75rem;
         }
 
         .result-title a {
             color: var(--text);
             text-decoration: none;
+            transition: color 0.3s ease;
         }
 
         .result-title a:hover {
@@ -387,59 +456,63 @@
         }
 
         .result-meta {
-            font-size: 0.8rem;
+            font-size: 0.7rem;
             color: var(--text-dim);
-            margin-bottom: 0.75rem;
+            margin-bottom: 1rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
 
         .result-snippet {
             font-size: 0.9rem;
             color: var(--text-muted);
-            line-height: 1.7;
+            line-height: 1.8;
         }
 
         .result-snippet mark {
-            background: var(--accent-glow);
+            background: rgba(201, 165, 92, 0.2);
             color: var(--text);
             padding: 0.1em 0.3em;
-            border-radius: 3px;
         }
 
         /* Video grid */
         .video-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 1.25rem;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 2rem;
         }
 
         .video-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
+            background: transparent;
+            border: none;
             overflow: hidden;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.3s ease;
         }
 
         .video-card:hover {
-            border-color: var(--border-hover);
-            transform: translateY(-2px);
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .video-card:hover img {
+            border-color: var(--accent);
         }
 
         .video-card img {
             width: 100%;
             aspect-ratio: 16/9;
             object-fit: cover;
-            background: var(--gradient-1);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            transition: border-color 0.3s ease;
         }
 
         .video-card .info {
-            padding: 1rem;
+            padding: 1rem 0;
         }
 
         .video-card .info p {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: var(--text-muted);
             white-space: nowrap;
             overflow: hidden;
@@ -448,51 +521,43 @@
 
         /* Tape list */
         .tape-section {
-            margin-bottom: 2rem;
+            margin-bottom: 4rem;
         }
 
         .tape-section h3 {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--text-muted);
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1.1rem;
+            font-weight: 400;
+            color: var(--text);
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
             border-bottom: 1px solid var(--border);
         }
 
         .tape-card {
             display: flex;
             align-items: center;
-            gap: 1rem;
-            padding: 1rem 1.25rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            margin-bottom: 0.5rem;
+            gap: 2rem;
+            padding: 1.5rem 0;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 0;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s ease;
         }
 
         .tape-card:hover {
-            border-color: var(--border-hover);
-            background: var(--bg-card-hover);
+            padding-left: 1rem;
+            border-color: var(--accent);
         }
 
         .tape-icon {
-            width: 44px;
-            height: 44px;
-            background: linear-gradient(135deg, var(--accent), #8b5cf6);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
+            display: none;
         }
 
         .tape-icon svg {
-            width: 22px;
-            height: 22px;
-            color: white;
+            display: none;
         }
 
         .tape-info {
@@ -500,31 +565,33 @@
         }
 
         .tape-info h4 {
-            font-size: 0.95rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1rem;
+            font-weight: 400;
+            margin-bottom: 0.35rem;
+            color: var(--text);
         }
 
         .tape-info span {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text-dim);
         }
 
         .tape-badge {
-            padding: 0.25rem 0.75rem;
-            background: var(--bg-card);
+            padding: 0.3rem 0.75rem;
+            background: transparent;
             border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: var(--text-muted);
+            font-size: 0.6rem;
+            font-weight: 400;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
         }
 
         /* Document viewer */
         .doc-viewer {
-            background: var(--bg-card);
+            background: var(--bg-elevated);
             border: 1px solid var(--border);
-            border-radius: 16px;
             overflow: hidden;
         }
 
@@ -532,9 +599,14 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 1rem 1.5rem;
-            background: rgba(0, 0, 0, 0.3);
+            padding: 1.25rem 1.75rem;
+            background: transparent;
             border-bottom: 1px solid var(--border);
+        }
+
+        .doc-header span {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1rem;
         }
 
         .doc-content {
@@ -565,70 +637,89 @@
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.625rem 1.25rem;
-            background: var(--bg-card);
+            padding: 0.75rem 1.25rem;
+            background: transparent;
             border: 1px solid var(--border);
-            border-radius: 10px;
             color: var(--text-muted);
-            font-size: 0.9rem;
-            font-weight: 500;
+            font-size: 0.7rem;
+            font-weight: 400;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s ease;
             text-decoration: none;
         }
 
         .btn:hover {
-            background: var(--bg-card-hover);
-            border-color: var(--border-hover);
-            color: var(--text);
+            background: transparent;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn:focus-visible, a:focus-visible, button:focus-visible {
+            outline: 1px solid var(--accent);
+            outline-offset: 2px;
         }
 
         .btn-primary {
             background: var(--accent);
             border-color: var(--accent);
-            color: white;
+            color: var(--bg);
         }
 
         .btn-primary:hover {
-            background: #2563eb;
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
         }
 
         /* Pagination */
         .pagination {
             display: flex;
             justify-content: center;
-            gap: 0.75rem;
-            margin-top: 2rem;
+            align-items: center;
+            gap: 1.5rem;
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .pagination span {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            letter-spacing: 0.05em;
         }
 
         /* Image grid */
         .image-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 1rem;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
         }
 
         .image-card {
             position: relative;
-            background: var(--bg-card);
+            background: var(--bg-elevated);
             border: 1px solid var(--border);
-            border-radius: 12px;
             overflow: hidden;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.3s ease;
             aspect-ratio: 1;
         }
 
         .image-card:hover {
-            border-color: var(--border-hover);
-            transform: translateY(-2px);
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+            border-color: var(--accent);
+            transform: translateY(-4px);
         }
 
         .image-card img {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .image-card:hover img {
+            transform: scale(1.02);
         }
 
         .image-overlay {
@@ -636,10 +727,10 @@
             bottom: 0;
             left: 0;
             right: 0;
-            padding: 0.75rem;
-            background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+            padding: 1rem;
+            background: linear-gradient(transparent, rgba(10, 9, 8, 0.9));
             opacity: 0;
-            transition: opacity 0.2s;
+            transition: opacity 0.3s ease;
         }
 
         .image-card:hover .image-overlay {
@@ -647,8 +738,10 @@
         }
 
         .image-overlay span {
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.9);
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
 
         /* Image modal */
@@ -656,11 +749,11 @@
             position: fixed;
             inset: 0;
             z-index: 1000;
-            background: rgba(0, 0, 0, 0.9);
+            background: rgba(10, 9, 8, 0.95);
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 2rem;
+            padding: 3rem;
         }
 
         .image-modal-content {
@@ -674,59 +767,64 @@
 
         .image-modal-content img {
             max-width: 100%;
-            max-height: calc(90vh - 80px);
+            max-height: calc(90vh - 100px);
             object-fit: contain;
-            border-radius: 8px;
+            border: 1px solid var(--border);
         }
 
         .image-modal-close {
             position: absolute;
-            top: -40px;
+            top: -50px;
             right: 0;
-            width: 36px;
-            height: 36px;
-            background: var(--bg-card);
+            width: 40px;
+            height: 40px;
+            background: transparent;
             border: 1px solid var(--border);
-            border-radius: 50%;
-            color: var(--text);
-            font-size: 1.5rem;
+            color: var(--text-muted);
+            font-size: 1.25rem;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s;
+            transition: all 0.3s ease;
         }
 
         .image-modal-close:hover {
-            background: var(--bg-card-hover);
+            color: var(--accent);
+            border-color: var(--accent);
         }
 
         .image-modal-actions {
             display: flex;
             gap: 1rem;
-            margin-top: 1.5rem;
+            margin-top: 2rem;
         }
 
         /* Entity badges */
         .entity-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 1.25rem;
-            margin-bottom: 0.75rem;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid var(--border);
+            padding: 2rem 0;
+            margin-bottom: 0;
+            transition: all 0.3s ease;
+        }
+
+        .entity-card:hover {
+            padding-left: 1rem;
+            border-color: var(--accent);
         }
 
         .role-badge {
             display: inline-block;
-            padding: 0.2rem 0.6rem;
-            background: var(--bg-card);
+            padding: 0.3rem 0.6rem;
+            background: transparent;
             border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 0.7rem;
-            font-weight: 600;
+            font-size: 0.6rem;
+            font-weight: 400;
             color: var(--text-dim);
             text-transform: uppercase;
-            letter-spacing: 0.03em;
+            letter-spacing: 0.1em;
         }
 
         .mention-row {
@@ -763,6 +861,26 @@
             animation: dots 1.5s infinite;
         }
 
+        .error-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-muted);
+        }
+
+        .error-state h3 {
+            color: var(--red);
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .error-state p {
+            margin-bottom: 1.5rem;
+        }
+
+        .error-state .btn {
+            margin: 0 auto;
+        }
+
         @keyframes dots {
             0%, 20% { content: ''; }
             40% { content: '.'; }
@@ -778,20 +896,23 @@
 
         /* Footer */
         footer {
-            margin-top: 6rem;
-            padding: 2rem;
+            margin-top: 8rem;
+            padding: 3rem 2rem;
             text-align: center;
             border-top: 1px solid var(--border);
         }
 
         footer p {
             color: var(--text-dim);
-            font-size: 0.85rem;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
         }
 
         footer a {
             color: var(--text-muted);
             text-decoration: none;
+            transition: color 0.3s ease;
         }
 
         footer a:hover {
@@ -800,88 +921,86 @@
 
         /* Mobile responsive */
         @media (max-width: 900px) {
-            .featured {
-                grid-template-columns: 1fr;
+            .gallery-nav {
+                gap: 2.5rem;
             }
         }
 
         @media (max-width: 600px) {
             header {
-                padding: 0.75rem 1rem;
+                padding: 1rem 1.25rem;
             }
 
             .logo {
-                font-size: 1rem;
-            }
-
-            nav a {
-                padding: 0.4rem 0.75rem;
                 font-size: 0.85rem;
             }
 
             main {
-                padding: 6rem 1rem 2rem;
+                padding: 0 1.25rem;
             }
 
             .hero {
-                padding: 2rem 0;
+                padding: 6rem 0 3rem;
             }
 
             .hero h1 {
-                font-size: 2rem;
+                font-size: 2.25rem;
             }
 
             .hero p {
-                font-size: 1rem;
+                font-size: 0.95rem;
+                margin-bottom: 3rem;
             }
 
             .search-box {
                 flex-direction: column;
-                padding: 0.5rem;
+                border: 1px solid var(--border);
             }
 
             .search-box input {
                 width: 100%;
                 text-align: center;
+                padding: 1.25rem;
             }
 
             .search-btn {
                 width: 100%;
+                border-left: none;
+                border-top: 1px solid var(--border);
             }
 
-            .featured-card {
-                padding: 1.5rem;
+            .gallery-nav {
+                gap: 2rem;
+            }
+
+            .gallery-nav-count {
+                font-size: 1.5rem;
             }
 
             .video-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 0.75rem;
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
             }
 
             .video-card .info {
-                padding: 0.75rem;
-            }
-
-            .video-card .info p {
-                font-size: 0.75rem;
+                padding: 0.75rem 0;
             }
 
             .tape-card {
-                padding: 0.875rem 1rem;
+                padding: 1.25rem 0;
             }
 
             .doc-viewer {
-                border-radius: 0;
-                margin: 0 -1rem;
+                margin: 0 -1.25rem;
             }
 
             .image-grid {
-                grid-template-columns: repeat(3, 1fr);
-                gap: 0.5rem;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
             }
 
-            .image-card {
-                border-radius: 8px;
+            .results-container.active {
+                padding-top: 7rem;
             }
         }
 
@@ -902,16 +1021,22 @@
     <div class="bg-gradient"></div>
     <div class="bg-grid"></div>
 
+    <div class="nav-overlay" id="nav-overlay" onclick="toggleMobileNav()"></div>
     <header>
         <div class="header-inner">
             <a href="#" onclick="goHome(); return false;" class="logo">Epstein<span>Files</span></a>
-            <nav>
-                <a href="#" onclick="showImages(); return false;" id="nav-images">Images</a>
-                <a href="#" onclick="showVideos(); return false;" id="nav-videos">Videos</a>
-                <a href="#" onclick="showMaxwellTapes(); return false;" id="nav-maxwell">Maxwell Tapes</a>
-                <a href="#" onclick="showDocuments(); return false;" id="nav-docs">Documents</a>
-                <a href="#" onclick="showAbout(); return false;" id="nav-about">About</a>
+            <nav id="main-nav">
+                <a href="#" onclick="showImages(); closeMobileNav(); return false;" id="nav-images">Images</a>
+                <a href="#" onclick="showVideos(); closeMobileNav(); return false;" id="nav-videos">Videos</a>
+                <a href="#" onclick="showMaxwellTapes(); closeMobileNav(); return false;" id="nav-maxwell">Maxwell Tapes</a>
+                <a href="#" onclick="showDocuments(); closeMobileNav(); return false;" id="nav-docs">Documents</a>
+                <a href="#" onclick="showAbout(); closeMobileNav(); return false;" id="nav-about">About</a>
             </nav>
+            <button class="hamburger" id="hamburger" onclick="toggleMobileNav()" aria-label="Menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
         </div>
     </header>
 
@@ -919,12 +1044,9 @@
         <!-- Home -->
         <div id="home-view">
             <section class="hero">
-                <div class="hero-badge">
-                    <span class="dot"></span>
-                    <span>20,000+ DOJ Documents</span>
-                </div>
+                <div class="hero-badge">Department of Justice Release</div>
                 <h1>Epstein Files</h1>
-                <p>Every document. Every name. Finally searchable.</p>
+                <p>A searchable archive of documents, videos, and recordings from the official DOJ release.</p>
             </section>
 
             <div class="search-container">
@@ -934,77 +1056,26 @@
                 </div>
             </div>
 
-            <div class="featured">
-                <div class="featured-card" onclick="showVideos()">
-                    <div class="card-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="5 3 19 12 5 21 5 3"/>
-                        </svg>
-                    </div>
-                    <h3>Videos</h3>
-                    <p>Video files from the DOJ release</p>
-                    <div class="card-stat">
-                        <span class="number" id="stat-videos">419</span>
-                        <span class="label">videos</span>
-                    </div>
-                </div>
+            <nav class="browse-links">
+                <a href="#" onclick="showDocuments(); return false;">Documents</a>
+                <span class="sep">·</span>
+                <a href="#" onclick="showImages(); return false;">Images</a>
+                <span class="sep">·</span>
+                <a href="#" onclick="showVideos(); return false;">Videos</a>
+                <span class="sep">·</span>
+                <a href="#" onclick="showMaxwellTapes(); return false;">Recordings</a>
+            </nav>
 
-                <div class="featured-card" onclick="showMaxwellTapes()">
-                    <div class="card-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                            <line x1="12" y1="19" x2="12" y2="23"/>
-                            <line x1="8" y1="23" x2="16" y2="23"/>
-                        </svg>
-                    </div>
-                    <h3>Maxwell Tapes</h3>
-                    <p>Ghislaine Maxwell deposition audio</p>
-                    <div class="card-stat">
-                        <span class="number">11</span>
-                        <span class="label">recordings</span>
-                    </div>
-                </div>
-
-                <div class="featured-card" onclick="showDocuments()">
-                    <div class="card-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                        </svg>
-                    </div>
-                    <h3>Documents</h3>
-                    <p>Court records, emails, and evidence files</p>
-                    <div class="card-stat">
-                        <span class="number" id="stat-docs">20,428</span>
-                        <span class="label">files</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="featured" style="margin-top: 1.5rem; grid-template-columns: 1fr;">
-                <div class="featured-card" onclick="showImages()" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(249, 115, 22, 0.1));">
-                    <div style="display: flex; align-items: center; gap: 2rem;">
-                        <div class="card-icon" style="background: linear-gradient(135deg, #ef4444, #f97316);">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                <circle cx="8.5" cy="8.5" r="1.5"/>
-                                <polyline points="21 15 16 10 5 21"/>
-                            </svg>
-                        </div>
-                        <div style="flex: 1;">
-                            <h3 style="font-size: 1.5rem;">Images</h3>
-                            <p>Photos and scans extracted from every PDF</p>
-                        </div>
-                        <div class="card-stat">
-                            <span class="number" id="stat-images" style="color: #f97316;">--</span>
-                            <span class="label">images</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <!-- Ad Unit - Homepage Bottom (uncomment when AdSense approved) -->
+            <!-- <div class="ad-unit" style="margin-top: 2rem; text-align: center; padding: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;">
+                <ins class="adsbygoogle"
+                    style="display:block"
+                    data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+                    data-ad-slot="XXXXXXXXXX"
+                    data-ad-format="auto"
+                    data-full-width-responsive="true"></ins>
+                <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+            </div> -->
         </div>
 
         <!-- Results container -->
@@ -1025,16 +1096,61 @@
 
     // Navigation state
     let currentView = 'home';
-    let navStack = [];
+    let currentHash = '';  // Track current hash to prevent redundant fetches
+    let isLoading = false; // Prevent double-fetches
 
     // Elements
     const homeView = document.getElementById('home-view');
     const resultsView = document.getElementById('results-view');
     const searchInput = document.getElementById('q');
+    const mainNav = document.getElementById('main-nav');
+    const hamburger = document.getElementById('hamburger');
+    const navOverlay = document.getElementById('nav-overlay');
+
+    // Mobile nav functions
+    function toggleMobileNav() {
+        mainNav.classList.toggle('open');
+        hamburger.classList.toggle('open');
+        navOverlay.classList.toggle('open');
+        document.body.style.overflow = mainNav.classList.contains('open') ? 'hidden' : '';
+    }
+
+    function closeMobileNav() {
+        mainNav.classList.remove('open');
+        hamburger.classList.remove('open');
+        navOverlay.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    // Escape key closes mobile menu
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && mainNav.classList.contains('open')) {
+            closeMobileNav();
+        }
+    });
+
+    // Scroll position restoration
+    const scrollPositions = new Map();
+
+    function saveScrollPosition() {
+        if (currentHash) {
+            scrollPositions.set(currentHash, window.scrollY);
+        }
+    }
+
+    function restoreScrollPosition(hash) {
+        const pos = scrollPositions.get(hash);
+        if (pos !== undefined) {
+            requestAnimationFrame(() => window.scrollTo(0, pos));
+        } else {
+            window.scrollTo(0, 0);
+        }
+    }
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
         loadStats();
+        currentHash = location.hash.slice(1) || 'home';
         handleHash();
 
         searchInput.addEventListener('keydown', e => {
@@ -1042,42 +1158,45 @@
         });
     });
 
-    window.addEventListener('popstate', handleHash);
+    window.addEventListener('popstate', () => {
+        const newHash = location.hash.slice(1) || 'home';
+        // Only handle if hash actually changed
+        if (newHash !== currentHash) {
+            saveScrollPosition(); // Save before navigating away
+            currentHash = newHash;
+            handleHash();
+            restoreScrollPosition(newHash); // Restore after loading
+        }
+    });
 
     function loadStats() {
-        fetch(`${API}/stats`).then(r => r.json()).then(data => {
-            document.getElementById('stat-docs').textContent = (data.total || 0).toLocaleString();
-        }).catch(() => {});
-
-        fetch(`${API}/images?limit=1`).then(r => r.json()).then(data => {
-            document.getElementById('stat-images').textContent = (data.total || 0).toLocaleString();
-        }).catch(() => {
-            document.getElementById('stat-images').textContent = '--';
-        });
+        // Stats removed from homepage
     }
 
     function handleHash() {
         const hash = location.hash.slice(1);
-        if (!hash || hash === 'home') { goHome(); return; }
+        if (!hash || hash === 'home') { goHome(true); return; }
 
         const [type, ...rest] = hash.split('/');
         const param = rest.join('/');
 
         if (type === 'search' && param) {
             searchInput.value = decodeURIComponent(param);
-            doSearch();
+            doSearch(true); // true = don't pushState, we're already at this hash
         } else if (type === 'images') {
-            showImages();
+            showImages(0, true);
         } else if (type === 'videos') {
-            showVideos();
+            showVideos(0, true);
         } else if (type === 'maxwell') {
-            showMaxwellTapes();
+            showMaxwellTapes(true);
         } else if (type === 'documents') {
-            showDocuments();
+            showDocuments(0, true);
         } else if (type === 'doc' && param) {
-            viewDoc(parseInt(param));
+            viewDoc(parseInt(param), true);
+        } else if (type === 'entity' && param) {
+            viewEntity(parseInt(param), 0, true);
         } else if (type === 'about') {
-            showAbout();
+            showAbout(true);
         }
     }
 
@@ -1096,20 +1215,32 @@
         else if (view === 'about') document.getElementById('nav-about').classList.add('active');
     }
 
-    function goHome() {
+    function goHome(skipPush = false) {
+        saveScrollPosition();
         setView('home');
         searchInput.value = '';
-        if (location.hash) history.pushState(null, '', location.pathname);
-        navStack = [];
+        currentHash = 'home';
+        if (!skipPush && location.hash) {
+            history.pushState(null, '', location.pathname);
+        }
+        window.scrollTo(0, 0);
     }
 
-    function doSearch() {
+    function doSearch(skipPush = false) {
         const q = searchInput.value.trim();
         if (!q) return;
+        if (isLoading) return; // Prevent double-fetch
+        saveScrollPosition();
 
         setView('search');
         resultsView.innerHTML = '<div class="loading">Searching</div>';
-        history.pushState(null, '', `#search/${encodeURIComponent(q)}`);
+        isLoading = true;
+
+        const newHash = `search/${encodeURIComponent(q)}`;
+        currentHash = newHash;
+        if (!skipPush) {
+            history.pushState(null, '', `#${newHash}`);
+        }
 
         Promise.all([
             fetch(`${API}/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json()),
@@ -1121,7 +1252,15 @@
         ]).then(([docs, ents]) => {
             renderSearchResults(q, docs, ents);
         }).catch(() => {
-            resultsView.innerHTML = '<div class="empty">Search failed. Please try again.</div>';
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Search failed</h3>
+                    <p>Unable to reach the server. Check your connection and try again.</p>
+                    <button class="btn" onclick="doSearch()">Retry</button>
+                </div>
+            `;
+        }).finally(() => {
+            isLoading = false;
         });
     }
 
@@ -1137,16 +1276,12 @@
             `;
             ents.results.forEach(e => {
                 html += `
-                    <div class="entity-card">
-                        <div class="result-title">${esc(e.canonical_name)}</div>
-                        <div class="result-meta">${e.entity_type} · ${e.mention_count} mentions</div>
-                        ${(e.mentions || []).slice(0, 3).map(m => `
-                            <div class="mention-row">
-                                <span class="role-badge">${m.role || '?'}</span>
-                                <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
-                            </div>
-                        `).join('')}
-                        ${e.mention_count > 3 ? `<div class="mention-row"><button class="btn" onclick="viewEntity(${e.entity_id})">View all ${e.mention_count} mentions</button></div>` : ''}
+                    <div class="entity-card" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div class="result-title">${esc(e.canonical_name)}</div>
+                            <div class="result-meta">${e.entity_type} · ${e.mention_count.toLocaleString()} mentions across documents</div>
+                        </div>
+                        <button class="btn" onclick="viewEntity(${e.entity_id})">View all mentions →</button>
                     </div>
                 `;
             });
@@ -1178,10 +1313,11 @@
     }
 
     // === VIDEOS ===
-    async function showVideos(offset = 0) {
+    async function showVideos(offset = 0, skipPush = false) {
         setView('videos');
         resultsView.innerHTML = '<div class="loading">Loading videos</div>';
-        if (location.hash !== '#videos') history.pushState(null, '', '#videos');
+        currentHash = 'videos';
+        if (!skipPush && location.hash !== '#videos') history.pushState(null, '', '#videos');
 
         try {
             const r = await fetch(`${API}/videos?limit=48&offset=${offset}`).then(r => r.json());
@@ -1208,15 +1344,22 @@
             `;
             resultsView.innerHTML = html;
         } catch (e) {
-            resultsView.innerHTML = '<div class="empty">Failed to load videos.</div>';
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load videos</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="showVideos(${offset})">Retry</button>
+                </div>
+            `;
         }
     }
 
     // === MAXWELL TAPES ===
-    async function showMaxwellTapes() {
+    async function showMaxwellTapes(skipPush = false) {
         setView('maxwell');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
-        if (location.hash !== '#maxwell') history.pushState(null, '', '#maxwell');
+        currentHash = 'maxwell';
+        if (!skipPush && location.hash !== '#maxwell') history.pushState(null, '', '#maxwell');
 
         try {
             const r = await fetch(`${API}/maxwell-tapes`).then(r => r.json());
@@ -1258,15 +1401,22 @@
             `;
             resultsView.innerHTML = html;
         } catch (e) {
-            resultsView.innerHTML = '<div class="empty">Failed to load.</div>';
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load Maxwell tapes</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="showMaxwellTapes()">Retry</button>
+                </div>
+            `;
         }
     }
 
     // === DOCUMENTS ===
-    async function showDocuments(offset = 0) {
+    async function showDocuments(offset = 0, skipPush = false) {
         setView('documents');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
-        if (location.hash !== '#documents') history.pushState(null, '', '#documents');
+        currentHash = 'documents';
+        if (!skipPush && location.hash !== '#documents') history.pushState(null, '', '#documents');
 
         try {
             const r = await fetch(`${API}/browse?limit=50&offset=${offset}&document_type=pdf`).then(r => r.json());
@@ -1297,15 +1447,22 @@
 
             resultsView.innerHTML = html;
         } catch (e) {
-            resultsView.innerHTML = '<div class="empty">Failed to load.</div>';
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load documents</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="showDocuments(${offset})">Retry</button>
+                </div>
+            `;
         }
     }
 
     // === IMAGES ===
-    async function showImages(offset = 0) {
+    async function showImages(offset = 0, skipPush = false) {
         setView('images');
         resultsView.innerHTML = '<div class="loading">Loading images</div>';
-        if (location.hash !== '#images') history.pushState(null, '', '#images');
+        currentHash = 'images';
+        if (!skipPush && location.hash !== '#images') history.pushState(null, '', '#images');
 
         try {
             const r = await fetch(`${API}/images?limit=60&offset=${offset}`).then(r => r.json());
@@ -1342,7 +1499,13 @@
             `;
             resultsView.innerHTML = html;
         } catch (e) {
-            resultsView.innerHTML = '<div class="empty">Failed to load images.</div>';
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load images</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="showImages(${offset})">Retry</button>
+                </div>
+            `;
         }
     }
 
@@ -1364,12 +1527,16 @@
     }
 
     // === DOCUMENT VIEWER ===
-    let currentPage = 0;
+    async function viewDoc(id, skipPush = false) {
+        const newHash = `doc/${id}`;
+        // Prevent re-fetching if we're already on this doc
+        if (currentHash === newHash && !skipPush) return;
 
-    async function viewDoc(id) {
+        saveScrollPosition();
         setView('doc');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
-        history.pushState(null, '', `#doc/${id}`);
+        currentHash = newHash;
+        if (!skipPush) history.pushState(null, '', `#${newHash}`);
 
         try {
             const doc = await fetch(`${API}/documents/${id}`).then(r => r.json());
@@ -1377,7 +1544,7 @@
             // Audio
             if (doc.content_type?.startsWith('audio/') || doc.filename?.match(/\.(wav|mp3|m4a)$/i)) {
                 resultsView.innerHTML = `
-                    <button class="back-btn" onclick="history.back()">← Back</button>
+                    <button class="back-btn" onclick="goBack()">← Back</button>
                     <div class="doc-viewer">
                         <div class="doc-header">
                             <span style="font-weight: 600;">${esc(doc.title || doc.filename)}</span>
@@ -1396,7 +1563,7 @@
             // Video
             if (doc.content_type?.startsWith('video/') || doc.filename?.match(/\.(mp4|mov|avi)$/i)) {
                 resultsView.innerHTML = `
-                    <button class="back-btn" onclick="history.back()">← Back</button>
+                    <button class="back-btn" onclick="goBack()">← Back</button>
                     <div class="doc-viewer">
                         <div class="doc-header">
                             <span style="font-weight: 600;">${esc(doc.filename)}</span>
@@ -1417,143 +1584,178 @@
             const totalPages = text?.total_pages || 1;
             currentPage = 0;
 
+            const pdfUrl = `${API}/documents/${id}/file`;
             resultsView.innerHTML = `
-                <button class="back-btn" onclick="history.back()">← Back</button>
+                <button class="back-btn" onclick="goBack()">← Back</button>
                 <div class="doc-viewer">
                     <div class="doc-header">
                         <span style="font-weight: 600;">${esc(doc.title || doc.filename)}</span>
                         <div style="display:flex;gap:0.5rem;">
-                            <button class="btn" onclick="toggleDocView(${id})">Toggle Image</button>
-                            <a href="${API}/documents/${id}/file" target="_blank" class="btn">PDF</a>
+                            <button class="btn" onclick="togglePdfText()">Toggle Text</button>
+                            <a href="${pdfUrl}" target="_blank" class="btn">New Tab</a>
+                            <a href="${pdfUrl}" download class="btn">Download</a>
                         </div>
                     </div>
-                    <div id="doc-img" style="display:none;padding:1.5rem;text-align:center;">
-                        <div style="margin-bottom:1rem;display:flex;justify-content:center;align-items:center;gap:0.75rem;">
-                            <button class="btn" onclick="prevPage(${id})">← Prev</button>
-                            <span><span id="page-num">1</span> / ${totalPages}</span>
-                            <button class="btn" onclick="nextPage(${id}, ${totalPages})">Next →</button>
-                        </div>
-                        <img id="page-img" src="${API}/documents/${id}/pages/0/image?width=900" style="max-width:100%;border-radius:8px;">
+                    <div id="pdf-view" style="height:80vh;">
+                        <iframe src="${pdfUrl}" style="width:100%;height:100%;border:none;border-radius:8px;background:#333;" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
                     </div>
-                    <div id="doc-text" class="doc-content">${esc(text?.full_text || 'No text available.')}</div>
+                    <div id="text-view" class="doc-content" style="display:none;">${esc(text?.full_text || 'No text available.')}</div>
                 </div>
             `;
         } catch (e) {
-            resultsView.innerHTML = '<div class="empty">Failed to load document.</div>';
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load document</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="viewDoc(${id})">Retry</button>
+                </div>
+            `;
         }
     }
 
-    function toggleDocView(id) {
-        const img = document.getElementById('doc-img');
-        const txt = document.getElementById('doc-text');
-        img.style.display = img.style.display === 'none' ? 'block' : 'none';
-        txt.style.display = txt.style.display === 'none' ? 'block' : 'none';
-    }
-
-    function prevPage(id) {
-        if (currentPage > 0) {
-            currentPage--;
-            document.getElementById('page-img').src = `${API}/documents/${id}/pages/${currentPage}/image?width=900`;
-            document.getElementById('page-num').textContent = currentPage + 1;
+    function goBack() {
+        if (window.history.length > 1) {
+            history.back();
+        } else {
+            goHome();
         }
     }
 
-    function nextPage(id, total) {
-        if (currentPage < total - 1) {
-            currentPage++;
-            document.getElementById('page-img').src = `${API}/documents/${id}/pages/${currentPage}/image?width=900`;
-            document.getElementById('page-num').textContent = currentPage + 1;
+    function togglePdfText() {
+        const pdf = document.getElementById('pdf-view');
+        const txt = document.getElementById('text-view');
+        if (pdf.style.display === 'none') {
+            pdf.style.display = 'block';
+            txt.style.display = 'none';
+        } else {
+            pdf.style.display = 'none';
+            txt.style.display = 'block';
         }
     }
 
     // === ENTITY ===
-    async function viewEntity(id) {
+    async function viewEntity(id, offset = 0, skipPush = false) {
+        const newHash = `entity/${id}`;
+        saveScrollPosition();
         setView('entity');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
+        currentHash = newHash;
+        if (!skipPush) history.pushState(null, '', `#${newHash}`);
 
         try {
             const [entity, mentions] = await Promise.all([
                 fetch(`${API}/entities/${id}`).then(r => r.json()),
-                fetch(`${API}/entities/${id}/mentions?limit=100`).then(r => r.json())
+                fetch(`${API}/entities/${id}/mentions?limit=50&offset=${offset}`).then(r => r.json())
             ]);
 
             let html = `
-                <button class="back-btn" onclick="history.back()">← Back</button>
+                <button class="back-btn" onclick="goBack()">← Back</button>
                 <div class="results-header">
                     <h2>${esc(entity.canonical_name)}</h2>
-                    <span class="results-count">${mentions.total_mentions} mentions</span>
+                    <span class="results-count">${entity.mention_count || mentions.total_mentions} total mentions</span>
                 </div>
             `;
 
             mentions.mentions.forEach(m => {
+                let snippet = m.context_snippet ? esc(m.context_snippet) : null;
+                const page = m.page_number ? `Page ${m.page_number}` : '';
+
+                // Highlight the name as it appears in the snippet
+                if (snippet && m.name_as_appears) {
+                    const nameEsc = esc(m.name_as_appears);
+                    const regex = new RegExp(`(${nameEsc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                    snippet = snippet.replace(regex, '<mark>$1</mark>');
+                }
+
                 html += `
-                    <div class="mention-row" style="padding: 1rem 0;">
-                        <span class="role-badge">${m.role || '?'}</span>
-                        <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
-                        <span style="color: var(--text-dim); font-size: 0.8rem;">${m.data_set || ''}</span>
+                    <div class="result-card" style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                            <div class="result-title">
+                                <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
+                            </div>
+                            <span class="role-badge">${m.role || 'mentioned'}</span>
+                        </div>
+                        ${snippet ? `<div class="result-snippet" style="margin: 0.75rem 0;">"${snippet}"</div>` : ''}
+                        <div class="result-meta">${[page, m.data_set].filter(Boolean).join(' · ')}</div>
                     </div>
                 `;
             });
 
+            if (!mentions.mentions.length) {
+                html += '<div class="empty">No mentions found.</div>';
+            }
+
+            // Pagination
+            const totalMentions = entity.mention_count || 0;
+            if (totalMentions > 50 || offset > 0) {
+                html += `
+                    <div class="pagination">
+                        ${offset > 0 ? `<button class="btn" onclick="viewEntity(${id}, ${offset - 50})">← Previous</button>` : ''}
+                        <span style="color: var(--text-dim); padding: 0.5rem 1rem;">
+                            ${offset + 1}-${Math.min(offset + mentions.mentions.length, totalMentions)} of ${totalMentions}
+                        </span>
+                        ${mentions.mentions.length === 50 ? `<button class="btn" onclick="viewEntity(${id}, ${offset + 50})">Next →</button>` : ''}
+                    </div>
+                `;
+            }
+
             resultsView.innerHTML = html;
         } catch (e) {
-            resultsView.innerHTML = '<div class="empty">Failed to load.</div>';
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load entity</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="viewEntity(${id}, ${offset})">Retry</button>
+                </div>
+            `;
         }
     }
 
     // === ABOUT ===
-    function showAbout() {
+    function showAbout(skipPush = false) {
         setView('about');
-        if (location.hash !== '#about') history.pushState(null, '', '#about');
+        currentHash = 'about';
+        if (!skipPush) history.pushState(null, '', '#about');
 
         resultsView.innerHTML = `
-            <div style="max-width: 700px; margin: 0 auto;">
+            <div style="max-width: 600px; margin: 0 auto;">
                 <button class="back-btn" onclick="goHome()">← Back</button>
 
-                <h1 style="font-size: 2.5rem; font-weight: 800; margin-bottom: 1.5rem; letter-spacing: -0.02em;">About</h1>
+                <h1 style="font-family: Georgia, 'Times New Roman', serif; font-size: 2.5rem; font-weight: 400; margin-bottom: 2rem; color: var(--text);">About</h1>
 
-                <p style="font-size: 1.15rem; color: var(--text-muted); line-height: 1.8; margin-bottom: 2rem;">
-                    This site makes it easy to search and browse the Epstein files released by the
-                    U.S. Department of Justice. All documents come directly from
-                    <a href="https://www.justice.gov/epstein" target="_blank" style="color: var(--accent);">justice.gov</a>.
+                <p style="font-size: 1rem; color: var(--text-muted); line-height: 2; margin-bottom: 3rem;">
+                    This archive contains documents released by the U.S. Department of Justice
+                    related to Jeffrey Epstein's crimes. All materials come directly from
+                    <a href="https://www.justice.gov/epstein" target="_blank" style="color: var(--accent); text-decoration: none;">justice.gov</a>.
                 </p>
 
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 3rem;">
-                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
-                        <div style="font-size: 2rem; font-weight: 800; color: var(--accent);">20,428</div>
-                        <div style="color: var(--text-muted); font-size: 0.9rem;">Documents</div>
+                <div style="margin-bottom: 4rem; padding: 2.5rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+                    <h2 style="font-family: Georgia, serif; font-size: 1.25rem; font-weight: 400; margin-bottom: 1.5rem; color: var(--text);">If you need support</h2>
+                    <p style="color: var(--text-muted); line-height: 2; font-size: 0.95rem; margin-bottom: 2rem;">
+                        If you or someone you know has been affected by sexual abuse, help is available.
+                    </p>
+                    <div style="margin-bottom: 1.5rem;">
+                        <a href="https://rainn.org" target="_blank" style="color: var(--accent); text-decoration: none; font-size: 1rem;">RAINN</a>
+                        <span style="color: var(--text-dim); margin-left: 1rem;">1-800-656-4673</span>
+                        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.5rem;">24/7 support for survivors of sexual violence</p>
                     </div>
-                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
-                        <div style="font-size: 2rem; font-weight: 800; color: #f97316;">37K+</div>
-                        <div style="color: var(--text-muted); font-size: 0.9rem;">Images extracted</div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <a href="https://www.childhelp.org" target="_blank" style="color: var(--accent); text-decoration: none; font-size: 1rem;">Childhelp National Hotline</a>
+                        <span style="color: var(--text-dim); margin-left: 1rem;">1-800-422-4453</span>
+                        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.5rem;">24/7 support for child abuse victims and survivors</p>
                     </div>
-                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
-                        <div style="font-size: 2rem; font-weight: 800; color: var(--accent);">419</div>
-                        <div style="color: var(--text-muted); font-size: 0.9rem;">Videos</div>
-                    </div>
-                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;">
-                        <div style="font-size: 2rem; font-weight: 800; color: var(--accent);">12K+</div>
-                        <div style="color: var(--text-muted); font-size: 0.9rem;">People & orgs identified</div>
+                    <div>
+                        <a href="https://www.missingkids.org" target="_blank" style="color: var(--accent); text-decoration: none; font-size: 1rem;">National Center for Missing & Exploited Children</a>
+                        <span style="color: var(--text-dim); margin-left: 1rem;">1-800-843-5678</span>
+                        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.5rem;">Resources and reporting for child exploitation</p>
                     </div>
                 </div>
 
-                <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">What we don't do</h2>
-                <p style="color: var(--text-muted); line-height: 1.8; margin-bottom: 2.5rem;">
-                    We're not journalists, investigators, or affiliated with anyone. We don't make claims
-                    or draw conclusions. This is just a search tool that makes public documents easier to find.
-                </p>
-
-                <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem;">More files coming</h2>
-                <p style="color: var(--text-muted); line-height: 1.8; margin-bottom: 2.5rem;">
-                    The DOJ has announced over 1 million additional documents will be released.
-                    We'll add them as they become available.
-                </p>
-
-                <div style="padding: 2rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; text-align: center;">
-                    <p style="color: var(--text-muted); margin-bottom: 0.5rem;">Need support?</p>
-                    <p style="font-size: 1.25rem; font-weight: 600;">
-                        <a href="https://rainn.org" target="_blank" style="color: var(--accent);">RAINN</a>
-                        <span style="color: var(--text-muted);">1-800-656-4673</span>
+                <div style="margin-bottom: 3rem;">
+                    <h2 style="font-size: 0.65rem; font-weight: 400; margin-bottom: 1.5rem; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase;">About this site</h2>
+                    <p style="color: var(--text-muted); line-height: 2; font-size: 0.95rem;">
+                        This is a search tool to help the public access documents that are already public record.
+                        We are not journalists or investigators. We make no claims and draw no conclusions.
                     </p>
                 </div>
             </div>
