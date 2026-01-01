@@ -131,6 +131,25 @@ export default {
         return await getDataSets(env.DB);
       }
 
+      // House Oversight routes
+      if (path === '/api/house-oversight/documents') {
+        return await listHouseOversightDocs(url, env.DB);
+      }
+
+      const hoDocMatch = path.match(/^\/api\/house-oversight\/documents\/([A-Z_\d]+)$/);
+      if (hoDocMatch) {
+        return await getHouseOversightDoc(hoDocMatch[1], env.DB, env.R2);
+      }
+
+      const hoPageMatch = path.match(/^\/api\/house-oversight\/page\/([A-Z_\d]+)\/(\d+)$/);
+      if (hoPageMatch) {
+        return await getHouseOversightPage(hoPageMatch[1], parseInt(hoPageMatch[2]), env.R2);
+      }
+
+      if (path === '/api/house-oversight/stats') {
+        return await getHouseOversightStats(env.DB);
+      }
+
       if (path === '/health') {
         return json({ status: 'healthy' });
       }
@@ -258,7 +277,7 @@ async function searchDocuments(url, db) {
 
   const results = await db.prepare(`
     SELECT d.id, d.filename, d.title, d.data_set, d.document_type, d.source_url,
-           snippet(document_fts, 3, '<mark>', '</mark>', '...', 32) as snippet
+           snippet(document_fts, 1, '>>>', '<<<', '...', 32) as snippet
     FROM document_fts
     JOIN documents d ON d.id = document_fts.document_id
     WHERE document_fts MATCH ?
@@ -416,8 +435,15 @@ async function getDocumentFile(id, db) {
   // local_path is like /mnt/e/epstein-files/raw/...
   const pathMatch = doc.local_path.match(/epstein-files\/(.+)$/);
   if (pathMatch) {
-    const r2Path = pathMatch[1];
-    return Response.redirect(`${R2_PUBLIC_URL}/${r2Path}`, 302);
+    const r2Path = encodeURI(pathMatch[1]);
+    const r2Url = `${R2_PUBLIC_URL}/${r2Path}`;
+    return new Response(null, {
+      status: 302,
+      headers: {
+        'Location': r2Url,
+        ...corsHeaders,
+      },
+    });
   }
 
   return error('File not available', 404);
@@ -430,7 +456,13 @@ async function getDocumentThumbnail(id, db) {
   }
 
   // Try pre-generated thumbnail first
-  return Response.redirect(`${R2_PUBLIC_URL}/thumbnails/${id}.jpg`, 302);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      'Location': `${R2_PUBLIC_URL}/thumbnails/${id}.jpg`,
+      ...corsHeaders,
+    },
+  });
 }
 
 async function listVideos(url, db) {
@@ -571,6 +603,7 @@ async function getEntityMentions(entityId, url, db) {
     mentions: mentions.results.map(m => ({
       id: m.id,
       document_id: m.document_id,
+      document_filename: m.filename || m.title || `Document ${m.document_id}`,
       filename: m.filename,
       title: m.title,
       document_type: m.document_type,
@@ -605,21 +638,27 @@ async function searchEntities(request, db) {
 
   const results = await db.prepare(sql).bind(...params).all();
 
-  // Get mention counts by role if needed
+  // Get distinct documents where entity is mentioned
   const entities = await Promise.all(results.results.map(async (e) => {
-    const mentions = await db.prepare(
-      'SELECT role, COUNT(*) as count FROM mentions WHERE entity_id = ? GROUP BY role'
-    ).bind(e.id).all();
+    const mentions = await db.prepare(`
+      SELECT DISTINCT m.document_id, d.filename as document_filename, m.role
+      FROM mentions m
+      JOIN documents d ON d.id = m.document_id
+      WHERE m.entity_id = ?
+      GROUP BY m.document_id
+      LIMIT 5
+    `).bind(e.id).all();
 
     return {
       entity_id: e.id,
       canonical_name: e.canonical_name,
       entity_type: e.entity_type,
       mention_count: e.mention_count,
-      mentions: mentions.results.reduce((acc, m) => {
-        acc[m.role || 'unknown'] = m.count;
-        return acc;
-      }, {}),
+      mentions: mentions.results.map(m => ({
+        role: m.role || 'unknown',
+        document_id: m.document_id,
+        document_filename: m.document_filename,
+      })),
     };
   }));
 
@@ -670,6 +709,199 @@ async function getDataSets(db) {
     data_sets: sets.results.map(s => ({
       name: s.data_set,
       count: s.count,
+    })),
+  });
+}
+
+// =============================================================================
+// HOUSE OVERSIGHT HANDLERS
+// =============================================================================
+
+// Cache for page mappings (loaded from R2 or hardcoded)
+let houseOversightPagesCache = null;
+
+async function loadHouseOversightPages(r2) {
+  if (houseOversightPagesCache) return houseOversightPagesCache;
+
+  try {
+    const manifest = await r2.get('house-oversight/pages.json');
+    if (manifest) {
+      houseOversightPagesCache = await manifest.json();
+      return houseOversightPagesCache;
+    }
+  } catch (e) {
+    console.error('Error loading House Oversight pages:', e);
+  }
+  return {};
+}
+
+async function listHouseOversightDocs(url, db) {
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const search = url.searchParams.get('search') || '';
+
+  let sql = "SELECT * FROM documents WHERE data_set = 'house-oversight-estate'";
+  const params = [];
+
+  if (search) {
+    sql += ' AND (filename LIKE ? OR title LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  // Get total count
+  const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as count');
+  const total = await db.prepare(countSql).bind(...params).first();
+
+  sql += ' ORDER BY filename LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  const results = await db.prepare(sql).bind(...params).all();
+
+  return json({
+    total: total.count,
+    offset,
+    limit,
+    documents: results.results.map(d => ({
+      id: d.id,
+      bates: d.filename,
+      title: d.title,
+      page_count: d.page_count || 1,
+      thumbnail: `/api/house-oversight/page/${d.filename}/0`,
+    })),
+  });
+}
+
+async function getHouseOversightDoc(bates, db, r2) {
+  const doc = await db.prepare(
+    "SELECT * FROM documents WHERE filename = ? AND data_set = 'house-oversight-estate'"
+  ).bind(bates).first();
+
+  if (!doc) {
+    return error('Document not found', 404);
+  }
+
+  // Get text content
+  const text = await db.prepare(
+    'SELECT full_text, word_count FROM document_texts WHERE document_id = ?'
+  ).bind(doc.id).first();
+
+  // Get page info from cached manifest or derive from page_count
+  const pages = [];
+  const pageCount = doc.page_count || 1;
+
+  // Page filenames follow pattern: BATES number increments
+  // E.g., HOUSE_OVERSIGHT_010477 has pages 010477, 010478, etc.
+  const batesNum = parseInt(bates.replace('HOUSE_OVERSIGHT_', ''));
+  for (let i = 0; i < pageCount; i++) {
+    const pageNum = batesNum + i;
+    const padded = pageNum.toString().padStart(6, '0');
+    // Determine folder (001, 002, etc.) based on page range
+    const folder = Math.floor((pageNum - 10477) / 1000 + 1).toString().padStart(3, '0');
+    pages.push({
+      page: i,
+      url: `/api/house-oversight/page/${bates}/${i}`,
+      bates: `HOUSE_OVERSIGHT_${padded}`,
+    });
+  }
+
+  // Get mentions/entities for this document
+  const mentions = await db.prepare(`
+    SELECT e.id, e.canonical_name, e.entity_type, m.name_as_appears, m.role
+    FROM mentions m
+    JOIN entities e ON e.id = m.entity_id
+    WHERE m.document_id = ?
+    LIMIT 100
+  `).bind(doc.id).all();
+
+  return json({
+    id: doc.id,
+    bates: doc.filename,
+    title: doc.title,
+    page_count: pageCount,
+    pages,
+    text_preview: text?.full_text?.substring(0, 2000) || null,
+    word_count: text?.word_count || 0,
+    entities: mentions.results.map(m => ({
+      id: m.id,
+      name: m.canonical_name,
+      type: m.entity_type,
+      as_appears: m.name_as_appears,
+      role: m.role,
+    })),
+  });
+}
+
+async function getHouseOversightPage(bates, pageIndex, r2) {
+  // Calculate actual page bates number
+  const baseBates = parseInt(bates.replace('HOUSE_OVERSIGHT_', ''));
+  const pageNum = baseBates + pageIndex;
+  const padded = pageNum.toString().padStart(6, '0');
+
+  // Determine folder based on page number ranges
+  // 001: 010477-011476, 002: 011477-012476, etc.
+  const folderNum = Math.floor((pageNum - 10477) / 1000 + 1);
+  const folder = folderNum.toString().padStart(3, '0');
+
+  const imagePath = `IMAGES/${folder}/HOUSE_OVERSIGHT_${padded}.jpg`;
+  const r2Path = `house-oversight/${imagePath}`;
+
+  // Return redirect to R2 public URL
+  return new Response(null, {
+    status: 302,
+    headers: {
+      'Location': `${R2_PUBLIC_URL}/${r2Path}`,
+      ...corsHeaders,
+    },
+  });
+}
+
+async function getHouseOversightStats(db) {
+  const docCount = await db.prepare(
+    "SELECT COUNT(*) as count FROM documents WHERE data_set = 'house-oversight-estate'"
+  ).first();
+
+  const pageCount = await db.prepare(
+    "SELECT SUM(page_count) as total FROM documents WHERE data_set = 'house-oversight-estate'"
+  ).first();
+
+  const entityCount = await db.prepare(`
+    SELECT COUNT(DISTINCT e.id) as count
+    FROM mentions m
+    JOIN entities e ON e.id = m.entity_id
+    JOIN documents d ON d.id = m.document_id
+    WHERE d.data_set = 'house-oversight-estate'
+  `).first();
+
+  const mentionCount = await db.prepare(`
+    SELECT COUNT(*) as count
+    FROM mentions m
+    JOIN documents d ON d.id = m.document_id
+    WHERE d.data_set = 'house-oversight-estate'
+  `).first();
+
+  // Get top entities
+  const topEntities = await db.prepare(`
+    SELECT e.id, e.canonical_name, e.entity_type, COUNT(*) as mention_count
+    FROM mentions m
+    JOIN entities e ON e.id = m.entity_id
+    JOIN documents d ON d.id = m.document_id
+    WHERE d.data_set = 'house-oversight-estate'
+    GROUP BY e.id
+    ORDER BY mention_count DESC
+    LIMIT 20
+  `).all();
+
+  return json({
+    documents: docCount.count,
+    pages: pageCount.total || 0,
+    entities: entityCount.count,
+    mentions: mentionCount.count,
+    description: 'House Oversight Committee Estate Documents - Litigation load files from the Epstein estate investigation',
+    top_entities: topEntities.results.map(e => ({
+      id: e.id,
+      name: e.canonical_name,
+      type: e.entity_type,
+      mentions: e.mention_count,
     })),
   });
 }

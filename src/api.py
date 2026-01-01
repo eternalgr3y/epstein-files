@@ -988,6 +988,172 @@ async def data_sets():
 
 
 # ============================================================================
+# HOUSE OVERSIGHT ESTATE ENDPOINTS
+# ============================================================================
+
+# Load page mappings once at startup
+HOUSE_OVERSIGHT_PAGES = {}
+_ho_pages_path = BASE_DIR / "house_oversight_pages.json"
+if _ho_pages_path.exists():
+    import json
+    with open(_ho_pages_path) as f:
+        HOUSE_OVERSIGHT_PAGES = json.load(f)
+    logger.info(f"Loaded {len(HOUSE_OVERSIGHT_PAGES)} House Oversight page mappings")
+
+
+@app.get("/api/house-oversight/documents")
+async def list_house_oversight_docs(
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = None
+):
+    """List House Oversight Estate documents."""
+    engine = get_engine()
+    session = get_session(engine)
+
+    try:
+        query = session.query(Document).filter(
+            Document.data_set == 'house-oversight-estate'
+        )
+
+        if search:
+            query = query.filter(
+                (Document.title.ilike(f'%{search}%')) |
+                (Document.filename.ilike(f'%{search}%'))
+            )
+
+        total = query.count()
+        docs = query.order_by(Document.id).offset(offset).limit(limit).all()
+
+        return {
+            "total": total,
+            "offset": offset,
+            "documents": [
+                {
+                    "id": d.id,
+                    "bates": d.filename,
+                    "title": d.title or d.filename,
+                    "page_count": d.page_count or 1,
+                    "document_type": d.document_type,
+                    "has_text": d.has_text,
+                    "thumbnail": f"/api/house-oversight/page/{d.filename}/0"
+                }
+                for d in docs
+            ]
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/house-oversight/documents/{bates}")
+async def get_house_oversight_doc(bates: str):
+    """Get a House Oversight document with its pages."""
+    engine = get_engine()
+    session = get_session(engine)
+
+    try:
+        doc = session.query(Document).filter(
+            Document.data_set == 'house-oversight-estate',
+            Document.filename == bates
+        ).first()
+
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Get page mappings
+        page_info = HOUSE_OVERSIGHT_PAGES.get(bates, {})
+        pages = page_info.get('pages', [])
+
+        # Get text if available
+        text = session.query(DocumentText).filter_by(document_id=doc.id).first()
+
+        return {
+            "id": doc.id,
+            "bates": doc.filename,
+            "title": doc.title or doc.filename,
+            "document_type": doc.document_type,
+            "page_count": len(pages) if pages else doc.page_count or 1,
+            "pages": [
+                {
+                    "page": i,
+                    "path": p,
+                    "url": f"/api/house-oversight/page/{bates}/{i}"
+                }
+                for i, p in enumerate(pages)
+            ],
+            "has_text": doc.has_text,
+            "text_preview": text.full_text[:3000] if text and text.full_text else None,
+            "source_url": doc.source_url
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/house-oversight/page/{bates}/{page}")
+async def get_house_oversight_page(bates: str, page: int):
+    """Get a specific page image from a House Oversight document."""
+    page_info = HOUSE_OVERSIGHT_PAGES.get(bates, {})
+    pages = page_info.get('pages', [])
+
+    if not pages or page < 0 or page >= len(pages):
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    image_path = pages[page]  # e.g., "IMAGES/001/HOUSE_OVERSIGHT_010477.jpg"
+    full_path = RAW_DIR / "house-oversight-estate" / image_path
+
+    # Try R2 CDN first
+    if R2_PUBLIC_URL:
+        r2_url = f"{R2_PUBLIC_URL}/house-oversight/{image_path}"
+        return RedirectResponse(url=r2_url, status_code=302)
+
+    # Fallback to local
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Image file not found")
+
+    ext = image_path.split(".")[-1].lower()
+    media_types = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "tif": "image/tiff", "tiff": "image/tiff"}
+
+    return FileResponse(
+        str(full_path),
+        media_type=media_types.get(ext, "image/jpeg")
+    )
+
+
+@app.get("/api/house-oversight/stats")
+async def house_oversight_stats():
+    """Get House Oversight collection statistics."""
+    engine = get_engine()
+    session = get_session(engine)
+
+    try:
+        total_docs = session.query(Document).filter(
+            Document.data_set == 'house-oversight-estate'
+        ).count()
+
+        total_pages = sum(
+            info.get('page_count', 1) for info in HOUSE_OVERSIGHT_PAGES.values()
+        )
+
+        # Count mentions for House Oversight docs
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            mentions = conn.execute(text("""
+                SELECT COUNT(*) FROM mentions m
+                JOIN documents d ON m.document_id = d.id
+                WHERE d.data_set = 'house-oversight-estate'
+            """)).scalar()
+
+        return {
+            "total_documents": total_docs,
+            "total_pages": total_pages,
+            "total_mentions": mentions,
+            "description": "Documents from House Oversight Committee investigation of Epstein Estate"
+        }
+    finally:
+        session.close()
+
+
+# ============================================================================
 # UTILITY ENDPOINTS
 # ============================================================================
 
