@@ -426,6 +426,23 @@
             min-height: 100vh;
         }
 
+        .section-kicker {
+            font-size: 0.65rem;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            border-left: 2px solid var(--accent);
+            padding-left: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .results-intro {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-bottom: 2.5rem;
+            max-width: 620px;
+        }
+
         .results-header {
             display: flex;
             justify-content: space-between;
@@ -509,6 +526,23 @@
             text-transform: uppercase;
         }
 
+        .meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .meta-pill {
+            font-size: 0.6rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            padding: 0.25rem 0.55rem;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            background: rgba(255, 250, 241, 0.7);
+        }
+
         .result-snippet {
             font-size: 0.9rem;
             color: var(--text-muted);
@@ -563,6 +597,11 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .video-card .info .meta-pill {
+            display: inline-flex;
+            margin-top: 0.5rem;
         }
 
         /* Tape list */
@@ -639,6 +678,8 @@
             background: var(--bg-elevated);
             border: 1px solid var(--border);
             overflow: hidden;
+            border-radius: 14px;
+            box-shadow: 0 24px 60px rgba(29, 26, 20, 0.12);
         }
 
         .doc-header {
@@ -650,9 +691,36 @@
             border-bottom: 1px solid var(--border);
         }
 
-        .doc-header span {
+        .doc-title {
             font-family: var(--font-serif);
             font-size: 1rem;
+        }
+
+        .doc-meta {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-top: 0.35rem;
+        }
+
+        .doc-stamp {
+            font-size: 0.6rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--accent);
+            border: 1px solid rgba(139, 47, 47, 0.4);
+            padding: 0.2rem 0.55rem;
+            margin-bottom: 0.6rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: var(--accent-soft);
+        }
+
+        .doc-toolbar {
+            display: flex;
+            gap: 0.5rem;
         }
 
         .doc-content {
@@ -1078,6 +1146,42 @@
             clip: rect(0, 0, 0, 0);
             border: 0;
         }
+
+        /* House Oversight page viewer */
+        .ho-page-viewer {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        .ho-page {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .ho-page-header {
+            padding: 0.75rem 1rem;
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .ho-page img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+        .entities-section h3 {
+            font-family: var(--font-serif);
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .entity-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -1092,6 +1196,7 @@
                 <a href="#" id="nav-images" onclick="showImages(); toggleMenu(false); return false;">Images</a>
                 <a href="#" id="nav-videos" onclick="showVideos(); toggleMenu(false); return false;">Videos</a>
                 <a href="#" id="nav-docs" onclick="showDocuments(); toggleMenu(false); return false;">Documents</a>
+                <a href="#" id="nav-oversight" onclick="showHouseOversight(); toggleMenu(false); return false;">House Oversight</a>
                 <a href="#" id="nav-maxwell" onclick="showMaxwellTapes(); toggleMenu(false); return false;">Recordings</a>
                 <a href="#" id="nav-about" onclick="showAbout(); toggleMenu(false); return false;">About</a>
             </nav>
@@ -1254,6 +1359,12 @@
             showMaxwellTapes(true);
         } else if (type === 'documents') {
             showDocuments(0, true);
+        } else if (type === 'house-oversight') {
+            if (param) {
+                viewHouseOversightDoc(param, true);
+            } else {
+                showHouseOversight(0, true);
+            }
         } else if (type === 'doc' && param) {
             viewDoc(parseInt(param), true);
         } else if (type === 'entity' && param) {
@@ -1275,6 +1386,7 @@
         else if (view === 'videos') document.getElementById('nav-videos').classList.add('active');
         else if (view === 'maxwell') document.getElementById('nav-maxwell').classList.add('active');
         else if (view === 'documents') document.getElementById('nav-docs').classList.add('active');
+        else if (view === 'house-oversight') document.getElementById('nav-oversight').classList.add('active');
         else if (view === 'about') document.getElementById('nav-about').classList.add('active');
     }
 
@@ -1328,7 +1440,11 @@
     }
 
     function renderSearchResults(query, docs, ents) {
-        let html = `<button class="back-btn" onclick="goHome()">← Back</button>`;
+        let html = `
+            <button class="back-btn" onclick="goHome()">← Back</button>
+            <div class="section-kicker">Search Results</div>
+            <div class="results-intro">Results for “${esc(query)}”.</div>
+        `;
 
         if (ents.results?.length) {
             html += `
@@ -1358,10 +1474,15 @@
                 </div>
             `;
             docs.results.forEach(d => {
+                const docMeta = [
+                    d.data_set ? esc(d.data_set) : null,
+                    d.document_type ? esc(d.document_type) : null,
+                    d.document_id ? `DOC ${d.document_id}` : null
+                ].filter(Boolean);
                 html += `
                     <div class="result-card">
                         <div class="result-title"><a href="#" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
-                        <div class="result-meta">${d.data_set || ''}</div>
+                        ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                         ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
                     </div>
                 `;
@@ -1387,6 +1508,8 @@
 
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="section-kicker">Archive</div>
+                <div class="results-intro">Video materials released with the case files.</div>
                 <div class="results-header">
                     <h2>Video Evidence</h2>
                     <span class="results-count">${r.total.toLocaleString()} videos</span>
@@ -1396,7 +1519,10 @@
                         <div class="video-card" onclick="viewDoc(${v.id})">
                             <img src="${API}/videos/${v.id}/thumb" loading="lazy" alt="${esc(v.title)}"
                                  onerror="this.style.background='var(--gradient-1)'">
-                            <div class="info"><p>${esc(v.filename)}</p></div>
+                            <div class="info">
+                                <p>${esc(v.filename)}</p>
+                                ${v.data_set ? `<span class="meta-pill">${esc(v.data_set)}</span>` : ''}
+                            </div>
                         </div>
                     `).join('')}
                 </div>
@@ -1444,13 +1570,14 @@
 
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="section-kicker">Audio Archive</div>
                 <div class="results-header">
                     <h2>Maxwell Deposition Tapes</h2>
                     <span class="results-count">${r.total} recordings</span>
                 </div>
-                <p style="color: var(--text-muted); margin-bottom: 2rem;">
+                <div class="results-intro">
                     Audio recordings from Ghislaine Maxwell's deposition.
-                </p>
+                </div>
 
                 <div class="tape-section">
                     <h3>Day 1</h3>
@@ -1486,6 +1613,8 @@
 
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="section-kicker">Archive</div>
+                <div class="results-intro">Browse the full DOJ document set in chronological order.</div>
                 <div class="results-header">
                     <h2>All Documents</h2>
                     <span class="results-count">${r.total.toLocaleString()} files</span>
@@ -1493,10 +1622,14 @@
             `;
 
             r.results.forEach(d => {
+                const docMeta = [
+                    d.data_set ? esc(d.data_set) : null,
+                    d.document_id ? `DOC ${d.document_id}` : null
+                ].filter(Boolean);
                 html += `
                     <div class="result-card" onclick="viewDoc(${d.document_id})" style="cursor:pointer;">
                         <div class="result-title">${esc(d.title || d.filename)}</div>
-                        <div class="result-meta">${d.data_set || ''}</div>
+                        ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                     </div>
                 `;
             });
@@ -1515,6 +1648,119 @@
                     <h3>Failed to load documents</h3>
                     <p>Check your connection and try again.</p>
                     <button class="btn" onclick="showDocuments(${offset})">Retry</button>
+                </div>
+            `;
+        }
+    }
+
+    // === HOUSE OVERSIGHT ===
+    async function showHouseOversight(offset = 0, skipPush = false) {
+        setView('house-oversight');
+        resultsView.innerHTML = '<div class="loading">Loading House Oversight documents</div>';
+        currentHash = 'house-oversight';
+        if (!skipPush && location.hash !== '#house-oversight') history.pushState(null, '', '#house-oversight');
+
+        try {
+            const r = await fetch(`${API}/house-oversight/documents?limit=50&offset=${offset}`).then(r => r.json());
+
+            let html = `
+                <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="section-kicker">House Oversight Committee</div>
+                <div class="results-intro">Litigation load files from the Epstein estate investigation released by the House Oversight Committee. ${r.total.toLocaleString()} documents containing ${(23124).toLocaleString()} page scans.</div>
+                <div class="results-header">
+                    <h2>Estate Documents</h2>
+                    <span class="results-count">${r.total.toLocaleString()} documents</span>
+                </div>
+            `;
+
+            r.documents.forEach(d => {
+                html += `
+                    <div class="result-card" onclick="viewHouseOversightDoc('${esc(d.bates)}')" style="cursor:pointer;">
+                        <div class="result-title">${esc(d.title || d.bates)}</div>
+                        <div class="meta-row">
+                            <span class="meta-pill">${d.page_count} pages</span>
+                            <span class="meta-pill">${esc(d.bates)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                <div class="pagination">
+                    ${offset > 0 ? `<button class="btn" onclick="showHouseOversight(${offset - 50})">← Previous</button>` : ''}
+                    ${r.documents.length === 50 ? `<button class="btn" onclick="showHouseOversight(${offset + 50})">Next →</button>` : ''}
+                </div>
+            `;
+
+            resultsView.innerHTML = html;
+        } catch (e) {
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load House Oversight documents</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="showHouseOversight(${offset})">Retry</button>
+                </div>
+            `;
+        }
+    }
+
+    async function viewHouseOversightDoc(bates, skipPush = false) {
+        setView('house-oversight');
+        resultsView.innerHTML = '<div class="loading">Loading document</div>';
+        currentHash = `house-oversight/${bates}`;
+        if (!skipPush) history.pushState(null, '', `#house-oversight/${bates}`);
+
+        try {
+            const doc = await fetch(`${API}/house-oversight/documents/${bates}`).then(r => r.json());
+
+            let html = `
+                <button class="back-btn" onclick="showHouseOversight()">← Back to House Oversight</button>
+                <div class="section-kicker">House Oversight Document</div>
+                <div class="results-header">
+                    <h2>${esc(doc.title || doc.bates)}</h2>
+                    <span class="results-count">${doc.page_count} pages</span>
+                </div>
+            `;
+
+            // Page viewer
+            html += `<div class="ho-page-viewer">`;
+            doc.pages.forEach((p, i) => {
+                html += `
+                    <div class="ho-page" id="page-${i}">
+                        <div class="ho-page-header">Page ${i + 1} of ${doc.page_count}</div>
+                        <img src="${API}/house-oversight/page/${bates}/${i}"
+                             alt="Page ${i + 1}"
+                             loading="lazy"
+                             onclick="window.open('${API}/house-oversight/page/${bates}/${i}', '_blank')"
+                             style="cursor: zoom-in; max-width: 100%; border: 1px solid var(--border);">
+                    </div>
+                `;
+            });
+            html += `</div>`;
+
+            // Entities mentioned
+            if (doc.entities && doc.entities.length > 0) {
+                html += `
+                    <div class="entities-section" style="margin-top: 2rem;">
+                        <h3>Entities Mentioned</h3>
+                        <div class="entity-pills">
+                            ${doc.entities.slice(0, 50).map(e => `
+                                <span class="meta-pill" onclick="viewEntity(${e.id})" style="cursor:pointer;">
+                                    ${esc(e.name)} <small>(${esc(e.type)})</small>
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            resultsView.innerHTML = html;
+        } catch (e) {
+            resultsView.innerHTML = `
+                <div class="error-state">
+                    <h3>Failed to load document</h3>
+                    <p>Check your connection and try again.</p>
+                    <button class="btn" onclick="viewHouseOversightDoc('${esc(bates)}')">Retry</button>
                 </div>
             `;
         }
@@ -1540,6 +1786,8 @@
 
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
+                <div class="section-kicker">Archive</div>
+                <div class="results-intro">Images extracted from document pages.</div>
                 <div class="results-header">
                     <h2>Images</h2>
                     <span class="results-count">${r.total.toLocaleString()} images extracted from PDFs</span>
@@ -1603,6 +1851,13 @@
 
         try {
             const doc = await fetch(`${API}/documents/${id}`).then(r => r.json());
+            const docTitle = esc(doc.title || doc.filename);
+            const docMetaParts = [
+                doc.data_set,
+                doc.document_type,
+                doc.page_count ? `${doc.page_count} pages` : null
+            ].filter(Boolean);
+            const docMeta = docMetaParts.length ? docMetaParts.join(' · ') : '';
 
             // Audio
             if (doc.content_type?.startsWith('audio/') || doc.filename?.match(/\.(wav|mp3|m4a)$/i)) {
@@ -1610,7 +1865,11 @@
                     <button class="back-btn" onclick="goBack()">← Back</button>
                     <div class="doc-viewer">
                         <div class="doc-header">
-                            <span style="font-weight: 600;">${esc(doc.title || doc.filename)}</span>
+                            <div>
+                                ${doc.data_set ? `<div class="doc-stamp">${esc(doc.data_set)}</div>` : ''}
+                                <div class="doc-title">${docTitle}</div>
+                                ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
+                            </div>
                             <a href="${API}/documents/${id}/file" download class="btn">Download</a>
                         </div>
                         <div class="media-player">
@@ -1629,7 +1888,11 @@
                     <button class="back-btn" onclick="goBack()">← Back</button>
                     <div class="doc-viewer">
                         <div class="doc-header">
-                            <span style="font-weight: 600;">${esc(doc.filename)}</span>
+                            <div>
+                                ${doc.data_set ? `<div class="doc-stamp">${esc(doc.data_set)}</div>` : ''}
+                                <div class="doc-title">${docTitle}</div>
+                                ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
+                            </div>
                             <a href="${API}/documents/${id}/file" download class="btn">Download</a>
                         </div>
                         <div class="media-player">
@@ -1652,8 +1915,12 @@
                 <button class="back-btn" onclick="goBack()">← Back</button>
                 <div class="doc-viewer">
                     <div class="doc-header">
-                        <span style="font-weight: 600;">${esc(doc.title || doc.filename)}</span>
-                        <div style="display:flex;gap:0.5rem;">
+                        <div>
+                            ${doc.data_set ? `<div class="doc-stamp">${esc(doc.data_set)}</div>` : ''}
+                            <div class="doc-title">${docTitle}</div>
+                            ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
+                        </div>
+                        <div class="doc-toolbar">
                             <button class="btn" onclick="togglePdfText()">Toggle Text</button>
                             <a href="${pdfUrl}" target="_blank" class="btn">New Tab</a>
                             <a href="${pdfUrl}" download class="btn">Download</a>
@@ -1713,6 +1980,7 @@
 
             let html = `
                 <button class="back-btn" onclick="goBack()">← Back</button>
+                <div class="section-kicker">Entity Record</div>
                 <div class="results-header">
                     <h2>${esc(entity.canonical_name)}</h2>
                     <span class="results-count">${entity.mention_count || mentions.total_mentions} total mentions</span>
@@ -1722,6 +1990,7 @@
             mentions.mentions.forEach(m => {
                 let snippet = m.context_snippet ? esc(m.context_snippet) : null;
                 const page = m.page_number ? `Page ${m.page_number}` : '';
+                const mentionMeta = [page, m.data_set].filter(Boolean);
 
                 // Highlight the name as it appears in the snippet
                 if (snippet && m.name_as_appears) {
@@ -1739,7 +2008,7 @@
                             <span class="role-badge">${m.role || 'mentioned'}</span>
                         </div>
                         ${snippet ? `<div class="result-snippet" style="margin: 0.75rem 0;">"${snippet}"</div>` : ''}
-                        <div class="result-meta">${[page, m.data_set].filter(Boolean).join(' · ')}</div>
+                        ${mentionMeta.length ? `<div class="meta-row">${mentionMeta.map(mv => `<span class="meta-pill">${esc(mv)}</span>`).join('')}</div>` : ''}
                     </div>
                 `;
             });
@@ -1784,7 +2053,8 @@
             <div style="max-width: 600px; margin: 0 auto;">
                 <button class="back-btn" onclick="goHome()">← Back</button>
 
-                <h1 style="font-family: Georgia, 'Times New Roman', serif; font-size: 2.5rem; font-weight: 400; margin-bottom: 2rem; color: var(--text);">About</h1>
+                <div class="section-kicker">About</div>
+                <h1 style="font-family: var(--font-serif); font-size: 2.5rem; font-weight: 400; margin-bottom: 2rem; color: var(--text);">About</h1>
 
                 <p style="font-size: 1rem; color: var(--text-muted); line-height: 2; margin-bottom: 3rem;">
                     This site contains documents released by the U.S. Department of Justice
