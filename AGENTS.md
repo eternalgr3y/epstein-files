@@ -4,18 +4,20 @@ Context for AI agents working on this codebase.
 
 ## Project Overview
 
-Searchable archive of Epstein case documents from DOJ and House Oversight releases.
+Searchable archive of Jeffrey Epstein case documents. Largest public index with 20,000+ documents and 6M+ entity mentions.
 
 **Live site:** https://epsteinproject.org
+**API:** https://epstein-files-api.protonuser597.workers.dev
+**Source:** https://codeberg.org/rillow/epstein-files
 
 ## Architecture
 
 ```
-Production (Cloudflare):
-├── Workers API (src/worker.js)
-├── D1 Database (SQLite at edge)
-├── R2 Storage (PDFs, images)
-└── Pages (frontend/index.html)
+Cloudflare Stack:
+├── Workers API (src/worker.js) - REST API with rate limiting
+├── D1 Database (SQLite at edge) - 20k docs, 178k entities, 6M mentions
+├── R2 Storage (PDFs, images) - ~40GB
+└── Pages (frontend/index.html) - Single-page app
 ```
 
 ## Key Files
@@ -25,66 +27,70 @@ Production (Cloudflare):
 | `src/worker.js` | Production API (Cloudflare Worker) |
 | `frontend/index.html` | Single-page frontend |
 | `wrangler.toml` | Cloudflare config |
+| `scrape_dropbox.py` | House Oversight Dropbox scraper |
+| `src/import_house_oversight.py` | Import script for House Oversight data |
 
 ## Database Schema
 
-**Two separate document tables:**
-
 ```sql
--- DOJ Documents (15,102 docs)
+-- All documents (20,653 total)
 documents (
     id, filename, title, document_type, data_set,
-    local_path, file_size, page_count, has_text, ...
+    source_url, file_size, page_count, has_text, ...
 )
 
--- House Oversight Documents (2,897 docs, 23,124 pages)
-house_oversight_documents (
-    id, bates_number, title, page_count, file_size,
-    file_hash, has_text, legacy_document_id, ...
-)
+-- Entity recognition (178,011 entities)
+entities (id, canonical_name, entity_type, mention_count, ...)
 
--- Shared tables
-entities (id, canonical_name, entity_type, ...)
+-- Entity mentions (5.8M+ mentions)
 mentions (id, document_id, entity_id, name_as_appears, role, ...)
-document_fts (document_id, content) -- FTS5 for DOJ search
+
+-- Full-text search (FTS5)
+document_fts (document_id, content)
 ```
+
+## Data Sets
+
+| Dataset | Documents | Description |
+|---------|-----------|-------------|
+| data-set-8 | 10,593 | DOJ primary release |
+| house-oversight-estate | 2,897 | House Oversight Committee (JPG scans) |
+| court-records | 2,638 | Court filings from CourtListener |
+| data-set | 3,136 | DOJ batch |
+| Data Set 8 | 419 | DOJ batch |
+| data-set-2 | 574 | DOJ batch |
+| doj-disclosures | 16 | DOJ disclosure docs |
+| maxwell-interview | 11 | 2025 Maxwell proffer transcripts |
 
 ## API Endpoints
 
-**DOJ documents:**
-- `GET /api/search?q=...` - Full-text search
-- `GET /api/browse` - Browse all
-- `GET /api/documents/{id}` - Document metadata
-- `GET /api/documents/{id}/file` - PDF file
-- `GET /api/documents/{id}/text` - Extracted text
+**Search & Browse:**
+- `GET /api/search?q=...` - Full-text search (AND logic)
+- `GET /api/browse?data_set=...` - Browse with filters
+- `GET /api/stats` - Database statistics
 
-**House Oversight (separate):**
+**Documents:**
+- `GET /api/documents/{id}` - Document metadata
+- `GET /api/documents/{id}/file` - PDF/media file
+- `GET /api/documents/{id}/text` - Extracted text
+- `GET /api/documents/{id}/thumbnail` - Thumbnail image
+
+**House Oversight (JPG scans):**
 - `GET /api/house-oversight/documents` - List all
-- `GET /api/house-oversight/documents?search=...` - Search
 - `GET /api/house-oversight/documents/{bates}` - Document detail
-- `GET /api/house-oversight/page/{bates}/{page}` - Page image (JPG)
-- `GET /api/house-oversight/stats` - Statistics
+- `GET /api/house-oversight/page/{bates}/{page}` - Page image
 
 **Entities:**
-- `GET /api/entities/{id}` - Entity detail
+- `POST /api/entities/search` - Search entities by name
 - `GET /api/entities/{id}/mentions` - Entity mentions
-- `POST /api/entities/search` - Search entities
+- `GET /api/document/{id}/entities` - Entities in a document
 
-## Current Status
+## Security
 
-- DOJ documents: Complete (15,102 PDFs indexed, FTS enabled)
-- House Oversight Estate: Complete (2,897 docs, 23,124 page images in R2)
-- Entity extraction: Complete (315k mentions, 60k entities)
-- R2 storage: Complete (36.5 GB)
-
-## Important Notes
-
-- **DOJ = PDFs**, House Oversight = **JPG page scans**
-- **Separate tables** - DOJ uses `documents`, House Oversight uses `house_oversight_documents`
-- **Blob URLs for PDFs** - Frontend fetches PDFs as blobs to bypass Chrome cross-origin blocking
-- `legacy_document_id` in house_oversight_documents links to mentions table
-- **No inference** - Only state facts from documents
-- **Source everything** - Link claims to specific documents
+- **Rate limiting:** 100 requests/minute per IP
+- **CSP:** Strict Content-Security-Policy headers
+- **X-Frame-Options:** SAMEORIGIN (prevents clickjacking)
+- **X-Content-Type-Options:** nosniff
 
 ## Deployment
 
@@ -103,12 +109,26 @@ CLOUDFLARE_API_TOKEN="..." npx wrangler pages deploy frontend/ --project-name=ep
 
 ```
 epstein-files/
-├── extracted/           # DOJ PDFs
+├── extracted/           # DOJ PDFs by data-set
+├── court-records/       # CourtListener PDFs
 ├── house-oversight/
-│   └── IMAGES/
-│       ├── 001/        # Pages 010477-012476
-│       ├── 002/        # Pages 012477-014476
-│       └── ...         # 2000 images per folder
-└── frontend/
-    └── index.html
+│   └── IMAGES/         # JPG page scans (2000 per folder)
+├── thumbnails/         # Document thumbnails
+└── doj-disclosures/    # DOJ disclosure PDFs
 ```
+
+## Important Notes
+
+- **DOJ/Court = PDFs**, House Oversight = **JPG page scans**
+- **Blob URLs for PDFs** - Frontend fetches as blobs to bypass Chrome cross-origin issues
+- **AND search** - Multi-word searches require ALL terms ("Clinton Wexner" = both)
+- **No inference** - Only state facts from documents
+- **Source everything** - Link claims to specific documents
+- **Entity deduplication needed** - "Bill Clinton" and "BILL CLINTON" are separate entities
+
+## Performance
+
+- Lighthouse score: 100/100
+- LCP: 1.7s (async font loading)
+- FTS queries: <100ms
+- Entity search: <1s even with 6M mentions
