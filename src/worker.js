@@ -386,13 +386,27 @@ async function searchDocuments(url, db) {
     ).first(),
 
     // Entity search (top 5 matching entities)
-    db.prepare(`
-      SELECT id, canonical_name, entity_type, mention_count
-      FROM entities
-      WHERE canonical_name LIKE ?
-      ORDER BY mention_count DESC
-      LIMIT 5
-    `).bind(`%${q.replace(/[^\w\s]/g, '')}%`).all()
+    // Extract individual terms for multi-word queries
+    (async () => {
+      const cleanQ = q.replace(/[^\w\s]/g, '').trim();
+      const terms = cleanQ.split(/\s+/).filter(t => t.length > 2 && !/^(OR|AND|THE|FOR|WITH)$/i.test(t));
+      if (terms.length === 0) return { results: [] };
+
+      // Limit query length to prevent SQLite LIKE pattern complexity errors
+      const searchTerm = terms.slice(0, 3).join(' ').substring(0, 100);
+
+      // Search for entities matching any significant term
+      const conditions = terms.slice(0, 3).map(() => 'canonical_name LIKE ?').join(' OR ');
+      const params = terms.slice(0, 3).map(t => `%${t.substring(0, 50)}%`);
+
+      return db.prepare(`
+        SELECT id, canonical_name, entity_type, mention_count
+        FROM entities
+        WHERE ${conditions}
+        ORDER BY mention_count DESC
+        LIMIT 5
+      `).bind(...params).all();
+    })()
   ]);
 
   return json({
@@ -781,8 +795,15 @@ async function searchEntities(request, db) {
     return error('Query is required', 400);
   }
 
+  // Limit query length to prevent SQLite LIKE pattern complexity errors
+  if (query.length > 200) {
+    return error('Query too long. Maximum 200 characters allowed.', 400);
+  }
+
+  const cleanQuery = query.substring(0, 200).replace(/[^\w\s-]/g, '');
+
   let sql = 'SELECT * FROM entities WHERE canonical_name LIKE ?';
-  const params = [`%${query}%`];
+  const params = [`%${cleanQuery}%`];
 
   if (entity_type) {
     sql += ' AND entity_type = ?';
