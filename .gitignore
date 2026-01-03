@@ -59,3 +59,14 @@ images/
 
 # Fly.io (not using)
 fly.toml
+
+# SQL exports
+*.sql
+!schema.sql
+
+# Wrangler
+.wrangler/
+
+# Temp files
+*.log
+*.tmp

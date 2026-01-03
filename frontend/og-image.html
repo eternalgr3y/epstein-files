@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            width: 1200px;
+            height: 630px;
+            background: linear-gradient(135deg, #08090a 0%, #0f172a 50%, #1e1b4b 100%);
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+        .title {
+            font-size: 72px;
+            font-weight: 800;
+            letter-spacing: -2px;
+            margin-bottom: 24px;
+        }
+        .title span { color: #3b82f6; }
+        .subtitle {
+            font-size: 32px;
+            color: #a1a1aa;
+            margin-bottom: 48px;
+        }
+        .stats {
+            display: flex;
+            gap: 48px;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat .num {
+            font-size: 48px;
+            font-weight: 800;
+            color: #3b82f6;
+        }
+        .stat .label {
+            font-size: 20px;
+            color: #71717a;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">Epstein<span>Files</span></div>
+    <div class="subtitle">Every document. Every name. Searchable.</div>
+    <div class="stats">
+        <div class="stat">
+            <div class="num">20K+</div>
+            <div class="label">Documents</div>
+        </div>
+        <div class="stat">
+            <div class="num">37K+</div>
+            <div class="label">Images</div>
+        </div>
+        <div class="stat">
+            <div class="num">12K+</div>
+            <div class="label">Names</div>
+        </div>
+    </div>
+</body>
+</html>
