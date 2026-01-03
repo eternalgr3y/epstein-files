@@ -330,32 +330,76 @@ async function searchDocuments(url, db) {
     return error('Query cannot be empty', 400);
   }
 
-  // Full-text search using FTS5 (DOJ only)
-  // Join with AND so "Clinton Wexner" finds docs with BOTH terms
-  const ftsQuery = q.replace(/[^\w\s]/g, '').split(/\s+/).join(' AND ');
+  // Parse query: support "phrase" and OR syntax
+  // "exact phrase" stays as-is, other terms joined with AND unless OR present
+  let ftsQuery;
+  const hasOr = /\bOR\b/i.test(q);
+  const hasPhrase = /"[^"]+"/.test(q);
 
-  const results = await db.prepare(`
-    SELECT d.id, d.filename, d.title, d.data_set, d.document_type, d.source_url,
-           snippet(document_fts, 1, '>>>', '<<<', '...', 32) as snippet
-    FROM document_fts
-    JOIN documents d ON d.id = document_fts.document_id
-    WHERE document_fts MATCH ?
-    AND d.data_set != 'house-oversight-estate'
-    ${documentType ? 'AND d.document_type = ?' : ''}
-    ${dataSet ? 'AND d.data_set = ?' : ''}
-    ORDER BY rank
-    LIMIT ? OFFSET ?
-  `).bind(
-    ftsQuery,
-    ...(documentType ? [documentType] : []),
-    ...(dataSet ? [dataSet] : []),
-    limit,
-    offset
-  ).all();
+  if (hasPhrase || hasOr) {
+    // Preserve quotes and OR, just clean dangerous chars
+    ftsQuery = q.replace(/[^\w\s"OR]/gi, '').trim();
+    if (!hasOr) {
+      // Add AND between non-phrase terms
+      ftsQuery = ftsQuery.replace(/("[^"]+"|\S+)/g, '$1').split(/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/).join(' AND ');
+    }
+  } else {
+    // Simple case: split words, join with AND
+    ftsQuery = q.replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean).join(' AND ');
+  }
+
+  // Run document search and entity search in parallel
+  const [results, countResult, entityResults] = await Promise.all([
+    // Document search
+    db.prepare(`
+      SELECT d.id, d.filename, d.title, d.data_set, d.document_type, d.source_url,
+             snippet(document_fts, 1, '>>>', '<<<', '...', 32) as snippet
+      FROM document_fts
+      JOIN documents d ON d.id = document_fts.document_id
+      WHERE document_fts MATCH ?
+      AND d.data_set != 'house-oversight-estate'
+      ${documentType ? 'AND d.document_type = ?' : ''}
+      ${dataSet ? 'AND d.data_set = ?' : ''}
+      ORDER BY rank
+      LIMIT ? OFFSET ?
+    `).bind(
+      ftsQuery,
+      ...(documentType ? [documentType] : []),
+      ...(dataSet ? [dataSet] : []),
+      limit,
+      offset
+    ).all(),
+
+    // Total count (without LIMIT)
+    db.prepare(`
+      SELECT COUNT(*) as total
+      FROM document_fts
+      JOIN documents d ON d.id = document_fts.document_id
+      WHERE document_fts MATCH ?
+      AND d.data_set != 'house-oversight-estate'
+      ${documentType ? 'AND d.document_type = ?' : ''}
+      ${dataSet ? 'AND d.data_set = ?' : ''}
+    `).bind(
+      ftsQuery,
+      ...(documentType ? [documentType] : []),
+      ...(dataSet ? [dataSet] : []),
+    ).first(),
+
+    // Entity search (top 5 matching entities)
+    db.prepare(`
+      SELECT id, canonical_name, entity_type, mention_count
+      FROM entities
+      WHERE canonical_name LIKE ?
+      ORDER BY mention_count DESC
+      LIMIT 5
+    `).bind(`%${q.replace(/[^\w\s]/g, '')}%`).all()
+  ]);
 
   return json({
     query: q,
-    total_results: results.results.length,
+    total: countResult?.total || results.results.length,
+    offset,
+    limit,
     results: results.results.map(r => ({
       document_id: r.id,
       filename: r.filename,
@@ -365,6 +409,12 @@ async function searchDocuments(url, db) {
       source_url: r.source_url,
       relevance_score: 1.0,
       snippet: r.snippet || '',
+    })),
+    entities: entityResults.results.map(e => ({
+      entity_id: e.id,
+      name: e.canonical_name,
+      type: e.entity_type,
+      mention_count: e.mention_count,
     })),
   });
 }
