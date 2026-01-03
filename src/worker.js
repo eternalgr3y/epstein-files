@@ -7,6 +7,43 @@
 
 const R2_PUBLIC_URL = 'https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev';
 
+// Rate limiting: 100 requests per minute per IP
+const RATE_LIMIT = 100;
+const RATE_WINDOW = 60000; // 1 minute in ms
+const rateLimitMap = new Map();
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  // Clean old entries periodically
+  if (rateLimitMap.size > 10000) {
+    for (const [key, val] of rateLimitMap) {
+      if (now - val.start > RATE_WINDOW) rateLimitMap.delete(key);
+    }
+  }
+
+  if (!record || now - record.start > RATE_WINDOW) {
+    rateLimitMap.set(ip, { start: now, count: 1 });
+    return { allowed: true, remaining: RATE_LIMIT - 1 };
+  }
+
+  record.count++;
+  if (record.count > RATE_LIMIT) {
+    return { allowed: false, remaining: 0, retryAfter: Math.ceil((record.start + RATE_WINDOW - now) / 1000) };
+  }
+
+  return { allowed: true, remaining: RATE_LIMIT - record.count };
+}
+
+// Security headers
+const securityHeaders = {
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https:; frame-ancestors 'self'",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+};
+
 // CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,10 +52,10 @@ const corsHeaders = {
 };
 
 // JSON response helper
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...securityHeaders, ...extraHeaders },
   });
 }
 
@@ -37,6 +74,22 @@ export default {
     // Handle CORS preflight
     if (method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    // Rate limiting
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const rateLimit = checkRateLimit(ip);
+    const rateLimitHeaders = {
+      'X-RateLimit-Limit': RATE_LIMIT.toString(),
+      'X-RateLimit-Remaining': rateLimit.remaining.toString(),
+    };
+
+    if (!rateLimit.allowed) {
+      return json(
+        { error: 'Rate limit exceeded. Please slow down.', retry_after: rateLimit.retryAfter },
+        429,
+        { ...rateLimitHeaders, 'Retry-After': rateLimit.retryAfter.toString() }
+      );
     }
 
     try {
@@ -70,12 +123,12 @@ export default {
 
       const docFileMatch = path.match(/^\/api\/documents\/(\d+)\/file$/);
       if (docFileMatch) {
-        return await getDocumentFile(parseInt(docFileMatch[1]), env.DB);
+        return await getDocumentFile(parseInt(docFileMatch[1]), env.DB, env.R2);
       }
 
       const docThumbMatch = path.match(/^\/api\/documents\/(\d+)\/thumbnail$/);
       if (docThumbMatch) {
-        return await getDocumentThumbnail(parseInt(docThumbMatch[1]), env.DB);
+        return await getDocumentThumbnail(parseInt(docThumbMatch[1]), env.DB, env.R2);
       }
 
       // Video routes
@@ -144,6 +197,11 @@ export default {
       const hoPageMatch = path.match(/^\/api\/house-oversight\/page\/([A-Z_\d]+)\/(\d+)$/);
       if (hoPageMatch) {
         return await getHouseOversightPage(hoPageMatch[1], parseInt(hoPageMatch[2]), env.R2);
+      }
+
+      const hoThumbMatch = path.match(/^\/api\/house-oversight\/thumbnail\/([A-Z_\d]+)$/);
+      if (hoThumbMatch) {
+        return await getHouseOversightPage(hoThumbMatch[1], 0, env.R2);
       }
 
       if (path === '/api/house-oversight/stats') {
@@ -235,7 +293,7 @@ async function searchDocuments(url, db) {
 
   // If no query but filters, browse by filter
   if (!q && (documentType || dataSet)) {
-    let sql = 'SELECT * FROM documents WHERE 1=1';
+    let sql = "SELECT * FROM documents WHERE data_set != 'house-oversight-estate'";
     const params = [];
 
     if (documentType) {
@@ -272,8 +330,9 @@ async function searchDocuments(url, db) {
     return error('Query cannot be empty', 400);
   }
 
-  // Full-text search using FTS5
-  const ftsQuery = q.replace(/[^\w\s]/g, '').split(/\s+/).join(' OR ');
+  // Full-text search using FTS5 (DOJ only)
+  // Join with AND so "Clinton Wexner" finds docs with BOTH terms
+  const ftsQuery = q.replace(/[^\w\s]/g, '').split(/\s+/).join(' AND ');
 
   const results = await db.prepare(`
     SELECT d.id, d.filename, d.title, d.data_set, d.document_type, d.source_url,
@@ -281,6 +340,7 @@ async function searchDocuments(url, db) {
     FROM document_fts
     JOIN documents d ON d.id = document_fts.document_id
     WHERE document_fts MATCH ?
+    AND d.data_set != 'house-oversight-estate'
     ${documentType ? 'AND d.document_type = ?' : ''}
     ${dataSet ? 'AND d.data_set = ?' : ''}
     ORDER BY rank
@@ -315,7 +375,8 @@ async function browseDocuments(url, db) {
   const filter = url.searchParams.get('filter');
   const documentType = url.searchParams.get('document_type');
 
-  let sql = 'SELECT * FROM documents WHERE 1=1';
+  // DOJ only - House Oversight has separate endpoints
+  let sql = "SELECT * FROM documents WHERE data_set != 'house-oversight-estate'";
   const params = [];
 
   if (documentType) {
@@ -425,44 +486,89 @@ async function getDocumentText(id, url, db) {
   });
 }
 
-async function getDocumentFile(id, db) {
-  const doc = await db.prepare('SELECT local_path FROM documents WHERE id = ?').bind(id).first();
+async function getDocumentFile(id, db, r2) {
+  const doc = await db.prepare('SELECT local_path, filename, data_set FROM documents WHERE id = ?').bind(id).first();
+
   if (!doc) {
     return error('Document not found', 404);
   }
 
-  // Convert local path to R2 URL
-  // local_path is like /mnt/e/epstein-files/raw/...
-  const pathMatch = doc.local_path.match(/epstein-files\/(.+)$/);
+  // House Oversight docs - serve first page image from R2
+  if (doc.data_set === 'house-oversight-estate') {
+    const bates = doc.filename; // e.g., HOUSE_OVERSIGHT_010477
+    const batesNum = parseInt(bates.replace('HOUSE_OVERSIGHT_', ''));
+    const folderNum = Math.floor((batesNum - 10477) / 2000 + 1);
+    const folder = folderNum.toString().padStart(3, '0');
+    const r2Key = `house-oversight/IMAGES/${folder}/${bates}.jpg`;
+
+    try {
+      const object = await r2.get(r2Key);
+      if (object) {
+        return new Response(object.body, {
+          headers: {
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'public, max-age=86400',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+            ...corsHeaders,
+          },
+        });
+      }
+    } catch (e) {
+      console.error('R2 fetch error for House Oversight:', e);
+    }
+    return error('File not available', 404);
+  }
+
+  // DOJ docs - serve PDF from local_path
+  const pathMatch = doc.local_path?.match(/epstein-files\/(.+)$/);
   if (pathMatch) {
-    const r2Path = encodeURI(pathMatch[1]);
-    const r2Url = `${R2_PUBLIC_URL}/${r2Path}`;
-    return new Response(null, {
-      status: 302,
-      headers: {
-        'Location': r2Url,
-        ...corsHeaders,
-      },
-    });
+    const r2Key = pathMatch[1];
+    try {
+      const object = await r2.get(r2Key);
+      if (object) {
+        const contentType = doc.filename?.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
+        return new Response(object.body, {
+          headers: {
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=86400',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+            ...corsHeaders,
+          },
+        });
+      }
+    } catch (e) {
+      console.error('R2 fetch error:', e);
+    }
   }
 
   return error('File not available', 404);
 }
 
-async function getDocumentThumbnail(id, db) {
-  const doc = await db.prepare('SELECT local_path FROM documents WHERE id = ?').bind(id).first();
+async function getDocumentThumbnail(id, db, r2) {
+  const doc = await db.prepare('SELECT local_path, filename FROM documents WHERE id = ?').bind(id).first();
   if (!doc) {
     return error('Document not found', 404);
   }
 
   // Try pre-generated thumbnail first
-  return new Response(null, {
-    status: 302,
-    headers: {
-      'Location': `${R2_PUBLIC_URL}/thumbnails/${id}.jpg`,
-      ...corsHeaders,
-    },
-  });
+  try {
+    const thumb = await r2.get(`thumbnails/${id}.jpg`);
+    if (thumb) {
+      return new Response(thumb.body, {
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'public, max-age=86400',
+          ...corsHeaders,
+        },
+      });
+    }
+  } catch (e) {
+    // No thumbnail, fall through
+  }
+
+  // Fallback: serve first page of PDF as "thumbnail" (returns PDF, not image)
+  // For now, return a placeholder or 404
+  return error('Thumbnail not available', 404);
 }
 
 async function listVideos(url, db) {
@@ -740,11 +846,11 @@ async function listHouseOversightDocs(url, db) {
   const offset = parseInt(url.searchParams.get('offset') || '0');
   const search = url.searchParams.get('search') || '';
 
-  let sql = "SELECT * FROM documents WHERE data_set = 'house-oversight-estate'";
+  let sql = "SELECT * FROM house_oversight_documents";
   const params = [];
 
   if (search) {
-    sql += ' AND (filename LIKE ? OR title LIKE ?)';
+    sql += ' WHERE (bates_number LIKE ? OR title LIKE ?)';
     params.push(`%${search}%`, `%${search}%`);
   }
 
@@ -752,7 +858,7 @@ async function listHouseOversightDocs(url, db) {
   const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as count');
   const total = await db.prepare(countSql).bind(...params).first();
 
-  sql += ' ORDER BY filename LIMIT ? OFFSET ?';
+  sql += ' ORDER BY bates_number LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
   const results = await db.prepare(sql).bind(...params).all();
@@ -763,40 +869,32 @@ async function listHouseOversightDocs(url, db) {
     limit,
     documents: results.results.map(d => ({
       id: d.id,
-      bates: d.filename,
+      bates: d.bates_number,
       title: d.title,
       page_count: d.page_count || 1,
-      thumbnail: `/api/house-oversight/page/${d.filename}/0`,
+      thumbnail: `/api/house-oversight/page/${d.bates_number}/0`,
     })),
   });
 }
 
 async function getHouseOversightDoc(bates, db, r2) {
   const doc = await db.prepare(
-    "SELECT * FROM documents WHERE filename = ? AND data_set = 'house-oversight-estate'"
+    "SELECT * FROM house_oversight_documents WHERE bates_number = ?"
   ).bind(bates).first();
 
   if (!doc) {
     return error('Document not found', 404);
   }
 
-  // Get text content
-  const text = await db.prepare(
-    'SELECT full_text, word_count FROM document_texts WHERE document_id = ?'
-  ).bind(doc.id).first();
-
-  // Get page info from cached manifest or derive from page_count
+  // Get page info from page_count
   const pages = [];
   const pageCount = doc.page_count || 1;
 
   // Page filenames follow pattern: BATES number increments
-  // E.g., HOUSE_OVERSIGHT_010477 has pages 010477, 010478, etc.
   const batesNum = parseInt(bates.replace('HOUSE_OVERSIGHT_', ''));
   for (let i = 0; i < pageCount; i++) {
     const pageNum = batesNum + i;
     const padded = pageNum.toString().padStart(6, '0');
-    // Determine folder (001, 002, etc.) based on page range
-    const folder = Math.floor((pageNum - 10477) / 1000 + 1).toString().padStart(3, '0');
     pages.push({
       page: i,
       url: `/api/house-oversight/page/${bates}/${i}`,
@@ -804,30 +902,33 @@ async function getHouseOversightDoc(bates, db, r2) {
     });
   }
 
-  // Get mentions/entities for this document
-  const mentions = await db.prepare(`
-    SELECT e.id, e.canonical_name, e.entity_type, m.name_as_appears, m.role
-    FROM mentions m
-    JOIN entities e ON e.id = m.entity_id
-    WHERE m.document_id = ?
-    LIMIT 100
-  `).bind(doc.id).all();
-
-  return json({
-    id: doc.id,
-    bates: doc.filename,
-    title: doc.title,
-    page_count: pageCount,
-    pages,
-    text_preview: text?.full_text?.substring(0, 2000) || null,
-    word_count: text?.word_count || 0,
-    entities: mentions.results.map(m => ({
+  // Get mentions/entities using legacy_document_id
+  let entities = [];
+  if (doc.legacy_document_id) {
+    const mentions = await db.prepare(`
+      SELECT e.id, e.canonical_name, e.entity_type, m.name_as_appears, m.role
+      FROM mentions m
+      JOIN entities e ON e.id = m.entity_id
+      WHERE m.document_id = ?
+      LIMIT 100
+    `).bind(doc.legacy_document_id).all();
+    entities = mentions.results.map(m => ({
       id: m.id,
       name: m.canonical_name,
       type: m.entity_type,
       as_appears: m.name_as_appears,
       role: m.role,
-    })),
+    }));
+  }
+
+  return json({
+    id: doc.id,
+    bates: doc.bates_number,
+    title: doc.title,
+    page_count: pageCount,
+    pages,
+    text_preview: doc.text_content?.substring(0, 2000) || null,
+    entities,
   });
 }
 
@@ -838,45 +939,59 @@ async function getHouseOversightPage(bates, pageIndex, r2) {
   const padded = pageNum.toString().padStart(6, '0');
 
   // Determine folder based on page number ranges
-  // 001: 010477-011476, 002: 011477-012476, etc.
-  const folderNum = Math.floor((pageNum - 10477) / 1000 + 1);
+  // 001: 010477-012476, 002: 012477-014476, etc. (2000 per folder)
+  const folderNum = Math.floor((pageNum - 10477) / 2000 + 1);
   const folder = folderNum.toString().padStart(3, '0');
 
   const imagePath = `IMAGES/${folder}/HOUSE_OVERSIGHT_${padded}.jpg`;
-  const r2Path = `house-oversight/${imagePath}`;
+  const r2Key = `house-oversight/${imagePath}`;
 
-  // Return redirect to R2 public URL
-  return new Response(null, {
-    status: 302,
-    headers: {
-      'Location': `${R2_PUBLIC_URL}/${r2Path}`,
-      ...corsHeaders,
-    },
-  });
+  // Serve directly from R2 binding
+  try {
+    const object = await r2.get(r2Key);
+    if (!object) {
+      return error('Image not found', 404);
+    }
+
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'public, max-age=86400',
+        ...corsHeaders,
+      },
+    });
+  } catch (e) {
+    // Fallback to redirect
+    return new Response(null, {
+      status: 302,
+      headers: {
+        'Location': `${R2_PUBLIC_URL}/${r2Key}`,
+        ...corsHeaders,
+      },
+    });
+  }
 }
 
 async function getHouseOversightStats(db) {
   const docCount = await db.prepare(
-    "SELECT COUNT(*) as count FROM documents WHERE data_set = 'house-oversight-estate'"
+    "SELECT COUNT(*) as count FROM house_oversight_documents"
   ).first();
 
   const pageCount = await db.prepare(
-    "SELECT SUM(page_count) as total FROM documents WHERE data_set = 'house-oversight-estate'"
+    "SELECT SUM(page_count) as total FROM house_oversight_documents"
   ).first();
 
   const entityCount = await db.prepare(`
     SELECT COUNT(DISTINCT e.id) as count
     FROM mentions m
     JOIN entities e ON e.id = m.entity_id
-    JOIN documents d ON d.id = m.document_id
-    WHERE d.data_set = 'house-oversight-estate'
+    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
   `).first();
 
   const mentionCount = await db.prepare(`
     SELECT COUNT(*) as count
     FROM mentions m
-    JOIN documents d ON d.id = m.document_id
-    WHERE d.data_set = 'house-oversight-estate'
+    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
   `).first();
 
   // Get top entities
@@ -884,8 +999,7 @@ async function getHouseOversightStats(db) {
     SELECT e.id, e.canonical_name, e.entity_type, COUNT(*) as mention_count
     FROM mentions m
     JOIN entities e ON e.id = m.entity_id
-    JOIN documents d ON d.id = m.document_id
-    WHERE d.data_set = 'house-oversight-estate'
+    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
     GROUP BY e.id
     ORDER BY mention_count DESC
     LIMIT 20

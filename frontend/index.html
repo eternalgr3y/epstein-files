@@ -86,8 +86,13 @@
     <!-- Google AdSense - Replace ca-pub-XXXXXXX with your publisher ID -->
     <!-- <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script> -->
 
+    <!-- Preconnect for faster font loading -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Load fonts async - media="print" trick prevents render blocking -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap"></noscript>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -99,7 +104,7 @@
             --border-hover: rgba(139, 47, 47, 0.35);
             --text: #1d1a14;
             --text-muted: #6d655a;
-            --text-dim: #8e857a;
+            --text-dim: #6b6358;
             --accent: #8b2f2f;
             --accent-hover: #a33b3b;
             --accent-soft: rgba(139, 47, 47, 0.08);
@@ -158,8 +163,17 @@
             max-width: 1400px;
             margin: 0 auto;
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
             align-items: center;
+            gap: 1rem;
+        }
+
+        .header-top {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
         }
 
         .logo {
@@ -188,6 +202,8 @@
             padding: 0.5rem;
             transition: color 0.3s ease;
             display: none;
+            position: absolute;
+            right: 0;
         }
 
         .menu-btn:hover {
@@ -196,7 +212,7 @@
 
         .site-nav {
             display: flex;
-            gap: 2rem;
+            gap: 1.25rem;
             align-items: center;
         }
 
@@ -207,6 +223,12 @@
             letter-spacing: 0.16em;
             text-transform: uppercase;
             transition: color 0.3s ease;
+        }
+
+        .site-nav a + a::before {
+            content: "·";
+            color: var(--text-dim);
+            margin-right: 0.9rem;
         }
 
         .site-nav a:hover {
@@ -547,6 +569,22 @@
             font-size: 0.9rem;
             color: var(--text-muted);
             line-height: 1.8;
+        }
+
+        .source-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.65rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--accent);
+            text-decoration: none;
+            margin-top: 0.75rem;
+        }
+
+        .source-link:hover {
+            text-decoration: underline;
         }
 
         .result-snippet mark {
@@ -914,6 +952,96 @@
             margin-top: 2rem;
         }
 
+        /* House Oversight */
+        .oversight-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .oversight-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 18px 38px rgba(29, 26, 20, 0.08);
+        }
+
+        .oversight-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent);
+        }
+
+        .oversight-card img {
+            width: 100%;
+            aspect-ratio: 3/4;
+            object-fit: cover;
+            display: block;
+            background: var(--bg);
+        }
+
+        .oversight-card .info {
+            padding: 1rem 1.1rem 1.2rem;
+        }
+
+        .oversight-card .info h4 {
+            font-family: var(--font-serif);
+            font-size: 0.95rem;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .oversight-card .info .meta-pill {
+            margin-bottom: 0.5rem;
+            display: inline-flex;
+        }
+
+        .page-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 1rem;
+        }
+
+        .page-grid a {
+            display: block;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .page-grid a:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .page-grid img {
+            width: 100%;
+            aspect-ratio: 3/4;
+            object-fit: cover;
+            display: block;
+            background: var(--bg);
+        }
+
+        .entity-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .entity-chip {
+            font-size: 0.6rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 0.25rem 0.6rem;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            background: rgba(255, 250, 241, 0.7);
+        }
+
         /* Entity badges */
         .entity-card {
             background: transparent;
@@ -1191,7 +1319,16 @@
     <div class="nav-overlay" id="nav-overlay" onclick="toggleMenu(false)"></div>
     <header>
         <div class="header-inner">
-            <a href="#" onclick="goHome(); return false;" class="logo">Epstein<span>Project</span><span class="logo-tld">.org</span></a>
+            <div class="header-top">
+                <a href="#" onclick="goHome(); return false;" class="logo">Epstein<span>Project</span><span class="logo-tld">.org</span></a>
+                <button class="menu-btn" onclick="toggleMenu()" aria-label="Menu">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
             <nav id="slide-menu" class="site-nav">
                 <a href="#" id="nav-images" onclick="showImages(); toggleMenu(false); return false;">Images</a>
                 <a href="#" id="nav-videos" onclick="showVideos(); toggleMenu(false); return false;">Videos</a>
@@ -1200,13 +1337,6 @@
                 <a href="#" id="nav-maxwell" onclick="showMaxwellTapes(); toggleMenu(false); return false;">Recordings</a>
                 <a href="#" id="nav-about" onclick="showAbout(); toggleMenu(false); return false;">About</a>
             </nav>
-            <button class="menu-btn" onclick="toggleMenu()" aria-label="Menu">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <line x1="3" y1="6" x2="21" y2="6"></line>
-                    <line x1="3" y1="12" x2="21" y2="12"></line>
-                    <line x1="3" y1="18" x2="21" y2="18"></line>
-                </svg>
-            </button>
         </div>
     </header>
 
@@ -1215,10 +1345,9 @@
         <div id="home-view">
             <section class="hero">
                 <div class="hero-kicker reveal" data-delay="1">Department of Justice Release</div>
-                <h1 class="reveal" data-delay="2">A public reading room for the Epstein case files.</h1>
+                <h1>Epstein case documents.</h1>
                 <p class="reveal" data-delay="3">
-                    Search the DOJ releases, depositions, flight logs, and evidence files.
-                    Every record links back to the original document.
+                    Search DOJ releases, depositions, flight logs, and evidence files.
                 </p>
                 <div class="search-container reveal" data-delay="4">
                     <label class="sr-only" for="q">Search the archive</label>
@@ -1262,6 +1391,7 @@
     <footer>
         <p>
             <a href="#" onclick="showAbout(); return false;">About</a> &nbsp;·&nbsp;
+            <a href="https://docs.google.com/forms/d/e/1FAIpQLSdu5whC_64CsbCUP-6wjtwGx28y0oFOVMv290bREt45O0CWJg/viewform?usp=dialog" target="_blank">Feedback</a> &nbsp;·&nbsp;
             <a href="https://rainn.org" target="_blank">RAINN</a> &nbsp;·&nbsp;
             <a href="https://justice.gov/epstein" target="_blank">DOJ Source</a>
         </p>
@@ -1271,11 +1401,13 @@
 
     <script>
     const API = 'https://epstein-files-api.protonuser597.workers.dev/api';
+    const API_BASE = API.replace(/\/api$/, '');
 
     // Navigation state
     let currentView = 'home';
     let currentHash = '';  // Track current hash to prevent redundant fetches
     let isLoading = false; // Prevent double-fetches
+    let currentPdfBlobUrl = null;
 
     // Elements
     const homeView = document.getElementById('home-view');
@@ -1283,6 +1415,7 @@
     const searchInput = document.getElementById('q');
     const navOverlay = document.getElementById('nav-overlay');
     const slideMenu = document.getElementById('slide-menu');
+    const imagesState = { items: [], index: 0 };
     function toggleMenu(forceOpen = null) {
         const shouldOpen = forceOpen === null ? !slideMenu.classList.contains('open') : forceOpen;
         slideMenu.classList.toggle('open', shouldOpen);
@@ -1352,7 +1485,8 @@
             searchInput.value = decodeURIComponent(param);
             doSearch(true); // true = don't pushState, we're already at this hash
         } else if (type === 'images') {
-            showImages(0, true);
+            const parsedOffset = param ? parseInt(param) : 0;
+            showImages(Number.isFinite(parsedOffset) ? parsedOffset : 0, true, false);
         } else if (type === 'videos') {
             showVideos(0, true);
         } else if (type === 'maxwell') {
@@ -1361,7 +1495,7 @@
             showDocuments(0, true);
         } else if (type === 'house-oversight') {
             if (param) {
-                viewHouseOversightDoc(param, true);
+                viewHouseOversightDoc(decodeURIComponent(param), true);
             } else {
                 showHouseOversight(0, true);
             }
@@ -1379,6 +1513,9 @@
         homeView.style.display = view === 'home' ? 'block' : 'none';
         resultsView.style.display = view === 'home' ? 'none' : 'block';
         resultsView.classList.toggle('active', view !== 'home');
+        if (view !== 'doc') {
+            revokePdfBlobUrl();
+        }
 
         // Update nav active state
         document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
@@ -1399,6 +1536,13 @@
             history.pushState(null, '', location.pathname);
         }
         window.scrollTo(0, 0);
+    }
+
+    function revokePdfBlobUrl() {
+        if (currentPdfBlobUrl) {
+            URL.revokeObjectURL(currentPdfBlobUrl);
+            currentPdfBlobUrl = null;
+        }
     }
 
     function doSearch(skipPush = false) {
@@ -1484,6 +1628,7 @@
                         <div class="result-title"><a href="#" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                         ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
+                        ${d.source_url ? `<a class="source-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">Open Source</a>` : ''}
                     </div>
                 `;
             });
@@ -1509,7 +1654,7 @@
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
                 <div class="section-kicker">Archive</div>
-                <div class="results-intro">Video materials released with the case files.</div>
+                <div class="results-intro">Video files in the archive.</div>
                 <div class="results-header">
                     <h2>Video Evidence</h2>
                     <span class="results-count">${r.total.toLocaleString()} videos</span>
@@ -1575,9 +1720,7 @@
                     <h2>Maxwell Deposition Tapes</h2>
                     <span class="results-count">${r.total} recordings</span>
                 </div>
-                <div class="results-intro">
-                    Audio recordings from Ghislaine Maxwell's deposition.
-                </div>
+                <div class="results-intro">Audio recordings from deposition exhibits.</div>
 
                 <div class="tape-section">
                     <h3>Day 1</h3>
@@ -1614,7 +1757,7 @@
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
                 <div class="section-kicker">Archive</div>
-                <div class="results-intro">Browse the full DOJ document set in chronological order.</div>
+                <div class="results-intro">DOJ document set.</div>
                 <div class="results-header">
                     <h2>All Documents</h2>
                     <span class="results-count">${r.total.toLocaleString()} files</span>
@@ -1661,34 +1804,43 @@
         if (!skipPush && location.hash !== '#house-oversight') history.pushState(null, '', '#house-oversight');
 
         try {
-            const r = await fetch(`${API}/house-oversight/documents?limit=50&offset=${offset}`).then(r => r.json());
+            const [docs, stats] = await Promise.all([
+                fetch(`${API}/house-oversight/documents?limit=36&offset=${offset}`).then(r => r.json()),
+                fetch(`${API}/house-oversight/stats`).then(r => r.json()).catch(() => null)
+            ]);
+            const totalDocs = docs.total || 0;
+            const totalPages = stats?.pages || null;
+            const pageSize = docs.documents?.length || 36;
 
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
                 <div class="section-kicker">House Oversight Committee</div>
-                <div class="results-intro">Litigation load files from the Epstein estate investigation released by the House Oversight Committee. ${r.total.toLocaleString()} documents containing ${(23124).toLocaleString()} page scans.</div>
+                <div class="results-intro">
+                    House Oversight Committee estate documents.
+                    ${totalDocs.toLocaleString()} documents${totalPages ? `, ${totalPages.toLocaleString()} page scans` : ''}.
+                </div>
                 <div class="results-header">
                     <h2>Estate Documents</h2>
-                    <span class="results-count">${r.total.toLocaleString()} documents</span>
+                    <span class="results-count">${totalDocs.toLocaleString()} documents</span>
+                </div>
+                <div class="oversight-grid">
+                    ${docs.documents.map(d => `
+                        <div class="oversight-card" onclick="viewHouseOversightDoc('${esc(d.bates)}')" role="button">
+                            <img src="${API_BASE}${d.thumbnail}" alt="${esc(d.title || d.bates)} thumbnail" loading="lazy">
+                            <div class="info">
+                                <span class="meta-pill">${d.page_count} pages</span>
+                                <h4>${esc(d.title || d.bates)}</h4>
+                                <div class="result-meta">${esc(d.bates)}</div>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             `;
 
-            r.documents.forEach(d => {
-                html += `
-                    <div class="result-card" onclick="viewHouseOversightDoc('${esc(d.bates)}')" style="cursor:pointer;">
-                        <div class="result-title">${esc(d.title || d.bates)}</div>
-                        <div class="meta-row">
-                            <span class="meta-pill">${d.page_count} pages</span>
-                            <span class="meta-pill">${esc(d.bates)}</span>
-                        </div>
-                    </div>
-                `;
-            });
-
             html += `
                 <div class="pagination">
-                    ${offset > 0 ? `<button class="btn" onclick="showHouseOversight(${offset - 50})">← Previous</button>` : ''}
-                    ${r.documents.length === 50 ? `<button class="btn" onclick="showHouseOversight(${offset + 50})">Next →</button>` : ''}
+                    ${offset > 0 ? `<button class="btn" onclick="showHouseOversight(${Math.max(0, offset - pageSize)})">← Previous</button>` : ''}
+                    ${offset + pageSize < totalDocs ? `<button class="btn" onclick="showHouseOversight(${offset + pageSize})">Next →</button>` : ''}
                 </div>
             `;
 
@@ -1707,8 +1859,9 @@
     async function viewHouseOversightDoc(bates, skipPush = false) {
         setView('house-oversight');
         resultsView.innerHTML = '<div class="loading">Loading document</div>';
-        currentHash = `house-oversight/${bates}`;
-        if (!skipPush) history.pushState(null, '', `#house-oversight/${bates}`);
+        const encodedBates = encodeURIComponent(bates);
+        currentHash = `house-oversight/${encodedBates}`;
+        if (!skipPush) history.pushState(null, '', `#house-oversight/${encodedBates}`);
 
         try {
             const doc = await fetch(`${API}/house-oversight/documents/${bates}`).then(r => r.json());
@@ -1720,20 +1873,19 @@
                     <h2>${esc(doc.title || doc.bates)}</h2>
                     <span class="results-count">${doc.page_count} pages</span>
                 </div>
+                <div class="meta-row">
+                    <span class="meta-pill">${esc(doc.bates)}</span>
+                    <span class="meta-pill">${doc.page_count} pages</span>
+                </div>
             `;
 
-            // Page viewer
-            html += `<div class="ho-page-viewer">`;
+            html += `<div class="page-grid">`;
             doc.pages.forEach((p, i) => {
+                const pageUrl = `${API_BASE}${p.url}`;
                 html += `
-                    <div class="ho-page" id="page-${i}">
-                        <div class="ho-page-header">Page ${i + 1} of ${doc.page_count}</div>
-                        <img src="${API}/house-oversight/page/${bates}/${i}"
-                             alt="Page ${i + 1}"
-                             loading="lazy"
-                             onclick="window.open('${API}/house-oversight/page/${bates}/${i}', '_blank')"
-                             style="cursor: zoom-in; max-width: 100%; border: 1px solid var(--border);">
-                    </div>
+                    <a href="${pageUrl}" target="_blank" aria-label="Open page ${i + 1}">
+                        <img src="${pageUrl}" alt="Page ${i + 1}" loading="lazy">
+                    </a>
                 `;
             });
             html += `</div>`;
@@ -1743,10 +1895,10 @@
                 html += `
                     <div class="entities-section" style="margin-top: 2rem;">
                         <h3>Entities Mentioned</h3>
-                        <div class="entity-pills">
+                        <div class="entity-chips">
                             ${doc.entities.slice(0, 50).map(e => `
-                                <span class="meta-pill" onclick="viewEntity(${e.id})" style="cursor:pointer;">
-                                    ${esc(e.name)} <small>(${esc(e.type)})</small>
+                                <span class="entity-chip" onclick="viewEntity(${e.id})" style="cursor:pointer;">
+                                    ${esc(e.name)} (${esc(e.type)})
                                 </span>
                             `).join('')}
                         </div>
@@ -1767,11 +1919,11 @@
     }
 
     // === IMAGES ===
-    async function showImages(offset = 0, skipPush = false) {
+    async function showImages(offset = 0, skipPush = false, preferRecent = true) {
         setView('images');
         resultsView.innerHTML = '<div class="loading">Loading images</div>';
         currentHash = 'images';
-        if (!skipPush && location.hash !== '#images') history.pushState(null, '', '#images');
+        if (!skipPush) history.pushState(null, '', `#images/${offset}`);
 
         try {
             const r = await fetch(`${API}/images?limit=60&offset=${offset}`).then(r => r.json());
@@ -1784,6 +1936,20 @@
                 return;
             }
 
+            if (preferRecent && offset === 0 && r.total > (r.images || []).length) {
+                const lastOffset = Math.max(0, r.total - (r.images || []).length);
+                if (lastOffset !== 0) {
+                    return showImages(lastOffset, skipPush, false);
+                }
+            }
+
+            const orderedImages = (r.images || []).slice().reverse();
+            imagesState.items = orderedImages.map(img => ({
+                filename: img.filename,
+                docId: img.doc_id,
+                page: img.page
+            }));
+
             let html = `
                 <button class="back-btn" onclick="goHome()">← Back</button>
                 <div class="section-kicker">Archive</div>
@@ -1792,15 +1958,8 @@
                     <h2>Images</h2>
                     <span class="results-count">${r.total.toLocaleString()} images extracted from PDFs</span>
                 </div>
-                <div class="image-grid">
-                    ${r.images.map(img => `
-                        <div class="image-card" onclick="viewImage('${esc(img.filename)}', ${img.doc_id})">
-                            <img src="${API}/images/${img.filename}" loading="lazy" alt="Page ${img.page + 1}">
-                            <div class="image-overlay">
-                                <span>Doc #${img.doc_id} · Page ${img.page + 1}</span>
-                            </div>
-                        </div>
-                    `).join('')}
+                <div id="images-grid" class="image-grid">
+                    ${imagesState.items.map((img, idx) => renderImageCard(img, idx)).join('')}
                 </div>
                 <div class="pagination">
                     ${offset > 0 ? `<button class="btn" onclick="showImages(${offset - 60})">← Previous</button>` : ''}
@@ -1809,6 +1968,7 @@
                 </div>
             `;
             resultsView.innerHTML = html;
+            initLazyImages();
         } catch (e) {
             resultsView.innerHTML = `
                 <div class="error-state">
@@ -1820,6 +1980,90 @@
         }
     }
 
+    function renderImageCard(img, idx) {
+        const url = `${API}/images/${img.filename}`;
+        return `
+            <div class="image-card" onclick="openImageModal(${idx})">
+                <img data-src="${url}" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="Page ${img.page + 1}" class="lazy-img">
+                <div class="image-overlay">
+                    <span>Doc #${img.docId} · Page ${img.page + 1}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    function openImageModal(index) {
+        imagesState.index = index;
+        const modal = document.createElement('div');
+        modal.className = 'image-modal';
+        modal.innerHTML = `
+            <div class="image-modal-content">
+                <button class="image-modal-close" aria-label="Close">×</button>
+                <img src="${API}/images/${imagesState.items[index].filename}" alt="Full size">
+                <div class="image-modal-actions">
+                    <button class="btn" data-action="prev">← Prev</button>
+                    <button class="btn" data-action="next">Next →</button>
+                    <button class="btn" data-action="doc">View Source Document</button>
+                    <a href="${API}/images/${imagesState.items[index].filename}" download class="btn">Download Image</a>
+                </div>
+            </div>
+        `;
+        const close = () => {
+            document.removeEventListener('keydown', onKey);
+            modal.remove();
+        };
+        const renderModalImage = () => {
+            const item = imagesState.items[imagesState.index];
+            const imgEl = modal.querySelector('img');
+            const dl = modal.querySelector('a[download]');
+            imgEl.src = `${API}/images/${item.filename}`;
+            dl.href = `${API}/images/${item.filename}`;
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') close();
+            if (e.key === 'ArrowLeft') move(-1);
+            if (e.key === 'ArrowRight') move(1);
+        };
+        const move = (delta) => {
+            const next = imagesState.index + delta;
+            if (next < 0 || next >= imagesState.items.length) return;
+            imagesState.index = next;
+            renderModalImage();
+        };
+        modal.addEventListener('click', e => { if (e.target === modal) close(); });
+        modal.querySelector('.image-modal-close').addEventListener('click', close);
+        modal.querySelector('[data-action="prev"]').addEventListener('click', () => move(-1));
+        modal.querySelector('[data-action="next"]').addEventListener('click', () => move(1));
+        modal.querySelector('[data-action="doc"]').addEventListener('click', () => {
+            const item = imagesState.items[imagesState.index];
+            viewDoc(item.docId);
+            close();
+        });
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(modal);
+    }
+
+    function initLazyImages() {
+        const images = Array.from(document.querySelectorAll('img.lazy-img[data-src]'));
+        if (!images.length) return;
+        if (!('IntersectionObserver' in window)) {
+            images.forEach(img => { img.src = img.dataset.src; img.removeAttribute('data-src'); });
+            return;
+        }
+        const observer = new IntersectionObserver((entries, obs) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    img.src = img.dataset.src;
+                    img.removeAttribute('data-src');
+                    obs.unobserve(img);
+                }
+            });
+        }, { rootMargin: '200px 0px' });
+        images.forEach(img => observer.observe(img));
+    }
+
+    // Backward compatibility
     function viewImage(filename, docId) {
         const modal = document.createElement('div');
         modal.className = 'image-modal';
@@ -1858,6 +2102,7 @@
                 doc.page_count ? `${doc.page_count} pages` : null
             ].filter(Boolean);
             const docMeta = docMetaParts.length ? docMetaParts.join(' · ') : '';
+            const sourceButton = doc.source_url ? `<a href="${esc(doc.source_url)}" target="_blank" rel="noopener" class="btn">Source</a>` : '';
 
             // Audio
             if (doc.content_type?.startsWith('audio/') || doc.filename?.match(/\.(wav|mp3|m4a)$/i)) {
@@ -1870,7 +2115,10 @@
                                 <div class="doc-title">${docTitle}</div>
                                 ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
                             </div>
-                            <a href="${API}/documents/${id}/file" download class="btn">Download</a>
+                            <div class="doc-toolbar">
+                                ${sourceButton}
+                                <a href="${API}/documents/${id}/file" download class="btn">Download</a>
+                            </div>
                         </div>
                         <div class="media-player">
                             <audio controls autoplay>
@@ -1893,7 +2141,10 @@
                                 <div class="doc-title">${docTitle}</div>
                                 ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
                             </div>
-                            <a href="${API}/documents/${id}/file" download class="btn">Download</a>
+                            <div class="doc-toolbar">
+                                ${sourceButton}
+                                <a href="${API}/documents/${id}/file" download class="btn">Download</a>
+                            </div>
                         </div>
                         <div class="media-player">
                             <video controls>
@@ -1921,17 +2172,31 @@
                             ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
                         </div>
                         <div class="doc-toolbar">
+                            ${sourceButton}
                             <button class="btn" onclick="togglePdfText()">Toggle Text</button>
                             <a href="${pdfUrl}" target="_blank" class="btn">New Tab</a>
                             <a href="${pdfUrl}" download class="btn">Download</a>
                         </div>
                     </div>
                     <div id="pdf-view" style="height:80vh;">
-                        <iframe src="${pdfUrl}" style="width:100%;height:100%;border:none;border-radius:8px;background:#333;" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
+                        <iframe id="pdf-iframe" style="width:100%;height:100%;border:none;border-radius:8px;background:#333;"></iframe>
                     </div>
                     <div id="text-view" class="doc-content" style="display:none;">${esc(text?.full_text || 'No text available.')}</div>
                 </div>
             `;
+            // Load PDF as blob to bypass Chrome cross-origin restrictions
+            try {
+                const pdfResponse = await fetch(pdfUrl);
+                if (!pdfResponse.ok) {
+                    throw new Error('PDF fetch failed');
+                }
+                const pdfBlob = await pdfResponse.blob();
+                revokePdfBlobUrl();
+                currentPdfBlobUrl = URL.createObjectURL(pdfBlob);
+                document.getElementById('pdf-iframe').src = currentPdfBlobUrl;
+            } catch (e) {
+                document.getElementById('pdf-view').innerHTML = '<div style="padding:20px;color:var(--text-dim);">Failed to load PDF. <a href="' + pdfUrl + '" target="_blank" style="color:var(--accent);">Open in new tab</a></div>';
+            }
         } catch (e) {
             resultsView.innerHTML = `
                 <div class="error-state">
@@ -2057,9 +2322,8 @@
                 <h1 style="font-family: var(--font-serif); font-size: 2.5rem; font-weight: 400; margin-bottom: 2rem; color: var(--text);">About</h1>
 
                 <p style="font-size: 1rem; color: var(--text-muted); line-height: 2; margin-bottom: 3rem;">
-                    This site contains documents released by the U.S. Department of Justice
-                    related to Jeffrey Epstein's crimes. All materials come directly from
-                    <a href="https://www.justice.gov/epstein" target="_blank" style="color: var(--accent); text-decoration: none;">justice.gov</a>.
+                    This site provides public documents from official sources.
+                    All materials link to their originals.
                 </p>
 
                 <div style="margin-bottom: 4rem; padding: 2.5rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
@@ -2087,8 +2351,7 @@
                 <div style="margin-bottom: 3rem;">
                     <h2 style="font-size: 0.65rem; font-weight: 400; margin-bottom: 1.5rem; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase;">About this site</h2>
                     <p style="color: var(--text-muted); line-height: 2; font-size: 0.95rem;">
-                        This is a search tool to help the public access documents that are already public record.
-                        We are not journalists or investigators. We make no claims and draw no conclusions.
+                        This is a public records search tool. It makes no claims and draws no conclusions.
                     </p>
                 </div>
             </div>
