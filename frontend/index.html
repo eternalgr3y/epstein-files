@@ -1625,7 +1625,7 @@
                 ].filter(Boolean);
                 html += `
                     <div class="result-card">
-                        <div class="result-title"><a href="#" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
+                        <div class="result-title"><a href="/documents/${Number(d.document_id)}" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                         ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
                         ${d.source_url ? `<a class="source-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">Open Source</a>` : ''}
@@ -1770,8 +1770,8 @@
                     d.document_id ? `DOC ${d.document_id}` : null
                 ].filter(Boolean);
                 html += `
-                    <div class="result-card" onclick="viewDoc(${d.document_id})" style="cursor:pointer;">
-                        <div class="result-title">${esc(d.title || d.filename)}</div>
+                    <div class="result-card" style="cursor:pointer;">
+                        <div class="result-title"><a href="/documents/${Number(d.document_id)}" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                     </div>
                 `;
@@ -1825,14 +1825,14 @@
                 </div>
                 <div class="oversight-grid">
                     ${docs.documents.map(d => `
-                        <div class="oversight-card" onclick="viewHouseOversightDoc('${esc(d.bates)}')" role="button">
+                        <a class="oversight-card" href="/house-oversight/${esc(d.bates)}" onclick="viewHouseOversightDoc('${esc(d.bates)}'); return false;">
                             <img src="${API_BASE}${d.thumbnail}" alt="${esc(d.title || d.bates)} thumbnail" loading="lazy">
                             <div class="info">
                                 <span class="meta-pill">${d.page_count} pages</span>
                                 <h4>${esc(d.title || d.bates)}</h4>
                                 <div class="result-meta">${esc(d.bates)}</div>
                             </div>
-                        </div>
+                        </a>
                     `).join('')}
                 </div>
             `;
@@ -2268,7 +2268,7 @@
                     <div class="result-card" style="margin-bottom: 1rem;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
                             <div class="result-title">
-                                <a href="#" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
+                                <a href="/documents/${Number(m.document_id)}" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
                             </div>
                             <span class="role-badge">${m.role || 'mentioned'}</span>
                         </div>
