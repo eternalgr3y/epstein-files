@@ -14,7 +14,7 @@ from dropbox.files import FolderMetadata, FileMetadata
 
 # Configuration
 TOKEN = os.environ.get("DROPBOX_TOKEN")
-BASE_DIR = Path("/mnt/e/epstein-files/raw")
+BASE_DIR = Path.home() / "epstein-raw"
 MAX_WORKERS = 8  # Parallel downloads
 
 SOURCES = {

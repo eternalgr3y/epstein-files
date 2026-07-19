@@ -90,27 +90,29 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Load fonts async - media="print" trick prevents render blocking -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap"></noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"></noscript>
     <style>
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-            --bg: #f5f1e8;
-            --bg-elevated: #fffaf1;
-            --bg-ink: #1d1a14;
-            --border: rgba(29, 26, 20, 0.12);
-            --border-hover: rgba(139, 47, 47, 0.35);
-            --text: #1d1a14;
-            --text-muted: #6d655a;
-            --text-dim: #6b6358;
-            --accent: #8b2f2f;
-            --accent-hover: #a33b3b;
-            --accent-soft: rgba(139, 47, 47, 0.08);
-            --highlight: #f1d3a1;
+            --bg: #eeefec;
+            --bg-elevated: #f8f8f6;
+            --bg-ink: #1b1e21;
+            --border: rgba(27, 30, 33, 0.12);
+            --border-hover: rgba(58, 84, 99, 0.4);
+            --text: #1b1e21;
+            --text-muted: #5c636a;
+            --text-dim: #7b8189;
+            --accent: #3a5463;
+            --accent-hover: #4c6b7c;
+            --accent-soft: rgba(58, 84, 99, 0.08);
+            --stamp: #8b3a3a;
+            --highlight: #e8d9a8;
             --font-sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
             --font-serif: "Fraunces", "Iowan Old Style", "Times New Roman", serif;
+            --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
         }
 
         body {
@@ -124,7 +126,7 @@
         }
 
         /* Background */
-        .bg-gradient, .bg-grid {
+        .bg-gradient {
             position: fixed;
             inset: 0;
             z-index: -2;
@@ -132,18 +134,9 @@
 
         .bg-gradient {
             background:
-                radial-gradient(80% 60% at 10% 0%, rgba(139, 47, 47, 0.12), transparent 55%),
-                radial-gradient(60% 45% at 90% 10%, rgba(47, 94, 87, 0.12), transparent 60%),
-                linear-gradient(180deg, #f7f3eb 0%, #f3eee5 45%, #f0e9df 100%);
-        }
-
-        .bg-grid {
-            background-image:
-                linear-gradient(90deg, rgba(29, 26, 20, 0.04) 1px, transparent 1px),
-                linear-gradient(rgba(29, 26, 20, 0.04) 1px, transparent 1px);
-            background-size: 120px 120px;
-            opacity: 0.7;
-            mix-blend-mode: multiply;
+                radial-gradient(70% 55% at 12% 0%, rgba(58, 84, 99, 0.07), transparent 55%),
+                radial-gradient(55% 40% at 90% 8%, rgba(58, 84, 99, 0.05), transparent 60%),
+                linear-gradient(180deg, #f2f2ee 0%, #eeefec 45%, #eaebe6 100%);
         }
 
         /* Header */
@@ -154,7 +147,7 @@
             right: 0;
             z-index: 100;
             padding: 1.5rem 3rem;
-            background: rgba(245, 241, 232, 0.9);
+            background: rgba(238, 239, 236, 0.9);
             border-bottom: 1px solid var(--border);
             backdrop-filter: blur(10px);
         }
@@ -253,7 +246,7 @@
                 gap: 1rem;
                 transition: right 0.4s ease;
                 border-left: 1px solid var(--border);
-                box-shadow: -12px 0 30px rgba(29, 26, 20, 0.08);
+                box-shadow: -12px 0 30px rgba(27, 30, 33, 0.08);
             }
 
             .site-nav.open {
@@ -271,7 +264,7 @@
                 display: none;
                 position: fixed;
                 inset: 0;
-                background: rgba(29, 26, 20, 0.35);
+                background: rgba(27, 30, 33, 0.35);
                 z-index: 99;
             }
 
@@ -290,15 +283,12 @@
             margin: 0 auto;
             padding: 0 2rem;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
         }
 
         /* Hero */
         .hero {
             text-align: left;
-            padding: 8rem 0 4rem;
+            padding: 6.5rem 0 3rem;
         }
 
         .hero-kicker {
@@ -311,7 +301,7 @@
             text-transform: uppercase;
             padding: 0.4rem 0.9rem;
             border: 1px solid var(--border);
-            background: rgba(255, 250, 241, 0.6);
+            background: rgba(248, 248, 246, 0.6);
         }
 
         .hero h1 {
@@ -369,12 +359,12 @@
             border: 1px solid var(--border);
             padding: 0;
             transition: border-color 0.3s ease, box-shadow 0.3s ease;
-            box-shadow: 0 16px 32px rgba(29, 26, 20, 0.06);
+            box-shadow: 0 16px 32px rgba(27, 30, 33, 0.06);
         }
 
         .search-box:focus-within {
             border-color: var(--accent);
-            box-shadow: 0 18px 38px rgba(139, 47, 47, 0.15);
+            box-shadow: 0 18px 38px rgba(58, 84, 99, 0.15);
         }
 
         .search-box input {
@@ -397,7 +387,7 @@
             background: var(--accent);
             border: none;
             border-left: 1px solid var(--border);
-            color: #fff6ee;
+            color: #f5f6f4;
             font-size: 0.7rem;
             font-weight: 500;
             letter-spacing: 0.18em;
@@ -512,15 +502,16 @@
         .result-card {
             background: transparent;
             border: none;
+            border-left: 2px solid transparent;
             border-bottom: 1px solid var(--border);
-            padding: 2rem 0;
+            padding: 1.15rem 0 1.15rem 0.85rem;
             margin-bottom: 0;
-            transition: all 0.3s ease;
+            margin-left: -0.85rem;
+            transition: border-color 0.2s ease;
         }
 
         .result-card:hover {
-            padding-left: 1rem;
-            border-color: var(--accent);
+            border-left-color: var(--accent);
         }
 
         .result-title {
@@ -528,6 +519,11 @@
             font-size: 1.1rem;
             font-weight: 400;
             margin-bottom: 0.75rem;
+        }
+
+        .result-title.is-filename {
+            font-family: var(--font-mono);
+            font-size: 0.88rem;
         }
 
         .result-title a {
@@ -540,12 +536,21 @@
             color: var(--accent);
         }
 
+        .mono-link {
+            font-family: var(--font-serif);
+        }
+
+        .mono-link.is-filename {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+        }
+
         .result-meta {
-            font-size: 0.68rem;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
             color: var(--text-dim);
             margin-bottom: 1rem;
-            letter-spacing: 0.14em;
-            text-transform: uppercase;
+            letter-spacing: 0;
         }
 
         .meta-row {
@@ -556,13 +561,14 @@
         }
 
         .meta-pill {
-            font-size: 0.6rem;
-            letter-spacing: 0.16em;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            letter-spacing: 0.03em;
             text-transform: uppercase;
-            padding: 0.25rem 0.55rem;
+            padding: 0.22rem 0.5rem;
             border: 1px solid var(--border);
             color: var(--text-dim);
-            background: rgba(255, 250, 241, 0.7);
+            background: rgba(248, 248, 246, 0.7);
         }
 
         .result-snippet {
@@ -661,18 +667,19 @@
             display: flex;
             align-items: center;
             gap: 2rem;
-            padding: 1.5rem 0;
+            padding: 1.15rem 0 1.15rem 0.85rem;
             background: transparent;
             border: none;
+            border-left: 2px solid transparent;
             border-bottom: 1px solid var(--border);
             margin-bottom: 0;
+            margin-left: -0.85rem;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: border-color 0.2s ease;
         }
 
         .tape-card:hover {
-            padding-left: 1rem;
-            border-color: var(--accent);
+            border-left-color: var(--accent);
         }
 
         .tape-icon {
@@ -696,19 +703,9 @@
         }
 
         .tape-info span {
+            font-family: var(--font-mono);
             font-size: 0.75rem;
             color: var(--text-dim);
-        }
-
-        .tape-badge {
-            padding: 0.3rem 0.75rem;
-            background: transparent;
-            border: 1px solid var(--border);
-            font-size: 0.6rem;
-            font-weight: 400;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
         }
 
         /* Document viewer */
@@ -717,7 +714,7 @@
             border: 1px solid var(--border);
             overflow: hidden;
             border-radius: 14px;
-            box-shadow: 0 24px 60px rgba(29, 26, 20, 0.12);
+            box-shadow: 0 24px 60px rgba(27, 30, 33, 0.12);
         }
 
         .doc-header {
@@ -732,28 +729,36 @@
         .doc-title {
             font-family: var(--font-serif);
             font-size: 1rem;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .doc-title.is-filename {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
         }
 
         .doc-meta {
-            font-size: 0.65rem;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
             color: var(--text-dim);
-            letter-spacing: 0.18em;
-            text-transform: uppercase;
+            letter-spacing: 0;
             margin-top: 0.35rem;
         }
 
         .doc-stamp {
+            font-family: var(--font-mono);
             font-size: 0.6rem;
             letter-spacing: 0.2em;
             text-transform: uppercase;
-            color: var(--accent);
-            border: 1px solid rgba(139, 47, 47, 0.4);
+            color: var(--stamp);
+            border: 1px solid rgba(139, 58, 58, 0.4);
             padding: 0.2rem 0.55rem;
             margin-bottom: 0.6rem;
             display: inline-flex;
             align-items: center;
             gap: 0.35rem;
-            background: var(--accent-soft);
+            background: rgba(139, 58, 58, 0.07);
         }
 
         .doc-toolbar {
@@ -816,7 +821,7 @@
         .btn-primary {
             background: var(--accent);
             border-color: var(--accent);
-            color: #fff6ee;
+            color: #f5f6f4;
         }
 
         .btn-primary:hover {
@@ -880,7 +885,7 @@
             left: 0;
             right: 0;
             padding: 1rem;
-            background: linear-gradient(transparent, rgba(29, 26, 20, 0.85));
+            background: linear-gradient(transparent, rgba(27, 30, 33, 0.85));
             opacity: 0;
             transition: opacity 0.3s ease;
         }
@@ -901,7 +906,7 @@
             position: fixed;
             inset: 0;
             z-index: 1000;
-            background: rgba(29, 26, 20, 0.9);
+            background: rgba(27, 30, 33, 0.9);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -966,7 +971,7 @@
             overflow: hidden;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 18px 38px rgba(29, 26, 20, 0.08);
+            box-shadow: 0 18px 38px rgba(27, 30, 33, 0.08);
         }
 
         .oversight-card:hover {
@@ -1033,28 +1038,29 @@
         }
 
         .entity-chip {
-            font-size: 0.6rem;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            letter-spacing: 0.02em;
             padding: 0.25rem 0.6rem;
             border: 1px solid var(--border);
             color: var(--text-dim);
-            background: rgba(255, 250, 241, 0.7);
+            background: rgba(248, 248, 246, 0.7);
         }
 
         /* Entity badges */
         .entity-card {
             background: transparent;
             border: none;
+            border-left: 2px solid transparent;
             border-bottom: 1px solid var(--border);
-            padding: 2rem 0;
+            padding: 1.15rem 0 1.15rem 0.85rem;
             margin-bottom: 0;
-            transition: all 0.3s ease;
+            margin-left: -0.85rem;
+            transition: border-color 0.2s ease;
         }
 
         .entity-card:hover {
-            padding-left: 1rem;
-            border-color: var(--accent);
+            border-left-color: var(--accent);
         }
 
         .role-badge {
@@ -1110,7 +1116,7 @@
         }
 
         .error-state h3 {
-            color: var(--red);
+            color: var(--stamp);
             font-size: 1.25rem;
             margin-bottom: 0.5rem;
         }
@@ -1162,12 +1168,6 @@
         }
 
         /* Mobile responsive */
-        @media (max-width: 900px) {
-            .gallery-nav {
-                gap: 2.5rem;
-            }
-        }
-
         @media (max-width: 600px) {
             header {
                 padding: 1rem 1.25rem;
@@ -1209,14 +1209,6 @@
                 width: 100%;
                 border-left: none;
                 border-top: 1px solid var(--border);
-            }
-
-            .gallery-nav {
-                gap: 2rem;
-            }
-
-            .gallery-nav-count {
-                font-size: 1.5rem;
             }
 
             .video-grid {
@@ -1261,6 +1253,18 @@
 
         @keyframes rise {
             to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reveal {
+                opacity: 1;
+                transform: none;
+                animation: none;
+            }
+            * {
+                transition-duration: 0.01ms !important;
+                animation-duration: 0.01ms !important;
+            }
         }
 
         /* Screen reader */
@@ -1314,7 +1318,6 @@
 </head>
 <body>
     <div class="bg-gradient"></div>
-    <div class="bg-grid"></div>
 
     <div class="nav-overlay" id="nav-overlay" onclick="toggleMenu(false)"></div>
     <header>
@@ -1368,7 +1371,7 @@
                         <a href="#" onclick="showMaxwellTapes(); return false;">Recordings</a>
                     </div>
                 </div>
-                <p class="hero-source reveal" data-delay="5">Official release via SDNY · 37,000+ images</p>
+                <p class="hero-source reveal" data-delay="5" id="hero-stats">Official release via SDNY · 37,000+ images</p>
             </section>
 
 
@@ -1471,7 +1474,13 @@
     });
 
     function loadStats() {
-        // Stats removed from homepage
+        fetch(`${API}/stats`).then(r => r.json()).then(s => {
+            if (!s.total_documents) return;
+            const el = document.getElementById('hero-stats');
+            el.textContent = `Official release via SDNY · ${s.total_documents.toLocaleString()} documents · ${s.total_entities.toLocaleString()} people & orgs indexed`;
+        }).catch(() => {
+            // Keep the static fallback text already in the DOM.
+        });
     }
 
     function handleHash() {
@@ -1594,7 +1603,7 @@
             html += `
                 <div class="results-header">
                     <h2>People & Organizations</h2>
-                    <span class="results-count">${ents.total_results} found</span>
+                    <span class="results-count">${ents.total_results.toLocaleString()} found</span>
                 </div>
             `;
             ents.results.forEach(e => {
@@ -1614,7 +1623,7 @@
             html += `
                 <div class="results-header" style="margin-top: 2rem;">
                     <h2>Documents</h2>
-                    <span class="results-count">${docs.total_results} found</span>
+                    <span class="results-count">${(docs.total ?? 0).toLocaleString()} found</span>
                 </div>
             `;
             docs.results.forEach(d => {
@@ -1625,7 +1634,7 @@
                 ].filter(Boolean);
                 html += `
                     <div class="result-card">
-                        <div class="result-title"><a href="/documents/${Number(d.document_id)}" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
+                        <div class="result-title${titleClass(d.title || d.filename)}"><a href="/documents/${Number(d.document_id)}" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                         ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
                         ${d.source_url ? `<a class="source-link" href="${esc(d.source_url)}" target="_blank" rel="noopener">Open Source</a>` : ''}
@@ -1702,14 +1711,13 @@
 
             const micIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
 
-            const renderTapes = (tapes, dayLabel) => tapes.map(t => `
+            const renderTapes = (tapes) => tapes.map(t => `
                 <div class="tape-card" onclick="viewDoc(${t.id})">
                     <div class="tape-icon">${micIcon}</div>
                     <div class="tape-info">
                         <h4>Part ${t.part || '?'}</h4>
                         <span>${esc(t.filename)}</span>
                     </div>
-                    <span class="tape-badge">${dayLabel}</span>
                 </div>
             `).join('');
 
@@ -1724,12 +1732,12 @@
 
                 <div class="tape-section">
                     <h3>Day 1</h3>
-                    ${renderTapes(day1, 'Day 1')}
+                    ${renderTapes(day1)}
                 </div>
 
                 <div class="tape-section">
                     <h3>Day 2</h3>
-                    ${renderTapes(day2, 'Day 2')}
+                    ${renderTapes(day2)}
                 </div>
             `;
             resultsView.innerHTML = html;
@@ -1771,7 +1779,7 @@
                 ].filter(Boolean);
                 html += `
                     <div class="result-card" style="cursor:pointer;">
-                        <div class="result-title"><a href="/documents/${Number(d.document_id)}" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
+                        <div class="result-title${titleClass(d.title || d.filename)}"><a href="/documents/${Number(d.document_id)}" onclick="viewDoc(${d.document_id}); return false;">${esc(d.title || d.filename)}</a></div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                     </div>
                 `;
@@ -2096,6 +2104,7 @@
         try {
             const doc = await fetch(`${API}/documents/${id}`).then(r => r.json());
             const docTitle = esc(doc.title || doc.filename);
+            const docTitleClass = titleClass(doc.title || doc.filename);
             const docMetaParts = [
                 doc.data_set,
                 doc.document_type,
@@ -2112,7 +2121,7 @@
                         <div class="doc-header">
                             <div>
                                 ${doc.data_set ? `<div class="doc-stamp">${esc(doc.data_set)}</div>` : ''}
-                                <div class="doc-title">${docTitle}</div>
+                                <div class="doc-title${docTitleClass}">${docTitle}</div>
                                 ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
                             </div>
                             <div class="doc-toolbar">
@@ -2138,7 +2147,7 @@
                         <div class="doc-header">
                             <div>
                                 ${doc.data_set ? `<div class="doc-stamp">${esc(doc.data_set)}</div>` : ''}
-                                <div class="doc-title">${docTitle}</div>
+                                <div class="doc-title${docTitleClass}">${docTitle}</div>
                                 ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
                             </div>
                             <div class="doc-toolbar">
@@ -2168,7 +2177,7 @@
                     <div class="doc-header">
                         <div>
                             ${doc.data_set ? `<div class="doc-stamp">${esc(doc.data_set)}</div>` : ''}
-                            <div class="doc-title">${docTitle}</div>
+                            <div class="doc-title${docTitleClass}">${docTitle}</div>
                             ${docMeta ? `<div class="doc-meta">${esc(docMeta)}</div>` : ''}
                         </div>
                         <div class="doc-toolbar">
@@ -2179,7 +2188,7 @@
                         </div>
                     </div>
                     <div id="pdf-view" style="height:80vh;">
-                        <iframe id="pdf-iframe" style="width:100%;height:100%;border:none;border-radius:8px;background:#333;"></iframe>
+                        <iframe id="pdf-iframe" style="width:100%;height:100%;border:none;border-radius:8px;background:#dcdbd5;"></iframe>
                     </div>
                     <div id="text-view" class="doc-content" style="display:none;">${esc(text?.full_text || 'No text available.')}</div>
                 </div>
@@ -2268,7 +2277,7 @@
                     <div class="result-card" style="margin-bottom: 1rem;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
                             <div class="result-title">
-                                <a href="/documents/${Number(m.document_id)}" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
+                                <a class="mono-link${titleClass(m.document_filename)}" href="/documents/${Number(m.document_id)}" onclick="viewDoc(${m.document_id}); return false;">${esc(m.document_filename)}</a>
                             </div>
                             <span class="role-badge">${m.role || 'mentioned'}</span>
                         </div>
@@ -2366,6 +2375,17 @@
 
     function highlight(s) {
         return s.replace(/&gt;&gt;&gt;(.+?)&lt;&lt;&lt;/g, '<mark>$1</mark>');
+    }
+
+    // Raw filenames (no spaces, has an extension) read as data, not prose —
+    // style them as monospace metadata instead of a serif headline.
+    function looksLikeFilename(s) {
+        if (!s) return false;
+        return /^[\w.\-]+\.(pdf|jpe?g|png|tiff?|mp4|mov|avi|wav|mp3|m4a|docx?|xlsx?|txt)$/i.test(s.trim());
+    }
+
+    function titleClass(s) {
+        return looksLikeFilename(s) ? ' is-filename' : '';
     }
     </script>
 </body>
