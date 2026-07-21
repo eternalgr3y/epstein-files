@@ -100,33 +100,50 @@ def extract_text_from_pdf_ocr(pdf_path: Path) -> Tuple[List[str], float]:
         return [], 0.0
 
     try:
-        # Convert PDF to images
-        images = convert_from_path(str(pdf_path), dpi=OCR_DPI)
+        # Render and OCR in small batches of pages — convert_from_path(pdf_path)
+        # with no page range loads every page into memory simultaneously, which
+        # is fine for a handful of pages but multi-GB for documents running
+        # into the thousands of pages (this batch has several). Chunking by
+        # PAGE_BATCH_SIZE keeps memory bounded to a few hundred MB regardless
+        # of document length, while avoiding the per-page subprocess overhead
+        # of converting one page at a time.
+        PAGE_BATCH_SIZE = 25
+        with fitz.open(str(pdf_path)) as fitz_doc:
+            page_count = fitz_doc.page_count
+
         pages_text = []
         confidences = []
 
-        for i, image in enumerate(images):
-            # Run OCR with confidence data
-            data = pytesseract.image_to_data(
-                image,
-                lang=TESSERACT_LANG,
-                output_type=pytesseract.Output.DICT
+        for batch_start in range(1, page_count + 1, PAGE_BATCH_SIZE):
+            batch_end = min(batch_start + PAGE_BATCH_SIZE - 1, page_count)
+            images = convert_from_path(
+                str(pdf_path), dpi=OCR_DPI,
+                first_page=batch_start, last_page=batch_end,
             )
 
-            # Extract text and confidence
-            text_parts = []
-            page_confidences = []
+            for image in images:
+                data = pytesseract.image_to_data(
+                    image,
+                    lang=TESSERACT_LANG,
+                    output_type=pytesseract.Output.DICT
+                )
 
-            for j, conf in enumerate(data['conf']):
-                if conf != -1:  # -1 means no confidence (not a word)
-                    text_parts.append(data['text'][j])
-                    page_confidences.append(conf)
+                # Extract text and confidence
+                text_parts = []
+                page_confidences = []
 
-            page_text = ' '.join(text_parts)
-            pages_text.append(page_text)
+                for j, conf in enumerate(data['conf']):
+                    if conf != -1:  # -1 means no confidence (not a word)
+                        text_parts.append(data['text'][j])
+                        page_confidences.append(conf)
 
-            if page_confidences:
-                confidences.append(sum(page_confidences) / len(page_confidences))
+                page_text = ' '.join(text_parts)
+                pages_text.append(page_text)
+
+                if page_confidences:
+                    confidences.append(sum(page_confidences) / len(page_confidences))
+
+            del images
 
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
         return pages_text, avg_confidence / 100.0  # Normalize to 0-1
