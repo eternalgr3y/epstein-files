@@ -1,0 +1,4 @@
+Contact: https://docs.google.com/forms/d/e/1FAIpQLSdu5whC_64CsbCUP-6wjtwGx28y0oFOVMv290bREt45O0CWJg/viewform?usp=dialog
+Expires: 2027-07-20T23:59:59Z
+Preferred-Languages: en
+Canonical: https://epsteinproject.org/.well-known/security.txt

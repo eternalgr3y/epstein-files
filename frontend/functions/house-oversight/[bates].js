@@ -1,4 +1,4 @@
-import { esc, renderDocPage } from '../_lib/html.js';
+import { esc, htmlResponseHeaders, renderDocPage } from '../_lib/html.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
@@ -30,6 +30,7 @@ export async function onRequestGet(context) {
 <dl>
 <dt>Bates</dt><dd>${esc(bates)}</dd>
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
+<dt>Text status</dt><dd>${preview ? 'Searchable OCR text available' : 'OCR pending'}</dd>
 </dl>
 ${preview ? `<h2>Extracted text</h2><pre>${esc(preview)}${doc.text_content?.length > 2000 ? '…' : ''}</pre>` : '<p>No extracted text available for this document.</p>'}
 `;
@@ -43,7 +44,7 @@ ${preview ? `<h2>Extracted text</h2><pre>${esc(preview)}${doc.text_content?.leng
   });
 
   const response = new Response(html, {
-    headers: { 'content-type': 'text/html;charset=UTF-8', 'cache-control': 'public, max-age=3600' },
+    headers: htmlResponseHeaders(),
   });
   context.waitUntil(cache.put(cacheKey, response.clone()));
   return response;

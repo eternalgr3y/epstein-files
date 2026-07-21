@@ -7,38 +7,168 @@
 
 const R2_PUBLIC_URL = 'https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev';
 
-// Rate limiting: 100 requests per minute per IP
+// Rate limiting: 100 requests per minute per IP, enforced by Cloudflare's
+// Rate Limiting binding in production (see wrangler.toml).
 const RATE_LIMIT = 100;
-const RATE_WINDOW = 60000; // 1 minute in ms
-const rateLimitMap = new Map();
+const RATE_WINDOW_SECONDS = 60;
+const MAX_QUERY_LENGTH = 200;
 
-function checkRateLimit(ip) {
-  const now = Date.now();
-  const record = rateLimitMap.get(ip);
+class HttpError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+  }
+}
 
-  // Clean old entries periodically
-  if (rateLimitMap.size > 10000) {
-    for (const [key, val] of rateLimitMap) {
-      if (now - val.start > RATE_WINDOW) rateLimitMap.delete(key);
+// Friendly source collections spanning one or more data_set values, used by
+// the `source` query param on /search and /browse. 'Data Set 8' is a legacy
+// mislabel of 'data-set-8' still present in D1 (writes are currently blocked
+// by the plan's max DB size, so it is aliased here instead of updated).
+const DATA_SET_ALIASES = { 'data-set-8': ['Data Set 8'] };
+
+const SOURCE_GROUPS = {
+  'doj-release': ['data-set', 'data-set-2', 'data-set-3', 'data-set-4',
+                  'data-set-5', 'data-set-6', 'data-set-7', 'data-set-8'],
+  'court-records': ['court-records'],
+  'doj-disclosures': ['doj-disclosures'],
+  'house-oversight-doj': ['house-oversight-doj'],
+  'maxwell-interview': ['maxwell-interview'],
+};
+
+function normalizeDataSet(name) {
+  for (const [canonical, aliases] of Object.entries(DATA_SET_ALIASES)) {
+    if (aliases.includes(name)) return canonical;
+  }
+  return name;
+}
+
+function expandDataSets(sets) {
+  return sets.flatMap(s => [s, ...(DATA_SET_ALIASES[s] || [])]);
+}
+
+// Resolves the `source` and `data_set` params to a list of data_set values to
+// match (aliases included), or null when neither filter is present.
+function resolveDataSetFilter(searchParams) {
+  const source = searchParams.get('source');
+  const dataSet = searchParams.get('data_set');
+  if (dataSet && dataSet.length > 100) {
+    throw new HttpError('data_set must be 100 characters or fewer');
+  }
+  if (source) {
+    const sets = SOURCE_GROUPS[source];
+    if (!sets) {
+      throw new HttpError(`source must be one of: ${Object.keys(SOURCE_GROUPS).join(', ')}`);
     }
+    return expandDataSets(dataSet ? sets.filter(s => s === dataSet) : sets);
+  }
+  return dataSet ? expandDataSets([dataSet]) : null;
+}
+
+function dataSetPlaceholders(sets) {
+  return sets.map(() => '?').join(', ');
+}
+
+function mergeDataSetCounts(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    const name = normalizeDataSet(row.data_set);
+    counts.set(name, (counts.get(name) || 0) + row.count);
+  }
+  return [...counts].map(([name, count]) => ({ name, count }));
+}
+
+function parseIntegerParam(searchParams, name, { defaultValue, min = 0, max = Number.MAX_SAFE_INTEGER }) {
+  const raw = searchParams.get(name);
+  if (raw === null || raw === '') return defaultValue;
+  if (!/^\d+$/.test(raw)) {
+    throw new HttpError(`${name} must be a whole number between ${min} and ${max}`);
   }
 
-  if (!record || now - record.start > RATE_WINDOW) {
-    rateLimitMap.set(ip, { start: now, count: 1 });
-    return { allowed: true, remaining: RATE_LIMIT - 1 };
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw new HttpError(`${name} must be a whole number between ${min} and ${max}`);
+  }
+  return value;
+}
+
+function parseIntegerValue(value, name, { defaultValue, min = 0, max = Number.MAX_SAFE_INTEGER }) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throw new HttpError(`${name} must be a whole number between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+function cleanSearchText(value) {
+  return String(value).replace(/[^\p{L}\p{N}_\s-]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function buildFtsQuery(query) {
+  if (query.length > MAX_QUERY_LENGTH) {
+    throw new HttpError(`Query too long. Maximum ${MAX_QUERY_LENGTH} characters allowed.`);
   }
 
-  record.count++;
-  if (record.count > RATE_LIMIT) {
-    return { allowed: false, remaining: 0, retryAfter: Math.ceil((record.start + RATE_WINDOW - now) / 1000) };
+  const rawTokens = query.match(/"[^"]*"|\bOR\b|[^\s"]+/giu) || [];
+  const output = [];
+  let hasTerm = false;
+  let pendingOr = false;
+
+  for (const rawToken of rawTokens) {
+    if (/^OR$/i.test(rawToken)) {
+      if (!hasTerm || pendingOr) throw new HttpError('OR must appear between two search terms');
+      pendingOr = true;
+      continue;
+    }
+
+    const unquoted = rawToken.startsWith('"') ? rawToken.slice(1, -1) : rawToken;
+    const cleaned = cleanSearchText(unquoted);
+    if (!cleaned) continue;
+
+    if (hasTerm) output.push(pendingOr ? 'OR' : 'AND');
+    output.push(`"${cleaned}"`);
+    hasTerm = true;
+    pendingOr = false;
   }
 
-  return { allowed: true, remaining: RATE_LIMIT - record.count };
+  if (!hasTerm) throw new HttpError('Query must contain at least one letter or number');
+  if (pendingOr) throw new HttpError('OR must appear between two search terms');
+  return output.join(' ');
+}
+
+function escapeLikePattern(value) {
+  return String(value).replace(/[\\%_]/g, '\\$&');
+}
+
+async function checkRateLimit(ip, env) {
+  // The binding is absent in lightweight local/unit-test environments. Wrangler
+  // provides it in production through the ratelimits entry in wrangler.toml.
+  if (!env.API_RATE_LIMITER?.limit) return { allowed: true };
+
+  try {
+    const result = await env.API_RATE_LIMITER.limit({ key: ip });
+    return { allowed: result.success };
+  } catch (e) {
+    // Availability wins if Cloudflare's limiter is temporarily unavailable;
+    // the failure is still visible in Worker logs.
+    console.error('Rate limiter error:', e);
+    return { allowed: true };
+  }
+}
+
+function isMediaDeliveryPath(path) {
+  return (
+    /^\/api\/documents\/\d+\/(?:file|thumbnail)$/.test(path) ||
+    /^\/api\/videos\/\d+\/thumb$/.test(path) ||
+    /^\/api\/images\/[^/]+$/.test(path) ||
+    /^\/api\/house-oversight\/(?:page\/HOUSE_OVERSIGHT_\d+\/\d+|thumbnail\/HOUSE_OVERSIGHT_\d+)$/.test(path)
+  );
 }
 
 // Security headers
 const securityHeaders = {
-  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https:; frame-ancestors 'self'",
+  'Content-Security-Policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'SAMEORIGIN',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -73,23 +203,32 @@ export default {
 
     // Handle CORS preflight
     if (method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { headers: { ...corsHeaders, ...securityHeaders } });
     }
 
-    // Rate limiting
-    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const rateLimit = checkRateLimit(ip);
-    const rateLimitHeaders = {
-      'X-RateLimit-Limit': RATE_LIMIT.toString(),
-      'X-RateLimit-Remaining': rateLimit.remaining.toString(),
-    };
+    const isEntitySearch = path === '/api/entities/search' && method === 'POST';
+    if (method !== 'GET' && !isEntitySearch) {
+      return json({ error: 'Method not allowed' }, 405, {
+        Allow: path === '/api/entities/search' ? 'POST, OPTIONS' : 'GET, OPTIONS',
+      });
+    }
 
-    if (!rateLimit.allowed) {
-      return json(
-        { error: 'Rate limit exceeded. Please slow down.', retry_after: rateLimit.retryAfter },
-        429,
-        { ...rateLimitHeaders, 'Retry-After': rateLimit.retryAfter.toString() }
-      );
+    // Limit database/query endpoints, but not R2-backed media delivery. A
+    // single gallery page can legitimately request 60 thumbnails at once.
+    if (!isMediaDeliveryPath(path)) {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const rateLimit = await checkRateLimit(ip, env);
+
+      if (!rateLimit.allowed) {
+        return json(
+          { error: 'Rate limit exceeded. Please slow down.', retry_after: RATE_WINDOW_SECONDS },
+          429,
+          {
+            'X-RateLimit-Limit': RATE_LIMIT.toString(),
+            'Retry-After': RATE_WINDOW_SECONDS.toString(),
+          }
+        );
+      }
     }
 
     try {
@@ -123,7 +262,7 @@ export default {
 
       const docFileMatch = path.match(/^\/api\/documents\/(\d+)\/file$/);
       if (docFileMatch) {
-        return await getDocumentFile(parseInt(docFileMatch[1]), env.DB, env.R2);
+        return await getDocumentFile(parseInt(docFileMatch[1]), request, env.DB, env.R2);
       }
 
       const docThumbMatch = path.match(/^\/api\/documents\/(\d+)\/thumbnail$/);
@@ -189,19 +328,23 @@ export default {
         return await listHouseOversightDocs(url, env.DB);
       }
 
-      const hoDocMatch = path.match(/^\/api\/house-oversight\/documents\/([A-Z_\d]+)$/);
+      const hoDocMatch = path.match(/^\/api\/house-oversight\/documents\/(HOUSE_OVERSIGHT_\d+)$/);
       if (hoDocMatch) {
         return await getHouseOversightDoc(hoDocMatch[1], env.DB, env.R2);
       }
 
-      const hoPageMatch = path.match(/^\/api\/house-oversight\/page\/([A-Z_\d]+)\/(\d+)$/);
+      const hoPageMatch = path.match(/^\/api\/house-oversight\/page\/(HOUSE_OVERSIGHT_\d+)\/(\d+)$/);
       if (hoPageMatch) {
-        return await getHouseOversightPage(hoPageMatch[1], parseInt(hoPageMatch[2]), env.R2);
+        const pageIndex = Number(hoPageMatch[2]);
+        if (!Number.isSafeInteger(pageIndex) || pageIndex > 10_000) {
+          throw new HttpError('page index must be between 0 and 10000');
+        }
+        return await getHouseOversightPage(hoPageMatch[1], pageIndex, env.R2);
       }
 
-      const hoThumbMatch = path.match(/^\/api\/house-oversight\/thumbnail\/([A-Z_\d]+)$/);
+      const hoThumbMatch = path.match(/^\/api\/house-oversight\/thumbnail\/(HOUSE_OVERSIGHT_\d+)$/);
       if (hoThumbMatch) {
-        return await getHouseOversightPage(hoThumbMatch[1], 0, env.R2);
+        return await getHouseOversightThumbnail(hoThumbMatch[1], env.R2);
       }
 
       if (path === '/api/house-oversight/stats') {
@@ -228,8 +371,11 @@ export default {
       return error('Not found', 404);
 
     } catch (e) {
+      if (e instanceof HttpError) {
+        return error(e.message, e.status);
+      }
       console.error('Worker error:', e);
-      return error('Internal server error: ' + e.message, 500);
+      return error('Internal server error', 500);
     }
   },
 };
@@ -280,19 +426,19 @@ async function getStats(db) {
     total_mentions: mentions.count,
     documents_with_text: texts.count,
     document_types: types.results.map(r => ({ type: r.document_type, count: r.count })),
-    data_sets: dataSets.results.map(r => ({ name: r.data_set, count: r.count })),
+    data_sets: mergeDataSetCounts(dataSets.results),
   });
 }
 
 async function searchDocuments(url, db) {
   const q = url.searchParams.get('q') || '';
   const documentType = url.searchParams.get('document_type');
-  const dataSet = url.searchParams.get('data_set');
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const dataSets = resolveDataSetFilter(url.searchParams);
+  const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 50, min: 1, max: 100 });
+  const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
 
   // If no query but filters, browse by filter
-  if (!q && (documentType || dataSet)) {
+  if (!q && (documentType || dataSets)) {
     let sql = "SELECT * FROM documents WHERE data_set != 'house-oversight-estate'";
     const params = [];
 
@@ -300,9 +446,9 @@ async function searchDocuments(url, db) {
       sql += ' AND document_type = ?';
       params.push(documentType);
     }
-    if (dataSet) {
-      sql += ' AND data_set = ?';
-      params.push(dataSet);
+    if (dataSets) {
+      sql += ` AND data_set IN (${dataSetPlaceholders(dataSets)})`;
+      params.push(...dataSets);
     }
 
     sql += ' ORDER BY id DESC LIMIT ? OFFSET ?';
@@ -317,7 +463,7 @@ async function searchDocuments(url, db) {
         document_id: d.id,
         filename: d.filename,
         title: d.title,
-        data_set: d.data_set,
+        data_set: normalizeDataSet(d.data_set),
         document_type: d.document_type,
         source_url: d.source_url,
         relevance_score: 1.0,
@@ -330,23 +476,9 @@ async function searchDocuments(url, db) {
     return error('Query cannot be empty', 400);
   }
 
-  // Parse query: support "phrase" and OR syntax
-  // "exact phrase" stays as-is, other terms joined with AND unless OR present
-  let ftsQuery;
-  const hasOr = /\bOR\b/i.test(q);
-  const hasPhrase = /"[^"]+"/.test(q);
-
-  if (hasPhrase || hasOr) {
-    // Preserve quotes and OR, just clean dangerous chars
-    ftsQuery = q.replace(/[^\w\s"OR]/gi, '').trim();
-    if (!hasOr) {
-      // Add AND between non-phrase terms
-      ftsQuery = ftsQuery.replace(/("[^"]+"|\S+)/g, '$1').split(/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/).join(' AND ');
-    }
-  } else {
-    // Simple case: split words, join with AND
-    ftsQuery = q.replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean).join(' AND ');
-  }
+  // Parse the supported query language into quoted FTS5 terms. Quoting every
+  // sanitized term prevents user input from becoming an FTS operator.
+  const ftsQuery = buildFtsQuery(q);
 
   // Run document search and entity search in parallel
   const [results, countResult, entityResults] = await Promise.all([
@@ -359,13 +491,13 @@ async function searchDocuments(url, db) {
       WHERE document_fts MATCH ?
       AND d.data_set != 'house-oversight-estate'
       ${documentType ? 'AND d.document_type = ?' : ''}
-      ${dataSet ? 'AND d.data_set = ?' : ''}
+      ${dataSets ? `AND d.data_set IN (${dataSetPlaceholders(dataSets)})` : ''}
       ORDER BY rank
       LIMIT ? OFFSET ?
     `).bind(
       ftsQuery,
       ...(documentType ? [documentType] : []),
-      ...(dataSet ? [dataSet] : []),
+      ...(dataSets || []),
       limit,
       offset
     ).all(),
@@ -378,17 +510,17 @@ async function searchDocuments(url, db) {
       WHERE document_fts MATCH ?
       AND d.data_set != 'house-oversight-estate'
       ${documentType ? 'AND d.document_type = ?' : ''}
-      ${dataSet ? 'AND d.data_set = ?' : ''}
+      ${dataSets ? `AND d.data_set IN (${dataSetPlaceholders(dataSets)})` : ''}
     `).bind(
       ftsQuery,
       ...(documentType ? [documentType] : []),
-      ...(dataSet ? [dataSet] : []),
+      ...(dataSets || []),
     ).first(),
 
     // Entity search (top 5 matching entities)
     // Extract individual terms for multi-word queries
     (async () => {
-      const cleanQ = q.replace(/[^\w\s]/g, '').trim();
+      const cleanQ = cleanSearchText(q);
       const terms = cleanQ.split(/\s+/).filter(t => t.length > 2 && !/^(OR|AND|THE|FOR|WITH)$/i.test(t));
       if (terms.length === 0) return { results: [] };
 
@@ -396,8 +528,8 @@ async function searchDocuments(url, db) {
       const searchTerm = terms.slice(0, 3).join(' ').substring(0, 100);
 
       // Search for entities matching any significant term
-      const conditions = terms.slice(0, 3).map(() => 'canonical_name LIKE ?').join(' OR ');
-      const params = terms.slice(0, 3).map(t => `%${t.substring(0, 50)}%`);
+      const conditions = terms.slice(0, 3).map(() => "canonical_name LIKE ? ESCAPE '\\'").join(' OR ');
+      const params = terms.slice(0, 3).map(t => `%${escapeLikePattern(t.substring(0, 50))}%`);
 
       return db.prepare(`
         SELECT id, canonical_name, entity_type, mention_count
@@ -418,9 +550,12 @@ async function searchDocuments(url, db) {
       document_id: r.id,
       filename: r.filename,
       title: r.title,
-      data_set: r.data_set,
+      data_set: normalizeDataSet(r.data_set),
       document_type: r.document_type,
       source_url: r.source_url,
+      has_text: !!r.has_text,
+      processing_status: r.processing_status,
+      ocr_confidence: r.ocr_confidence,
       relevance_score: 1.0,
       snippet: r.snippet || '',
     })),
@@ -434,10 +569,17 @@ async function searchDocuments(url, db) {
 }
 
 async function browseDocuments(url, db) {
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '24'), 100);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 24, min: 1, max: 100 });
+  const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
   const filter = url.searchParams.get('filter');
   const documentType = url.searchParams.get('document_type');
+  const dataSet = url.searchParams.get('data_set');
+  const dataSets = resolveDataSetFilter(url.searchParams);
+  const hasText = url.searchParams.get('has_text');
+
+  if (hasText !== null && !['0', '1'].includes(hasText)) {
+    throw new HttpError('has_text must be 0 or 1');
+  }
 
   // DOJ only - House Oversight has separate endpoints
   let sql = "SELECT * FROM documents WHERE data_set != 'house-oversight-estate'";
@@ -460,6 +602,16 @@ async function browseDocuments(url, db) {
     params.push('document');
   }
 
+  if (dataSets) {
+    sql += ` AND data_set IN (${dataSetPlaceholders(dataSets)})`;
+    params.push(...dataSets);
+  }
+
+  if (hasText !== null) {
+    sql += ' AND has_text = ?';
+    params.push(Number(hasText));
+  }
+
   // Get total
   const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as count');
   const total = await db.prepare(countSql).bind(...params).first();
@@ -473,11 +625,18 @@ async function browseDocuments(url, db) {
     total: total.count,
     offset,
     filter,
+    data_set: dataSet,
+    has_text: hasText,
     results: results.results.map(d => ({
       document_id: d.id,
       filename: d.filename,
       title: d.title,
-      data_set: d.data_set,
+      data_set: normalizeDataSet(d.data_set),
+      document_type: d.document_type,
+      page_count: d.page_count,
+      has_text: !!d.has_text,
+      processing_status: d.processing_status,
+      ocr_confidence: d.ocr_confidence,
     })),
   });
 }
@@ -497,7 +656,7 @@ async function getDocument(id, db) {
     filename: doc.filename,
     title: doc.title,
     document_type: doc.document_type,
-    data_set: doc.data_set,
+    data_set: normalizeDataSet(doc.data_set),
     category: doc.category,
     source_url: doc.source_url,
     source_page: doc.source_page,
@@ -530,7 +689,11 @@ async function getDocumentText(id, url, db) {
   const page = url.searchParams.get('page');
   if (page !== null && text.pages_text) {
     const pages = JSON.parse(text.pages_text);
-    const pageNum = parseInt(page);
+    const pageNum = parseIntegerParam(url.searchParams, 'page', {
+      defaultValue: 0,
+      min: 0,
+      max: Math.max(0, pages.length - 1),
+    });
     if (pageNum >= 0 && pageNum < pages.length) {
       return json({
         document_id: id,
@@ -550,8 +713,77 @@ async function getDocumentText(id, url, db) {
   });
 }
 
-async function getDocumentFile(id, db, r2) {
-  const doc = await db.prepare('SELECT local_path, filename, data_set FROM documents WHERE id = ?').bind(id).first();
+const DOCUMENT_MEDIA_TYPES = new Set([
+  'application/pdf',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/x-wav',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/tiff',
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+]);
+
+function documentMediaType(doc, object) {
+  for (const value of [object?.httpMetadata?.contentType, doc.content_type]) {
+    const normalized = String(value || '').split(';', 1)[0].trim().toLowerCase();
+    if (DOCUMENT_MEDIA_TYPES.has(normalized)) return normalized;
+  }
+
+  const path = `${doc.local_path || ''} ${doc.filename || ''} ${doc.title || ''}`.toLowerCase();
+  if (path.includes('.pdf')) return 'application/pdf';
+  if (path.includes('.mp4')) return 'video/mp4';
+  if (path.includes('.mov')) return 'video/quicktime';
+  if (path.includes('.webm')) return 'video/webm';
+  if (path.includes('.wav')) return 'audio/wav';
+  if (path.includes('.mp3')) return 'audio/mpeg';
+  if (path.includes('.m4a')) return 'audio/mp4';
+  return 'application/octet-stream';
+}
+
+function documentFileResponse(doc, object, rangeRequested) {
+  const headers = new Headers({
+    'Content-Type': documentMediaType(doc, object),
+    'Cache-Control': 'public, max-age=86400',
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, ETag',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    ...corsHeaders,
+  });
+  object.writeHttpMetadata?.(headers);
+  headers.set('Content-Type', documentMediaType(doc, object));
+  if (object.httpEtag) headers.set('ETag', object.httpEtag);
+
+  let status = 200;
+  if (rangeRequested && object.range && Number.isFinite(object.size)) {
+    const suffix = Number(object.range.suffix);
+    const start = Number.isFinite(object.range.offset)
+      ? Number(object.range.offset)
+      : Math.max(0, object.size - suffix);
+    const length = Number.isFinite(object.range.length)
+      ? Number(object.range.length)
+      : Math.min(suffix, object.size);
+    if (Number.isFinite(start) && Number.isFinite(length) && length > 0) {
+      headers.set('Content-Range', `bytes ${start}-${start + length - 1}/${object.size}`);
+      headers.set('Content-Length', String(length));
+      status = 206;
+    }
+  } else if (Number.isFinite(object.size)) {
+    headers.set('Content-Length', String(object.size));
+  }
+
+  return new Response(object.body, { status, headers });
+}
+
+async function getDocumentFile(id, request, db, r2) {
+  const doc = await db.prepare(
+    'SELECT local_path, filename, title, data_set, content_type, document_type FROM documents WHERE id = ?'
+  ).bind(id).first();
 
   if (!doc) {
     return error('Document not found', 404);
@@ -588,17 +820,19 @@ async function getDocumentFile(id, db, r2) {
   if (pathMatch) {
     const r2Key = pathMatch[1];
     try {
-      const object = await r2.get(r2Key);
+      const rangeRequested = request.headers.has('Range');
+      const rangeOpts = rangeRequested ? { range: request.headers } : undefined;
+      // Videos: prefer the faststart remux under streaming/ (originals stay
+      // byte-identical to the DOJ release for hash verification).
+      if (doc.document_type === 'video') {
+        const streamObject = await r2.get(`streaming/${r2Key}`, rangeOpts);
+        if (streamObject) {
+          return documentFileResponse(doc, streamObject, rangeRequested);
+        }
+      }
+      const object = await r2.get(r2Key, rangeOpts);
       if (object) {
-        const contentType = doc.filename?.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
-        return new Response(object.body, {
-          headers: {
-            'Content-Type': contentType,
-            'Cache-Control': 'public, max-age=86400',
-            'Cross-Origin-Resource-Policy': 'cross-origin',
-            ...corsHeaders,
-          },
-        });
+        return documentFileResponse(doc, object, rangeRequested);
       }
     } catch (e) {
       console.error('R2 fetch error:', e);
@@ -636,8 +870,8 @@ async function getDocumentThumbnail(id, db, r2) {
 }
 
 async function listVideos(url, db) {
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 100, min: 1, max: 500 });
+  const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
 
   const total = await db.prepare(
     "SELECT COUNT(*) as count FROM documents WHERE document_type = 'video'"
@@ -654,7 +888,7 @@ async function listVideos(url, db) {
       id: v.id,
       filename: v.filename,
       title: v.title || v.filename,
-      data_set: v.data_set,
+      data_set: normalizeDataSet(v.data_set),
       has_thumbnail: true, // Assume all have thumbs in R2
     })),
   });
@@ -683,8 +917,8 @@ async function listMaxwellTapes(db) {
 }
 
 async function listImages(url, r2) {
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '60'), 200);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 60, min: 1, max: 200 });
+  const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
 
   // Try to get manifest from R2
   try {
@@ -738,8 +972,8 @@ async function getEntity(id, db) {
 
 async function getEntityMentions(entityId, url, db) {
   const role = url.searchParams.get('role');
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 100, min: 1, max: 500 });
+  const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
 
   const entity = await db.prepare('SELECT canonical_name FROM entities WHERE id = ?').bind(entityId).first();
   if (!entity) {
@@ -777,7 +1011,7 @@ async function getEntityMentions(entityId, url, db) {
       filename: m.filename,
       title: m.title,
       document_type: m.document_type,
-      data_set: m.data_set,
+      data_set: normalizeDataSet(m.data_set),
       name_as_appears: m.name_as_appears,
       role: m.role,
       role_confidence: m.role_confidence,
@@ -788,10 +1022,25 @@ async function getEntityMentions(entityId, url, db) {
 }
 
 async function searchEntities(request, db) {
-  const body = await request.json();
-  const { query, role, entity_type, limit = 50 } = body;
+  const rawBody = await request.text();
+  if (rawBody.length > 10_000) {
+    throw new HttpError('Request body too large', 413);
+  }
 
-  if (!query) {
+  let body;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    throw new HttpError('Request body must be valid JSON');
+  }
+
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new HttpError('Request body must be a JSON object');
+  }
+
+  const { query, entity_type } = body;
+
+  if (typeof query !== 'string' || !query.trim()) {
     return error('Query is required', 400);
   }
 
@@ -800,18 +1049,25 @@ async function searchEntities(request, db) {
     return error('Query too long. Maximum 200 characters allowed.', 400);
   }
 
-  const cleanQuery = query.substring(0, 200).replace(/[^\w\s-]/g, '');
+  const cleanQuery = cleanSearchText(query);
+  if (!cleanQuery) {
+    throw new HttpError('Query must contain at least one letter or number');
+  }
+  const resultLimit = parseIntegerValue(body.limit, 'limit', { defaultValue: 50, min: 1, max: 100 });
 
-  let sql = 'SELECT * FROM entities WHERE canonical_name LIKE ?';
-  const params = [`%${cleanQuery}%`];
+  let sql = "SELECT * FROM entities WHERE canonical_name LIKE ? ESCAPE '\\'";
+  const params = [`%${escapeLikePattern(cleanQuery)}%`];
 
   if (entity_type) {
+    if (typeof entity_type !== 'string' || entity_type.length > 50) {
+      throw new HttpError('entity_type must be a string of at most 50 characters');
+    }
     sql += ' AND entity_type = ?';
     params.push(entity_type);
   }
 
   sql += ' ORDER BY mention_count DESC LIMIT ?';
-  params.push(Math.min(limit, 100));
+  params.push(resultLimit);
 
   const results = await db.prepare(sql).bind(...params).all();
 
@@ -883,10 +1139,7 @@ async function getDataSets(db) {
   ).all();
 
   return json({
-    data_sets: sets.results.map(s => ({
-      name: s.data_set,
-      count: s.count,
-    })),
+    data_sets: mergeDataSetCounts(sets.results).sort((a, b) => b.count - a.count),
   });
 }
 
@@ -913,16 +1166,21 @@ async function loadHouseOversightPages(r2) {
 }
 
 async function listHouseOversightDocs(url, db) {
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 50, min: 1, max: 100 });
+  const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
   const search = url.searchParams.get('search') || '';
+
+  if (search.length > 100) {
+    throw new HttpError('Search too long. Maximum 100 characters allowed.');
+  }
 
   let sql = "SELECT * FROM house_oversight_documents";
   const params = [];
 
   if (search) {
-    sql += ' WHERE (bates_number LIKE ? OR title LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`);
+    sql += " WHERE (bates_number LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')";
+    const pattern = `%${escapeLikePattern(search)}%`;
+    params.push(pattern, pattern);
   }
 
   // Get total count
@@ -943,7 +1201,7 @@ async function listHouseOversightDocs(url, db) {
       bates: d.bates_number,
       title: d.title,
       page_count: d.page_count || 1,
-      thumbnail: `/api/house-oversight/page/${d.bates_number}/0`,
+      thumbnail: `/api/house-oversight/thumbnail/${d.bates_number}`,
     })),
   });
 }
@@ -1043,50 +1301,68 @@ async function getHouseOversightPage(bates, pageIndex, r2) {
   }
 }
 
+async function getHouseOversightThumbnail(bates, r2) {
+  // Pre-generated small thumbnail (~420px wide) — falls back to the full-res
+  // page-0 scan for any doc that hasn't been processed by
+  // generate_ho_thumbnails.py yet, so this route never 404s outright.
+  const thumbKey = `house-oversight/thumbnails/${bates}.jpg`;
+  const object = await r2.get(thumbKey);
+  if (object) {
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        ...corsHeaders,
+      },
+    });
+  }
+  return await getHouseOversightPage(bates, 0, r2);
+}
+
 async function getHouseOversightStats(db) {
-  const docCount = await db.prepare(
-    "SELECT COUNT(*) as count FROM house_oversight_documents"
-  ).first();
-
-  const pageCount = await db.prepare(
-    "SELECT SUM(page_count) as total FROM house_oversight_documents"
-  ).first();
-
-  const entityCount = await db.prepare(`
-    SELECT COUNT(DISTINCT e.id) as count
-    FROM mentions m
-    JOIN entities e ON e.id = m.entity_id
-    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
+  // Materialize the 315k oversight mentions once. Starting from the 2.9k
+  // legacy documents lets SQLite use idx_mentions_document instead of walking
+  // every entity and its mentions in the much larger combined archive.
+  const stats = await db.prepare(`
+    WITH oversight_mentions AS MATERIALIZED (
+      SELECT m.entity_id
+      FROM house_oversight_documents h
+      CROSS JOIN mentions m ON m.document_id = h.legacy_document_id
+    ),
+    top_entities AS (
+      SELECT e.id, e.canonical_name, e.entity_type, COUNT(*) AS mention_count
+      FROM oversight_mentions om
+      JOIN entities e ON e.id = om.entity_id
+      GROUP BY e.id
+      ORDER BY mention_count DESC
+      LIMIT 20
+    )
+    SELECT
+      (SELECT COUNT(*) FROM house_oversight_documents) AS documents,
+      (SELECT COALESCE(SUM(page_count), 0) FROM house_oversight_documents) AS pages,
+      (SELECT COUNT(DISTINCT entity_id) FROM oversight_mentions) AS entities,
+      (SELECT COUNT(*) FROM oversight_mentions) AS mentions,
+      (SELECT json_group_array(json_object(
+        'id', id,
+        'name', canonical_name,
+        'type', entity_type,
+        'mentions', mention_count
+      )) FROM top_entities) AS top_entities
   `).first();
 
-  const mentionCount = await db.prepare(`
-    SELECT COUNT(*) as count
-    FROM mentions m
-    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
-  `).first();
-
-  // Get top entities
-  const topEntities = await db.prepare(`
-    SELECT e.id, e.canonical_name, e.entity_type, COUNT(*) as mention_count
-    FROM mentions m
-    JOIN entities e ON e.id = m.entity_id
-    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
-    GROUP BY e.id
-    ORDER BY mention_count DESC
-    LIMIT 20
-  `).all();
+  let topEntities = [];
+  try {
+    topEntities = JSON.parse(stats.top_entities || '[]');
+  } catch {
+    topEntities = [];
+  }
 
   return json({
-    documents: docCount.count,
-    pages: pageCount.total || 0,
-    entities: entityCount.count,
-    mentions: mentionCount.count,
+    documents: stats.documents,
+    pages: stats.pages || 0,
+    entities: stats.entities,
+    mentions: stats.mentions,
     description: 'House Oversight Committee Estate Documents - Litigation load files from the Epstein estate investigation',
-    top_entities: topEntities.results.map(e => ({
-      id: e.id,
-      name: e.canonical_name,
-      type: e.entity_type,
-      mentions: e.mention_count,
-    })),
+    top_entities: topEntities,
   });
 }

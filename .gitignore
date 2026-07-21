@@ -17,6 +17,9 @@ database/*.db-journal
 
 # Environment
 .env
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 *.log
 
 # IDE
@@ -45,7 +48,7 @@ thumbnails/
 scraper_state.json
 epstein_files.sql.gz
 
-# Node
+# JavaScript dependencies (commit bun.lock for reproducible Bun installs)
 node_modules/
 package-lock.json
 

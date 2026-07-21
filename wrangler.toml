@@ -1,7 +1,13 @@
 name = "epstein-files-api"
+account_id = "cc7a2789c16e07eb3886901477982a16"
 main = "src/worker.js"
 compatibility_date = "2024-01-01"
 workers_dev = true
+
+# Serve the API on the main domain; Pages handles all other paths.
+routes = [
+  { pattern = "epsteinproject.org/api/*", zone_name = "epsteinproject.org" }
+]
 
 [vars]
 R2_PUBLIC_URL = "https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev"
@@ -14,3 +20,11 @@ database_id = "ae344bab-8a31-422d-bb07-fc07d5d69189"
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "epstein-files"
+
+[[ratelimits]]
+name = "API_RATE_LIMITER"
+namespace_id = "5971001"
+
+  [ratelimits.simple]
+  limit = 100
+  period = 60

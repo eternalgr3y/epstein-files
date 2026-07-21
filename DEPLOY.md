@@ -89,7 +89,7 @@ wrangler deploy
 wrangler pages project create epstein
 
 # Deploy
-wrangler pages deploy frontend/ --project-name=epstein
+wrangler --cwd frontend pages deploy . --project-name=epstein
 ```
 
 ### 8. Custom Domain

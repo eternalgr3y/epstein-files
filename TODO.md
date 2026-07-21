@@ -1,24 +1,5 @@
 # TODO
 
-## In Progress
-
-- [ ] **R2 Upload** - Uploading extracted/ folder (~12GB) to Cloudflare R2
-- [ ] **House Oversight Download** - Downloading Estate documents from Dropbox (~20k pages)
-
-## Next Up
-
-- [ ] **Chapter/Source UI** - Add filtering by document source
-  - DOJ Release
-  - House Oversight Estate
-  - House Oversight DOJ
-
-- [ ] **Process House Oversight Docs**
-  - OCR the downloaded images
-  - Extract entities
-  - Import to D1 database
-
-- [ ] **Download House Oversight DOJ** - Second batch (~33k pages)
-
 ## Future
 
 - [ ] Timeline visualization
@@ -41,3 +22,9 @@
 - [x] Pages deployment
 - [x] Custom domain (epsteinproject.org)
 - [x] House Oversight Dropbox scraper
+- [x] House Oversight download + OCR + import (estate & DOJ batches in D1)
+- [x] Faststart streaming remuxes for all 446 videos (streaming/ R2 prefix)
+- [x] Source filter UI — `source` param on /api/search + /api/browse, search
+  and Documents dropdowns with friendly labels (deployed 2026-07-21)
+- [x] Workers plan upgraded; D1 writes restored; "Data Set 8" labels fixed
+

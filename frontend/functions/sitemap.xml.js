@@ -1,3 +1,5 @@
+import { SECURITY_HEADERS } from './_lib/html.js';
+
 const CACHE_SECONDS = 3600;
 
 export async function onRequestGet(context) {
@@ -21,6 +23,11 @@ export async function onRequestGet(context) {
 
   const urls = [
     url('https://epsteinproject.org/', 'daily', '1.0'),
+    url('https://epsteinproject.org/documents', 'daily', '0.9'),
+    url('https://epsteinproject.org/images', 'weekly', '0.8'),
+    url('https://epsteinproject.org/videos', 'weekly', '0.8'),
+    url('https://epsteinproject.org/recordings', 'weekly', '0.8'),
+    url('https://epsteinproject.org/house-oversight', 'weekly', '0.9'),
     ...docs.results.map((d) => url(`https://epsteinproject.org/documents/${d.id}`, 'monthly', '0.6')),
     ...houseOversight.results.map((d) =>
       url(`https://epsteinproject.org/house-oversight/${encodeURIComponent(d.bates_number)}`, 'monthly', '0.6')
@@ -31,6 +38,7 @@ export async function onRequestGet(context) {
 
   const response = new Response(xml, {
     headers: {
+      ...SECURITY_HEADERS,
       'content-type': 'application/xml;charset=UTF-8',
       'cache-control': `public, max-age=${CACHE_SECONDS}`,
     },

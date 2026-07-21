@@ -99,7 +99,7 @@ document_fts (document_id, content)
 CLOUDFLARE_API_TOKEN="..." npx wrangler deploy
 
 # Deploy Frontend
-CLOUDFLARE_API_TOKEN="..." npx wrangler pages deploy frontend/ --project-name=epstein
+CLOUDFLARE_API_TOKEN="..." npx wrangler --cwd frontend pages deploy . --project-name=epstein
 
 # Upload to R2
 ~/.local/bin/rclone sync ./path r2:epstein-files/path

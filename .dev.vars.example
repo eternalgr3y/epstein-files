@@ -1,0 +1,4 @@
+# This Worker does not require plaintext runtime secrets.
+#
+# Copy this file to .dev.vars before `bunx wrangler dev`. Wrangler will then
+# avoid importing the unrelated deployment and ingestion tokens from .env.
