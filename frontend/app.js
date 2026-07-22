@@ -258,7 +258,6 @@
             document.getElementById('stat-documents').textContent = s.total_documents.toLocaleString();
             document.getElementById('stat-entities').textContent = s.total_entities.toLocaleString();
             document.getElementById('stat-mentions').textContent = s.total_mentions.toLocaleString();
-            document.getElementById('hero-stats').textContent = `Official releases · ${s.documents_with_text.toLocaleString()} documents with searchable text`;
 
             // Live counts for the collections ledger.
             const counts = new Map((s.data_sets || []).map(item => [item.name, Number(item.count)]));
@@ -1196,7 +1195,7 @@
                                 </button>
                             `).join('')}
                         </div>
-                        <p class="archive-note">Counts are documents where both names appear. Co-appearance in a document does not imply association or wrongdoing.</p>
+                        <p class="archive-note">Counts are documents where both names appear.</p>
                     </div>
                 `;
             }
@@ -1271,46 +1270,17 @@
                 <h1 style="font-family: var(--font-serif); font-size: 2.5rem; font-weight: 400; margin-bottom: 2rem; color: var(--text);">About</h1>
 
                 <p style="font-size: 1rem; color: var(--text-muted); line-height: 2; margin-bottom: 3rem;">
-                    This site indexes public records from official releases and preserves links back to source material.
-                    Search results and extracted entities are discovery aids, not conclusions about any person.
+                    This site indexes public records from official releases of the Jeffrey Epstein case and preserves links back to source material.
                 </p>
 
                 <div class="methodology-card">
                     <h2>How the archive is built</h2>
                     <p>Documents retain their source dataset, filename, page count, and original-source link where available. Text is extracted directly when possible; image-only pages are processed with optical character recognition (OCR).</p>
                     <p>OCR can misread names, dates, handwriting, and degraded scans. Each document shows whether searchable text is available so findings can be checked against the underlying page.</p>
-                    <p>Entity extraction identifies names and organizations mentioned in text. A mention does not imply involvement, guilt, or wrongdoing, and similarly named people may require manual disambiguation.</p>
+                    <p>Entity extraction identifies names and organizations mentioned in text. Similarly named people may require manual disambiguation.</p>
                     <p class="methodology-updated">Methodology reviewed July 2026 · Corrections and missing files can be reported through the feedback link.</p>
                 </div>
 
-                <div style="margin-bottom: 4rem; padding: 2.5rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
-                    <h2 style="font-family: Georgia, serif; font-size: 1.25rem; font-weight: 400; margin-bottom: 1.5rem; color: var(--text);">If you need support</h2>
-                    <p style="color: var(--text-muted); line-height: 2; font-size: 0.95rem; margin-bottom: 2rem;">
-                        If you or someone you know has been affected by sexual abuse, help is available.
-                    </p>
-                    <div style="margin-bottom: 1.5rem;">
-                        <a href="https://rainn.org" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-size: 1rem;">RAINN</a>
-                        <span style="color: var(--text-dim); margin-left: 1rem;">1-800-656-4673</span>
-                        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.5rem;">24/7 support for survivors of sexual violence</p>
-                    </div>
-                    <div style="margin-bottom: 1.5rem;">
-                        <a href="https://www.childhelp.org" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-size: 1rem;">Childhelp National Hotline</a>
-                        <span style="color: var(--text-dim); margin-left: 1rem;">1-800-422-4453</span>
-                        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.5rem;">24/7 support for child abuse victims and survivors</p>
-                    </div>
-                    <div>
-                        <a href="https://www.missingkids.org" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-size: 1rem;">National Center for Missing & Exploited Children</a>
-                        <span style="color: var(--text-dim); margin-left: 1rem;">1-800-843-5678</span>
-                        <p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.5rem;">Resources and reporting for child exploitation</p>
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 3rem;">
-                    <h2 style="font-size: 0.65rem; font-weight: 400; margin-bottom: 1.5rem; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase;">About this site</h2>
-                    <p style="color: var(--text-muted); line-height: 2; font-size: 0.95rem;">
-                        This is a public records search tool. It makes no claims and draws no conclusions.
-                    </p>
-                </div>
             </div>
         `;
     }

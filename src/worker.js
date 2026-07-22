@@ -397,11 +397,6 @@ function apiInfo() {
   return json({
     name: 'Epstein Files API',
     version: '1.0.0',
-    disclaimer: 'Being mentioned in a document does NOT imply guilt. Verify claims by reading source documents.',
-    survivor_resources: {
-      RAINN: '1-800-656-4673',
-      website: 'https://www.rainn.org',
-    },
     endpoints: {
       search: '/api/search',
       documents: '/api/documents',

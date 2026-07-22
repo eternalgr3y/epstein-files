@@ -6,10 +6,9 @@
     <meta name="color-scheme" content="light dark">
 
     <!-- Primary Meta Tags -->
-    <title>Epstein Project - DOJ Documents, Court Records & Evidence | Jeffrey Epstein Case Files</title>
-    <meta name="title" content="Epstein Project - DOJ Documents, Court Records & Evidence">
-    <meta name="description" content="Search and browse 22,000+ public records from official Jeffrey Epstein case releases, including DOJ documents, court records, House Oversight files, recordings, and video evidence.">
-    <meta name="keywords" content="Jeffrey Epstein, Epstein documents, DOJ Epstein release, Ghislaine Maxwell deposition, Epstein flight logs, Epstein court records, Epstein case files, Epstein evidence, Epstein island, Lolita Express, Epstein black book">
+    <title>Epstein Project — Public Archive of Jeffrey Epstein Case Records</title>
+    <meta name="title" content="Epstein Project — Public Archive of Jeffrey Epstein Case Records">
+    <meta name="description" content="Search and browse 22,000+ public records from official Jeffrey Epstein case releases, including DOJ documents, court records, House Oversight files, and recordings.">
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
     <meta name="author" content="Epstein Project">
     <meta name="googlebot" content="index, follow">
@@ -79,9 +78,6 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-
-    <!-- Google AdSense - Replace ca-pub-XXXXXXX with your publisher ID -->
-    <!-- <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script> -->
 
     <!-- Preconnect for faster font loading -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -418,32 +414,12 @@
             line-height: 1.9;
         }
 
-        .hero-subtitle {
-            font-size: 0.85rem;
-            color: var(--text-dim);
-            margin-top: 0.75rem;
-            margin-bottom: 0;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-        }
-
         .hero-source {
-            font-size: 0.7rem;
+            font-size: 0.8rem;
+            font-style: italic;
+            font-family: var(--font-serif);
             color: var(--text-dim);
-            margin-top: 0.8rem;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-        }
-
-        .hero-actions {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            gap: 1rem 2rem;
-            align-items: center;
-            margin-top: 3rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--border);
+            margin-top: 2.5rem;
         }
 
         /* Collections ledger: the archive's releases as a docket-style index.
@@ -648,34 +624,6 @@
         .search-btn:hover {
             background: var(--accent-hover);
             color: #ffffff;
-        }
-
-        /* Browse links */
-        .browse-links {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 0.75rem 1.15rem;
-            margin-top: 0;
-        }
-
-        .browse-links a {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 0.75rem;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            transition: color 0.3s ease;
-        }
-
-        .browse-links a:hover {
-            color: var(--accent);
-        }
-
-        .browse-links .sep {
-            color: var(--text-dim);
-            font-size: 0.6rem;
         }
 
         @media (max-width: 900px) {
@@ -1739,31 +1687,6 @@
                 border-top: 1px solid var(--border);
             }
 
-            .hero-actions {
-                display: block;
-                margin-top: 2.25rem;
-            }
-
-            .browse-links {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 0;
-                margin-top: 0.75rem;
-                border-top: 1px solid var(--border);
-                border-left: 1px solid var(--border);
-            }
-
-            .browse-links a {
-                padding: 0.8rem 0.7rem;
-                border-right: 1px solid var(--border);
-                border-bottom: 1px solid var(--border);
-                text-align: center;
-            }
-
-            .browse-links .sep {
-                display: none;
-            }
-
             .hero-source {
                 line-height: 1.7;
             }
@@ -1937,10 +1860,10 @@
                 </button>
             </div>
             <nav id="slide-menu" class="site-nav">
-                <a href="/images" id="nav-images" data-action="images">Images</a>
-                <a href="/videos" id="nav-videos" data-action="videos">Videos</a>
                 <a href="/documents" id="nav-docs" data-action="documents">Documents</a>
                 <a href="/house-oversight" id="nav-oversight" data-action="house-oversight">House Oversight</a>
+                <a href="/images" id="nav-images" data-action="images">Images</a>
+                <a href="/videos" id="nav-videos" data-action="videos">Videos</a>
                 <a href="/recordings" id="nav-maxwell" data-action="maxwell">Recordings</a>
                 <a href="#about" id="nav-about" data-action="about">About</a>
             </nav>
@@ -1982,7 +1905,7 @@
                                 <span>Indexed mentions</span>
                             </div>
                         </div>
-                        <p class="archive-note">Names appear for research and discovery. A mention does not imply guilt or wrongdoing.</p>
+                        <p class="archive-note">Compiled from official Department of Justice, court, and House Oversight releases.</p>
                     </aside>
                 </div>
                 <section class="ledger reveal" data-delay="5" aria-label="Collections in the archive">
@@ -2029,32 +1952,8 @@
                         </a></li>
                     </ol>
                 </section>
-                <div class="hero-actions reveal" data-delay="6">
-                    <span class="hero-subtitle">Browse by format</span>
-                    <div class="browse-links">
-                        <a href="/documents" data-action="documents">Documents</a>
-                        <span class="sep">•</span>
-                        <a href="/images" data-action="images">Images</a>
-                        <span class="sep">•</span>
-                        <a href="/videos" data-action="videos">Videos</a>
-                        <span class="sep">•</span>
-                        <a href="/recordings" data-action="maxwell">Recordings</a>
-                    </div>
-                </div>
-                <p class="hero-source reveal" data-delay="6" id="hero-stats">Official releases · Searchable public record archive</p>
+                <p class="hero-source reveal" data-delay="6" id="hero-stats">An independent, non-commercial archive of official public releases.</p>
             </section>
-
-
-            <!-- Ad Unit - Homepage Bottom (uncomment when AdSense approved) -->
-            <!-- <div class="ad-unit" style="margin-top: 2rem; text-align: center; padding: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;">
-                <ins class="adsbygoogle"
-                    style="display:block"
-                    data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
-                    data-ad-slot="XXXXXXXXXX"
-                    data-ad-format="auto"
-                    data-full-width-responsive="true"></ins>
-                <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-            </div> -->
         </div>
 
         <!-- Results container -->
@@ -2065,13 +1964,12 @@
         <p>
             <a href="#about" data-action="about">About</a> &nbsp;·&nbsp;
             <a href="https://docs.google.com/forms/d/e/1FAIpQLSdu5whC_64CsbCUP-6wjtwGx28y0oFOVMv290bREt45O0CWJg/viewform?usp=dialog" target="_blank" rel="noopener">Feedback</a> &nbsp;·&nbsp;
-            <a href="https://rainn.org" target="_blank" rel="noopener">RAINN</a> &nbsp;·&nbsp;
             <a href="https://justice.gov/epstein" target="_blank" rel="noopener">DOJ Source</a>
         </p>
     </footer>
 
     <div id="sr-announce" class="sr-only" aria-live="assertive"></div>
 
-    <script src="/app.js?v=20260721-same-origin-api" defer></script>
+    <script src="/app.js?v=20260722-about-cleanup" defer></script>
 </body>
 </html>

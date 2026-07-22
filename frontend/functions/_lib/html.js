@@ -73,7 +73,6 @@ footer{margin-top:2rem;font-size:0.85rem;color:#666}
 ${bodyHtml}
 ${spaHash ? `<p><a href="/#${esc(spaHash)}">Open in the interactive archive →</a></p>` : ''}
 </main>
-<footer><p>Being mentioned in a document does not imply guilt or wrongdoing. RAINN: 1-800-656-4673</p></footer>
 </body>
 </html>`;
 }

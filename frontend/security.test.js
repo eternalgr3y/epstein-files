@@ -5,7 +5,7 @@ const frontendUrl = new URL('.', import.meta.url);
 describe('frontend browser hardening', () => {
   test('keeps executable JavaScript in an external file', async () => {
     const html = await Bun.file(new URL('index.html', frontendUrl)).text();
-    expect(html).toContain('<script src="/app.js?v=20260721-same-origin-api" defer></script>');
+    expect(html).toMatch(/<script src="\/app\.js\?v=[\w-]+" defer><\/script>/);
     expect(html).not.toMatch(/\son(?:click|error|load|change|input|submit|keydown)=/i);
   });
 
