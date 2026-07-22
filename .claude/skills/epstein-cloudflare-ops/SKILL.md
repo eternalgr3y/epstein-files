@@ -92,6 +92,20 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   bun alone won't do it).
 - Tests: `bun test` (worker + frontend suites). `bun test | tail` swallows
   the exit code — check the pass/fail line, not the pipeline status.
+- Deploys need auth in non-interactive shells: `set -a && source .env &&
+  set +a` first (CLOUDFLARE_API_TOKEN lives in .env).
+
+## Analytics
+
+- The .env API token has no Analytics:Read — GraphQL zone analytics
+  returns authz errors. Read analytics through the logged-in dashboard
+  in Chrome instead (zone → Analytics → HTTP Traffic / Web analytics).
+- Web Analytics (RUM) auto-inject does NOT reach Pages-served HTML — it
+  silently undercounted ~25x. The site is set to manual-snippet mode;
+  the beacon (token deeb9a9acadd4b9e88871189785a062e) is embedded in
+  frontend/index.html and functions/_lib/html.js. CSP already allowlists
+  static.cloudflareinsights.com (script-src) + cloudflareinsights.com
+  (connect-src) — keep both if the CSP changes.
 
 ## Data conventions
 
