@@ -446,6 +446,99 @@
             border-top: 1px solid var(--border);
         }
 
+        /* Collections ledger: the archive's releases as a docket-style index.
+           The codes are the releases' real Bates prefixes. */
+        .ledger {
+            margin-top: 3.5rem;
+        }
+
+        .ledger-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--text);
+        }
+
+        .ledger-title {
+            font: 500 0.68rem/1 var(--font-mono);
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text);
+        }
+
+        .ledger-asof {
+            font: 400 0.62rem/1 var(--font-mono);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+
+        .ledger-rows {
+            list-style: none;
+        }
+
+        .ledger-rows a {
+            display: grid;
+            grid-template-columns: 10rem minmax(0, 1fr) auto;
+            gap: 0.35rem 1.5rem;
+            align-items: baseline;
+            padding: 0.95rem 0.5rem 1rem;
+            margin: 0 -0.5rem;
+            border-bottom: 1px solid var(--border);
+            text-decoration: none;
+            color: inherit;
+            transition: background 0.15s ease;
+        }
+
+        .ledger-rows a:hover,
+        .ledger-rows a:focus-visible {
+            background: var(--accent-soft);
+        }
+
+        .ledger-code {
+            font: 500 0.62rem/1.6 var(--font-mono);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--stamp);
+            white-space: nowrap;
+        }
+
+        .ledger-name {
+            font-family: var(--font-serif);
+            font-size: 1.1rem;
+            font-weight: 500;
+            line-height: 1.35;
+        }
+
+        .ledger-detail {
+            display: block;
+            font-family: var(--font-sans);
+            font-size: 0.78rem;
+            font-weight: 400;
+            color: var(--text-dim);
+            line-height: 1.55;
+            margin-top: 0.1rem;
+        }
+
+        .ledger-count {
+            font: 400 0.72rem/1.6 var(--font-mono);
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .ledger-count::after {
+            content: " \2192";
+            color: var(--accent);
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        .ledger-rows a:hover .ledger-count::after,
+        .ledger-rows a:focus-visible .ledger-count::after {
+            opacity: 1;
+        }
+
         .archive-card {
             border-top: 1px solid var(--text);
             border-bottom: 1px solid var(--border);
@@ -1617,6 +1710,21 @@
                 gap: 2.25rem;
             }
 
+            .ledger-rows a {
+                grid-template-columns: minmax(0, 1fr) auto;
+                padding: 0.85rem 0.35rem 0.95rem;
+                margin: 0 -0.35rem;
+            }
+
+            .ledger-code {
+                grid-column: 1 / -1;
+                line-height: 1.2;
+            }
+
+            .ledger-name {
+                font-size: 1rem;
+            }
+
             .archive-stats {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -1744,6 +1852,7 @@
         .reveal[data-delay="3"] { animation-delay: 0.3s; }
         .reveal[data-delay="4"] { animation-delay: 0.4s; }
         .reveal[data-delay="5"] { animation-delay: 0.5s; }
+        .reveal[data-delay="6"] { animation-delay: 0.6s; }
 
         @keyframes rise {
             to { opacity: 1; transform: translateY(0); }
@@ -1876,8 +1985,52 @@
                         <p class="archive-note">Names appear for research and discovery. A mention does not imply guilt or wrongdoing.</p>
                     </aside>
                 </div>
-                <div class="hero-actions reveal" data-delay="5">
-                    <span class="hero-subtitle">Browse the collection</span>
+                <section class="ledger reveal" data-delay="5" aria-label="Collections in the archive">
+                    <div class="ledger-head">
+                        <span class="ledger-title">The collections</span>
+                        <span class="ledger-asof">as released</span>
+                    </div>
+                    <ol class="ledger-rows">
+                        <li><a href="#documents/0/source%3Adoj-release">
+                            <span class="ledger-code">EFTA</span>
+                            <span class="ledger-name">DOJ Evidence Release
+                                <span class="ledger-detail">Data Sets 1&ndash;8 &middot; investigation files, flight logs, evidence photos and video</span></span>
+                            <span class="ledger-count" data-ledger="doj-release">15,091 files</span>
+                        </a></li>
+                        <li><a href="#documents/0/court-records">
+                            <span class="ledger-code">Docket</span>
+                            <span class="ledger-name">Court Records
+                                <span class="ledger-detail">Giuffre v. Maxwell and related unsealed filings</span></span>
+                            <span class="ledger-count" data-ledger="court-records">2,638 files</span>
+                        </a></li>
+                        <li><a href="/house-oversight" data-action="house-oversight">
+                            <span class="ledger-code">House_Oversight</span>
+                            <span class="ledger-name">Estate Records
+                                <span class="ledger-detail">released by the House Oversight Committee</span></span>
+                            <span class="ledger-count" data-ledger="house-oversight-estate">2,897 files</span>
+                        </a></li>
+                        <li><a href="#documents/0/house-oversight-doj">
+                            <span class="ledger-code">DOJ-OGR</span>
+                            <span class="ledger-name">DOJ Records &mdash; House Oversight
+                                <span class="ledger-detail">second congressional release, including surveillance video</span></span>
+                            <span class="ledger-count" data-ledger="house-oversight-doj">1,657 files</span>
+                        </a></li>
+                        <li><a href="#documents/0/doj-disclosures">
+                            <span class="ledger-code">Disc</span>
+                            <span class="ledger-name">DOJ Disclosures
+                                <span class="ledger-detail">early public disclosure memos</span></span>
+                            <span class="ledger-count" data-ledger="doj-disclosures">16 files</span>
+                        </a></li>
+                        <li><a href="/recordings" data-action="maxwell">
+                            <span class="ledger-code">Tapes</span>
+                            <span class="ledger-name">Maxwell Interview
+                                <span class="ledger-detail">DOJ interview audio, days one and two</span></span>
+                            <span class="ledger-count" data-ledger="maxwell-interview">11 recordings</span>
+                        </a></li>
+                    </ol>
+                </section>
+                <div class="hero-actions reveal" data-delay="6">
+                    <span class="hero-subtitle">Browse by format</span>
                     <div class="browse-links">
                         <a href="/documents" data-action="documents">Documents</a>
                         <span class="sep">•</span>
@@ -1888,7 +2041,7 @@
                         <a href="/recordings" data-action="maxwell">Recordings</a>
                     </div>
                 </div>
-                <p class="hero-source reveal" data-delay="5" id="hero-stats">Official releases · Searchable public record archive</p>
+                <p class="hero-source reveal" data-delay="6" id="hero-stats">Official releases · Searchable public record archive</p>
             </section>
 
 

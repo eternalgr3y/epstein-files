@@ -259,6 +259,23 @@
             document.getElementById('stat-entities').textContent = s.total_entities.toLocaleString();
             document.getElementById('stat-mentions').textContent = s.total_mentions.toLocaleString();
             document.getElementById('hero-stats').textContent = `Official releases · ${s.documents_with_text.toLocaleString()} documents with searchable text`;
+
+            // Live counts for the collections ledger.
+            const counts = new Map((s.data_sets || []).map(item => [item.name, Number(item.count)]));
+            const ledgerCounts = {
+                'doj-release': DOJ_RELEASE_SETS.reduce((sum, name) => sum + (counts.get(name) || 0), 0),
+                'court-records': counts.get('court-records'),
+                'house-oversight-estate': counts.get('house-oversight-estate'),
+                'house-oversight-doj': counts.get('house-oversight-doj'),
+                'doj-disclosures': counts.get('doj-disclosures'),
+                'maxwell-interview': counts.get('maxwell-interview'),
+            };
+            document.querySelectorAll('[data-ledger]').forEach(el => {
+                const n = ledgerCounts[el.dataset.ledger];
+                if (!n) return;
+                const unit = el.dataset.ledger === 'maxwell-interview' ? 'recordings' : 'files';
+                el.textContent = `${n.toLocaleString()} ${unit}`;
+            });
         }).catch(() => {
             // Keep the static fallback text already in the DOM.
         });
