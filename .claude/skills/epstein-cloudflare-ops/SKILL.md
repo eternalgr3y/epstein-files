@@ -69,12 +69,25 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
 - Huge DOJ-OGR videos have ~6 MB moov atoms: metadata load is seconds on
   fast connections, longer on slow ones — that part is physics, not a bug.
 
+## R2 custom domain (media.epsteinproject.org)
+
+- Fronts the `epstein-files` bucket; video /file requests 302 here
+  (streaming/ copy preferred; `?download=1` bypasses the redirect to keep
+  same-origin streaming so `<a download>` works). CSP media-src must list it.
+- API gotcha: the legacy `POST /r2/buckets/<b>/custom_domains` route
+  **silently ignores `enabled:true`** — the domain 401s even after SSL goes
+  active. Use `PUT /r2/buckets/<b>/domains/custom/<domain>` with
+  `{"enabled":true}`. SSL provisioning takes ~20+ min; poll for HTTP 200
+  before deploying anything that depends on the domain.
+- Ordering matters: never deploy the worker redirect before the domain
+  serves 200, or every video breaks.
+
 ## Deploys
 
-- Worker: `bunx wrangler deploy`. **Do not trust a truncated success** —
-  confirm the `Deployed epstein-files-api triggers` line, then curl the
-  new behavior on epsteinproject.org. One deploy this project appeared to
-  succeed but the new route 404'd until redeployed.
+- Worker: `bunx wrangler deploy`. **Wrangler is flaky here — it has died
+  after printing just the version banner multiple times.** Always confirm
+  the `Deployed epstein-files-api triggers` line, then curl the new
+  behavior on epsteinproject.org; retry the deploy if the line is absent.
 - Pages: `PATH=~/.local/node/bin:$PATH bun run deploy:pages` (needs Node,
   bun alone won't do it).
 - Tests: `bun test` (worker + frontend suites). `bun test | tail` swallows
@@ -91,8 +104,25 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   otherwise contribute billions of junk pairs). Regenerate after big
   imports: dump entities+mentions, run `src/build_cooccurrence.py`, import
   the SQL with wrangler.
-- Estate docs (house-oversight-estate) have NO FTS text; their exclusion
-  from /api/search is intentional until they're OCR'd.
+- Estate docs (house-oversight-estate) ARE searchable (indexed into
+  document_fts 2026-07-21; their OCR text always lived in document_texts
+  via house_oversight_documents.legacy_document_id). They stay excluded
+  from /api/browse only — the Documents page is the DOJ list and estate
+  docs have their own gallery. Estate search results must route to the
+  house-oversight scan viewer (by bates = filename), not the generic doc
+  view. Before assuming a collection "needs OCR", check document_texts
+  via legacy id mappings first.
+
+## Browser verification traps
+
+- Chrome will not play video in a hidden tab: `play()` resolves, then the
+  element immediately re-pauses with no error. Check
+  `document.visibilityState` before concluding playback is broken.
+- Chrome may delay issuing a media request until the poster image request
+  settles — a stalled poster looks like a dead video.
+- The extension's network log only records requests after tracking starts,
+  and old entries (including from mid-deploy states) linger — `clear: true`
+  and hard-reload before trusting it.
 
 ## Permission notes (Claude Code sessions)
 
