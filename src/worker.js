@@ -33,6 +33,7 @@ const SOURCE_GROUPS = {
   'court-records': ['court-records'],
   'doj-disclosures': ['doj-disclosures'],
   'house-oversight-doj': ['house-oversight-doj'],
+  'house-oversight-estate': ['house-oversight-estate'],
   'maxwell-interview': ['maxwell-interview'],
 };
 
@@ -444,7 +445,7 @@ async function searchDocuments(url, db) {
 
   // If no query but filters, browse by filter
   if (!q && (documentType || dataSets)) {
-    let sql = "SELECT * FROM documents WHERE data_set != 'house-oversight-estate'";
+    let sql = 'SELECT * FROM documents WHERE 1=1';
     const params = [];
 
     if (documentType) {
@@ -494,7 +495,6 @@ async function searchDocuments(url, db) {
       FROM document_fts
       JOIN documents d ON d.id = document_fts.document_id
       WHERE document_fts MATCH ?
-      AND d.data_set != 'house-oversight-estate'
       ${documentType ? 'AND d.document_type = ?' : ''}
       ${dataSets ? `AND d.data_set IN (${dataSetPlaceholders(dataSets)})` : ''}
       ORDER BY rank
@@ -513,7 +513,6 @@ async function searchDocuments(url, db) {
       FROM document_fts
       JOIN documents d ON d.id = document_fts.document_id
       WHERE document_fts MATCH ?
-      AND d.data_set != 'house-oversight-estate'
       ${documentType ? 'AND d.document_type = ?' : ''}
       ${dataSets ? `AND d.data_set IN (${dataSetPlaceholders(dataSets)})` : ''}
     `).bind(

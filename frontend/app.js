@@ -16,6 +16,7 @@
         { value: 'court-records', label: 'Court Records' },
         { value: 'doj-disclosures', label: 'DOJ Disclosures' },
         { value: 'house-oversight-doj', label: 'House Oversight (DOJ)' },
+        { value: 'house-oversight-estate', label: 'House Oversight (Estate)' },
         { value: 'maxwell-interview', label: 'Maxwell Interview' },
     ];
     const DOJ_RELEASE_SETS = ['data-set', 'data-set-2', 'data-set-3', 'data-set-4',
@@ -440,9 +441,15 @@
                     d.document_id ? `DOC ${d.document_id}` : null,
                     ocrLabel(d)
                 ].filter(Boolean);
+                // Estate docs open in the House Oversight scan viewer, not the
+                // generic document view.
+                const isEstate = d.data_set === 'house-oversight-estate';
+                const titleLink = isEstate
+                    ? `<a href="/house-oversight/${esc(d.filename)}" data-action="house-oversight" data-bates="${esc(d.filename)}">${esc(d.title || d.filename)}</a>`
+                    : `<a href="/documents/${Number(d.document_id)}" data-action="doc" data-id="${Number(d.document_id)}">${esc(d.title || d.filename)}</a>`;
                 html += `
                     <div class="result-card">
-                        <div class="result-title${titleClass(d.title || d.filename)}"><a href="/documents/${Number(d.document_id)}" data-action="doc" data-id="${Number(d.document_id)}">${esc(d.title || d.filename)}</a></div>
+                        <div class="result-title${titleClass(d.title || d.filename)}">${titleLink}</div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                         ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
                         ${sourceUrl ? `<a class="source-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener">Open Source</a>` : ''}
