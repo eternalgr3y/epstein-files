@@ -806,6 +806,55 @@
             background: var(--surface-wash);
         }
 
+        .cooc-section {
+            margin: 1.5rem 0 2.25rem;
+        }
+
+        .cooc-section h2 {
+            font-size: 0.8rem;
+            font-family: var(--font-mono);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 0.85rem;
+        }
+
+        .cooc-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .cooc-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            padding: 0.4rem 0.7rem;
+            border: 1px solid var(--border);
+            background: var(--surface-wash);
+            color: var(--text);
+            cursor: pointer;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+
+        .cooc-chip:hover,
+        .cooc-chip:focus-visible {
+            border-color: var(--accent-hover);
+            background: var(--accent-soft);
+        }
+
+        .cooc-count {
+            color: var(--text-dim);
+            font-size: 0.68rem;
+        }
+
+        .cooc-section .archive-note {
+            margin-top: 0.85rem;
+            font-size: 0.75rem;
+        }
+
         .result-snippet {
             font-size: 0.9rem;
             color: var(--text-muted);

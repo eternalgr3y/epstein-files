@@ -306,6 +306,11 @@ export default {
         return await getEntityMentions(parseInt(entityMentionsMatch[1]), url, env.DB);
       }
 
+      const entityCoocMatch = path.match(/^\/api\/entities\/(\d+)\/co-occurrences$/);
+      if (entityCoocMatch) {
+        return await getEntityCoOccurrences(parseInt(entityCoocMatch[1]), url, env.DB);
+      }
+
       if (path === '/api/entities/search' && method === 'POST') {
         return await searchEntities(request, env.DB);
       }
@@ -997,6 +1002,47 @@ async function getEntity(id, db) {
     mention_count: entity.mention_count,
     needs_review: !!entity.needs_review,
   });
+}
+
+// Served from entity_cooccurrence, precomputed offline by
+// src/build_cooccurrence.py from the backup dumps (top 40 partners per
+// entity, >= 2 shared docs, mega-documents excluded). Computing this live
+// over 3.7M mentions is not viable in D1.
+async function getEntityCoOccurrences(entityId, url, db) {
+  const type = url.searchParams.get('type');
+  const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 20, min: 1, max: 40 });
+  if (type && type.length > 40) {
+    throw new HttpError('type must be 40 characters or fewer');
+  }
+
+  try {
+    const results = await db.prepare(`
+      SELECT c.other_entity_id, c.shared_docs, e.canonical_name, e.entity_type, e.mention_count
+      FROM entity_cooccurrence c
+      JOIN entities e ON e.id = c.other_entity_id
+      WHERE c.entity_id = ?
+      ${type ? 'AND LOWER(e.entity_type) = LOWER(?)' : ''}
+      ORDER BY c.shared_docs DESC
+      LIMIT ?
+    `).bind(entityId, ...(type ? [type] : []), limit).all();
+
+    return json({
+      entity_id: entityId,
+      results: results.results.map(r => ({
+        entity_id: r.other_entity_id,
+        name: r.canonical_name,
+        type: r.entity_type,
+        mention_count: r.mention_count,
+        shared_docs: r.shared_docs,
+      })),
+    });
+  } catch (e) {
+    // Table not imported yet — degrade to an empty list instead of a 500.
+    if (String(e).includes('no such table')) {
+      return json({ entity_id: entityId, results: [] });
+    }
+    throw e;
+  }
 }
 
 async function getEntityMentions(entityId, url, db) {

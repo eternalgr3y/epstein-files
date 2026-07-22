@@ -1145,9 +1145,10 @@
         if (!skipPush) history.pushState(null, '', `#${newHash}`);
 
         try {
-            const [entity, mentions] = await Promise.all([
+            const [entity, mentions, cooc] = await Promise.all([
                 fetch(`${API}/entities/${id}`).then(r => r.json()),
-                fetch(`${API}/entities/${id}/mentions?limit=50&offset=${offset}`).then(r => r.json())
+                fetch(`${API}/entities/${id}/mentions?limit=50&offset=${offset}`).then(r => r.json()),
+                fetch(`${API}/entities/${id}/co-occurrences?limit=16`).then(r => r.json()).catch(() => ({ results: [] })),
             ]);
 
             let html = `
@@ -1158,6 +1159,23 @@
                     <span class="results-count">${entity.mention_count || mentions.total_mentions} total mentions</span>
                 </div>
             `;
+
+            if (cooc.results?.length) {
+                html += `
+                    <div class="cooc-section">
+                        <h2>Appears in documents with</h2>
+                        <div class="cooc-list">
+                            ${cooc.results.map(c => `
+                                <button class="cooc-chip" data-action="entity" data-id="${Number(c.entity_id)}" type="button" title="${esc(c.name)} · ${Number(c.shared_docs).toLocaleString()} shared documents">
+                                    <span class="cooc-name">${esc(c.name)}</span>
+                                    <span class="cooc-count">${Number(c.shared_docs).toLocaleString()}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                        <p class="archive-note">Counts are documents where both names appear. Co-appearance in a document does not imply association or wrongdoing.</p>
+                    </div>
+                `;
+            }
 
             mentions.mentions.forEach(m => {
                 let snippet = m.context_snippet ? esc(m.context_snippet) : null;

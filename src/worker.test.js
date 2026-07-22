@@ -233,6 +233,47 @@ describe('Worker security behavior', () => {
   });
 });
 
+describe('Entity co-occurrences', () => {
+  test('returns partners ordered by shared documents', async () => {
+    const env = {
+      DB: {
+        prepare(sql) {
+          return {
+            bind() {
+              return {
+                async all() {
+                  expect(sql).toContain('FROM entity_cooccurrence');
+                  return { results: [
+                    { other_entity_id: 2, shared_docs: 9, canonical_name: 'B', entity_type: 'person', mention_count: 40 },
+                  ] };
+                },
+              };
+            },
+          };
+        },
+      },
+    };
+    const { response, body } = await responseJson('/api/entities/1/co-occurrences', env);
+    expect(response.status).toBe(200);
+    expect(body.results).toEqual([
+      { entity_id: 2, name: 'B', type: 'person', mention_count: 40, shared_docs: 9 },
+    ]);
+  });
+
+  test('degrades to empty results while the table is not imported', async () => {
+    const env = {
+      DB: {
+        prepare() {
+          return { bind() { return { async all() { throw new Error('D1_ERROR: no such table: entity_cooccurrence'); } }; } };
+        },
+      },
+    };
+    const { response, body } = await responseJson('/api/entities/1/co-occurrences', env);
+    expect(response.status).toBe(200);
+    expect(body.results).toEqual([]);
+  });
+});
+
 describe('Source filtering', () => {
   function capturingDb(rows = []) {
     const captured = [];
