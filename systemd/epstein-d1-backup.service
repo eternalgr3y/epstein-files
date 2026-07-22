@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up epstein-files-db (D1) to the private R2 backups bucket
+
+[Service]
+Type=oneshot
+Environment=PATH=/home/mildorp/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/mildorp/projects/epstein-files/backup_d1.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly D1 backup for epsteinproject.org
+
+[Timer]
+OnCalendar=Mon 04:00
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
