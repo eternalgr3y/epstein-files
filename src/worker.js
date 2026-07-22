@@ -6,6 +6,9 @@
  */
 
 const R2_PUBLIC_URL = 'https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev';
+// R2 custom domain on the epstein-files bucket — unlike the rate-limited
+// r2.dev URL above, this one is production-grade and safe to redirect to.
+const MEDIA_URL = 'https://media.epsteinproject.org';
 
 // Rate limiting: 100 requests per minute per IP, enforced by Cloudflare's
 // Rate Limiting binding in production (see wrangler.toml).
@@ -828,8 +831,24 @@ async function getDocumentFile(id, request, db, r2) {
       const rangeRequested = request.headers.has('Range');
       const rangeOpts = rangeRequested ? { range: request.headers } : undefined;
       // Videos: prefer the faststart remux under streaming/ (originals stay
-      // byte-identical to the DOJ release for hash verification).
+      // byte-identical to the DOJ release for hash verification). Playback
+      // redirects to the R2 custom domain so multi-GB streams don't flow
+      // through the Worker; ?download=1 keeps the response same-origin so
+      // the <a download> attribute works.
       if (doc.document_type === 'video') {
+        const wantsDownload = new URL(request.url).searchParams.get('download') === '1';
+        if (!wantsDownload) {
+          const streamHead = await r2.head(`streaming/${r2Key}`);
+          const key = streamHead ? `streaming/${r2Key}` : r2Key;
+          return new Response(null, {
+            status: 302,
+            headers: {
+              'Location': `${MEDIA_URL}/${encodeURI(key)}`,
+              'Cache-Control': 'public, max-age=3600',
+              ...corsHeaders,
+            },
+          });
+        }
         const streamObject = await r2.get(`streaming/${r2Key}`, rangeOpts);
         if (streamObject) {
           return documentFileResponse(doc, streamObject, rangeRequested);

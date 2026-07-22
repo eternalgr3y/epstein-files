@@ -1052,7 +1052,7 @@
                             <div class="doc-toolbar">
                                 ${shareButton}
                                 ${sourceButton}
-                                <a href="${API}/documents/${id}/file" download class="btn">Download</a>
+                                <a href="${API}/documents/${id}/file?download=1" download class="btn">Download</a>
                             </div>
                         </div>
                         <div class="media-player">
