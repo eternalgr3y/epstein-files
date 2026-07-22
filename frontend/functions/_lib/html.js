@@ -73,6 +73,7 @@ footer{margin-top:2rem;font-size:0.85rem;color:#666}
 ${bodyHtml}
 ${spaHash ? `<p><a href="/#${esc(spaHash)}">Open in the interactive archive →</a></p>` : ''}
 </main>
+<script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "deeb9a9acadd4b9e88871189785a062e"}'></script>
 </body>
 </html>`;
 }
