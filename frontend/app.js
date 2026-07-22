@@ -1002,7 +1002,7 @@
             const shareButton = `<button class="btn" data-action="share" data-url="/documents/${Number(id)}" type="button">Share</button>`;
 
             // Audio
-            if (doc.content_type?.startsWith('audio/') || doc.filename?.match(/\.(wav|mp3|m4a)$/i)) {
+            if (doc.document_type === 'audio' || doc.content_type?.startsWith('audio/') || doc.filename?.match(/\.(wav|mp3|m4a)$/i)) {
                 resultsView.innerHTML = `
                     <button class="back-btn" data-action="back">← Back</button>
                     <div class="doc-viewer">
@@ -1028,8 +1028,11 @@
                 return;
             }
 
-            // Video
-            if (doc.content_type?.startsWith('video/') || doc.filename?.match(/\.(mp4|mov|avi)$/i)) {
+            // Video: document_type is the reliable signal — House Oversight DOJ
+            // videos have extensionless filenames (DOJ-OGR-…), and without this
+            // branch they fell through to the PDF viewer, which tried to inline
+            // a multi-GB file and looked like a dead blank panel.
+            if (doc.document_type === 'video' || doc.content_type?.startsWith('video/') || doc.filename?.match(/\.(mp4|mov|avi)$/i)) {
                 resultsView.innerHTML = `
                     <button class="back-btn" data-action="back">← Back</button>
                     <div class="doc-viewer">

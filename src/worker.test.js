@@ -85,10 +85,19 @@ describe('Worker security behavior', () => {
       },
     };
 
+    env.R2 = {
+      async get(key) {
+        return key === 'images/14672_p0_0.png'
+          ? { body: 'png-bytes', httpMetadata: { contentType: 'image/png' } }
+          : null;
+      },
+    };
+
     const response = await worker.fetch(request('/api/images/14672_p0_0.png'), env, {});
     expect(calls).toBe(0);
-    expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toContain('/images/14672_p0_0.png');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(response.headers.get('cache-control')).toContain('immutable');
   });
 
   test('serves extensionless Bates PDFs with their stored media type', async () => {

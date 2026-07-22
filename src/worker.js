@@ -277,7 +277,7 @@ export default {
 
       const videoThumbMatch = path.match(/^\/api\/videos\/(\d+)\/thumb$/);
       if (videoThumbMatch) {
-        return await getVideoThumbnail(parseInt(videoThumbMatch[1]), env.DB);
+        return await getVideoThumbnail(parseInt(videoThumbMatch[1]), env.R2);
       }
 
       // Maxwell tapes
@@ -292,7 +292,7 @@ export default {
 
       const imageMatch = path.match(/^\/api\/images\/([^/]+)$/);
       if (imageMatch) {
-        return getImage(imageMatch[1]);
+        return await getImage(imageMatch[1], env.R2);
       }
 
       // Entity routes
@@ -656,6 +656,7 @@ async function getDocument(id, db) {
     filename: doc.filename,
     title: doc.title,
     document_type: doc.document_type,
+    content_type: doc.content_type,
     data_set: normalizeDataSet(doc.data_set),
     category: doc.category,
     source_url: doc.source_url,
@@ -894,8 +895,23 @@ async function listVideos(url, db) {
   });
 }
 
-async function getVideoThumbnail(id, db) {
-  return Response.redirect(`${R2_PUBLIC_URL}/thumbnails/${id}.jpg`, 302);
+// Streamed from R2 rather than redirected to R2_PUBLIC_URL: r2.dev dev URLs
+// are rate-limited by Cloudflare and stall for tens of seconds under the
+// burst a 48-card gallery produces, which held up video poster loads (and
+// with them Chrome's media requests) long enough to look broken.
+async function getVideoThumbnail(id, r2) {
+  const object = await r2.get(`thumbnails/${id}.jpg`);
+  if (!object) {
+    return error('Thumbnail not found', 404);
+  }
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'image/jpeg',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      ...corsHeaders,
+    },
+  });
 }
 
 async function listMaxwellTapes(db) {
@@ -939,13 +955,26 @@ async function listImages(url, r2) {
   return json({ total: 0, images: [], status: 'manifest not found' });
 }
 
-function getImage(filename) {
+async function getImage(filename, r2) {
   // Sanitize filename
   if (filename.includes('..') || filename.includes('/')) {
     return error('Invalid filename', 400);
   }
 
-  return Response.redirect(`${R2_PUBLIC_URL}/images/${filename}`, 302);
+  // Streamed rather than redirected to the rate-limited r2.dev URL (see
+  // getVideoThumbnail).
+  const object = await r2.get(`images/${filename}`);
+  if (!object) {
+    return error('Image not found', 404);
+  }
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType || 'image/jpeg',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      ...corsHeaders,
+    },
+  });
 }
 
 async function getEntity(id, db) {
