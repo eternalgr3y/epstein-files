@@ -1,0 +1,2 @@
+# Optional: keep large speech-to-text/model dependencies out of the web image.
+faster-whisper==1.2.1

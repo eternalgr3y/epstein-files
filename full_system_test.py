@@ -136,7 +136,9 @@ def run_tests():
         except:
             return False
 
-    queries = [f"test{i}" for i in range(50)]
+    # Keep this burst below the per-minute test quota so validation checks that
+    # follow exercise validation rather than inheriting a 429 from this block.
+    queries = [f"test{i}" for i in range(10)]
     start = time.time()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -146,9 +148,9 @@ def run_tests():
     success = sum(results)
 
     # Allow for rate limiting (429s are expected)
-    test(f"50 concurrent requests complete", True)
+    test(f"10 concurrent requests complete", True)
     test(f"Under 30 seconds", elapsed < 30, f"{elapsed:.1f}s")
-    print(f"      ({success}/50 succeeded, {elapsed:.2f}s, {elapsed/50*1000:.0f}ms avg)")
+    print(f"      ({success}/10 succeeded, {elapsed:.2f}s, {elapsed/10*1000:.0f}ms avg)")
 
     # ===========================================
     print("\n[Edge Cases - Live]")

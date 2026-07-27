@@ -7,10 +7,11 @@ Extracts text from PDFs and images using:
 """
 
 import logging
+import os
 import time
+from collections import Counter
 from pathlib import Path
-from typing import Optional, Tuple, List
-from datetime import datetime
+from typing import Dict, Iterable, List, Optional, Tuple
 from dataclasses import dataclass
 
 try:
@@ -31,9 +32,11 @@ except ImportError:
 
 from models import (
     get_engine, get_session, Document, DocumentText,
-    ProcessingStatus, ProcessingLog
+    ProcessingStatus, ProcessingLog, utc_now
 )
-from redaction_detector import RedactionDetector, RedactionStatus
+from config import OCR_DPI, OCR_PAGE_BATCH_SIZE, REDACTION_POLICY, TESSERACT_LANG
+from redaction_detector import RedactionDetector, RedactionReport, RedactionStatus
+from fts_index import sync_fts_document
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,10 +44,10 @@ logger = logging.getLogger(__name__)
 # Redaction detection
 redaction_detector = RedactionDetector()
 
-# Configuration
-OCR_DPI = 300
-TESSERACT_LANG = "eng"
 MIN_TEXT_LENGTH = 50  # Minimum chars to consider a page has text
+SPARSE_OCR_WORD_THRESHOLD = 5
+SPARSE_OCR_MIN_CONFIDENCE = 0.50
+DENSE_TEXT_WORD_RATIO = 0.80
 
 
 @dataclass
@@ -55,13 +58,21 @@ class ExtractionResult:
     pages_text: List[str]
     word_count: int
     average_confidence: float
-    method: str  # "native" or "ocr"
+    method: str  # "native", "ocr", "hybrid", "blocked", or "none"
     error: Optional[str] = None
     duration_ms: int = 0
     # Redaction integrity
     redaction_status: str = "unchecked"
     redaction_safe_to_index: bool = True
     redaction_issues: int = 0
+
+
+def get_redaction_policy() -> str:
+    """Read the policy at processing time so jobs can override it per run."""
+    policy = os.getenv("REDACTION_POLICY", REDACTION_POLICY).strip().lower()
+    if policy not in {"warn", "block", "off"}:
+        raise ValueError("REDACTION_POLICY must be one of: warn, block, off")
+    return policy
 
 
 def extract_text_from_pdf_native(pdf_path: Path) -> Tuple[List[str], bool]:
@@ -91,66 +102,249 @@ def extract_text_from_pdf_native(pdf_path: Path) -> Tuple[List[str], bool]:
         return [], False
 
 
+def _normalize_confidence(value) -> Optional[float]:
+    """Normalize pytesseract confidence values across wrapper versions."""
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return None
+    return confidence if confidence >= 0 else None
+
+
+def _text_and_confidence(data: dict) -> Tuple[str, float]:
+    """Build clean OCR text and a mean confidence from image_to_data output."""
+    words = []
+    confidences = []
+
+    for text, raw_confidence in zip(data.get("text", []), data.get("conf", [])):
+        word = str(text).strip()
+        confidence = _normalize_confidence(raw_confidence)
+        if word and confidence is not None:
+            words.append(word)
+            confidences.append(confidence)
+
+    average = sum(confidences) / len(confidences) if confidences else 0.0
+    return " ".join(words), average / 100.0
+
+
+def _dense_text_word_ratio(data: dict) -> float:
+    """Return the share of OCR words that occur in lines of three or more."""
+    line_counts = Counter()
+    texts = data.get("text", [])
+    confidences = data.get("conf", [])
+    blocks = data.get("block_num", [])
+    paragraphs = data.get("par_num", [])
+    lines = data.get("line_num", [])
+    for index, (text, raw_confidence) in enumerate(zip(texts, confidences)):
+        if not str(text).strip() or _normalize_confidence(raw_confidence) is None:
+            continue
+        try:
+            line_key = (blocks[index], paragraphs[index], lines[index])
+        except IndexError:
+            continue
+        line_counts[line_key] += 1
+    total_words = sum(line_counts.values())
+    dense_words = sum(count for count in line_counts.values() if count >= 3)
+    return dense_words / total_words if total_words else 0.0
+
+
+def _ocr_image(image) -> Tuple[str, float]:
+    """OCR an image, retrying sparse layouts when automatic layout finds little."""
+    default_data = pytesseract.image_to_data(
+        image,
+        lang=TESSERACT_LANG,
+        output_type=pytesseract.Output.DICT,
+    )
+    default = _text_and_confidence(default_data)
+    if (
+        len(default[0].split()) > SPARSE_OCR_WORD_THRESHOLD
+        and (
+            default[1] >= SPARSE_OCR_MIN_CONFIDENCE
+            or _dense_text_word_ratio(default_data) >= DENSE_TEXT_WORD_RATIO
+        )
+    ):
+        return default
+
+    sparse = _text_and_confidence(
+        pytesseract.image_to_data(
+            image,
+            lang=TESSERACT_LANG,
+            config="--psm 11",
+            output_type=pytesseract.Output.DICT,
+        )
+    )
+    candidates = [default, sparse]
+
+    # Sparse-text mode can mistake photographic texture for dozens of
+    # low-confidence words. If that happens, retry the bottom/right regions
+    # where Bates stamps and exhibit labels commonly appear, then prefer a
+    # high-confidence candidate before considering raw word count.
+    if sparse[1] < SPARSE_OCR_MIN_CONFIDENCE and hasattr(image, "crop"):
+        width, height = image.size
+        crops = [
+            image.crop((0, int(height * 0.80), width, height)),
+            image.crop((int(width * 0.60), 0, width, height)),
+        ]
+        try:
+            for crop in crops:
+                candidates.append(
+                    _text_and_confidence(
+                        pytesseract.image_to_data(
+                            crop,
+                            lang=TESSERACT_LANG,
+                            config="--psm 11",
+                            output_type=pytesseract.Output.DICT,
+                        )
+                    )
+                )
+        finally:
+            for crop in crops:
+                crop.close()
+
+    def quality(result):
+        words = len(result[0].split())
+        confidence = result[1]
+        reliable = confidence >= SPARSE_OCR_MIN_CONFIDENCE
+        return (
+            reliable,
+            words if reliable else confidence,
+            confidence if reliable else words,
+        )
+
+    return max(candidates, key=quality)
+
+
+def _contiguous_batches(page_numbers: Iterable[int]) -> Iterable[List[int]]:
+    """Yield consecutive, 1-based PDF page numbers in bounded batches."""
+    batch = []
+    for page_number in sorted(set(page_numbers)):
+        if batch and (
+            page_number != batch[-1] + 1
+            or len(batch) >= OCR_PAGE_BATCH_SIZE
+        ):
+            yield batch
+            batch = []
+        batch.append(page_number)
+    if batch:
+        yield batch
+
+
+def extract_text_from_pdf_pages_ocr(
+    pdf_path: Path,
+    page_numbers: Iterable[int],
+) -> Dict[int, Tuple[str, float]]:
+    """OCR selected zero-based PDF pages and return text/confidence by page."""
+    if convert_from_path is None or pytesseract is None:
+        return {}
+
+    requested = sorted(set(page_numbers))
+    if not requested:
+        return {}
+
+    try:
+        with fitz.open(str(pdf_path)) as fitz_doc:
+            page_count = fitz_doc.page_count
+
+        valid_pages = [page for page in requested if 0 <= page < page_count]
+        results = {}
+        for batch in _contiguous_batches(page + 1 for page in valid_pages):
+            images = convert_from_path(
+                str(pdf_path),
+                dpi=OCR_DPI,
+                first_page=batch[0],
+                last_page=batch[-1],
+            )
+            try:
+                for page_number, image in zip(batch, images):
+                    results[page_number - 1] = _ocr_image(image)
+            finally:
+                for image in images:
+                    image.close()
+
+        return results
+    except Exception as e:
+        logger.error(f"OCR extraction failed for {pdf_path}: {e}")
+        return {}
+
+
 def extract_text_from_pdf_ocr(pdf_path: Path) -> Tuple[List[str], float]:
     """
     Extract text from PDF using OCR.
     Returns (pages_text, average_confidence).
     """
-    if convert_from_path is None or pytesseract is None:
+    if fitz is None or convert_from_path is None or pytesseract is None:
         return [], 0.0
 
     try:
-        # Render and OCR in small batches of pages — convert_from_path(pdf_path)
-        # with no page range loads every page into memory simultaneously, which
-        # is fine for a handful of pages but multi-GB for documents running
-        # into the thousands of pages (this batch has several). Chunking by
-        # PAGE_BATCH_SIZE keeps memory bounded to a few hundred MB regardless
-        # of document length, while avoiding the per-page subprocess overhead
-        # of converting one page at a time.
-        PAGE_BATCH_SIZE = 25
         with fitz.open(str(pdf_path)) as fitz_doc:
             page_count = fitz_doc.page_count
-
-        pages_text = []
-        confidences = []
-
-        for batch_start in range(1, page_count + 1, PAGE_BATCH_SIZE):
-            batch_end = min(batch_start + PAGE_BATCH_SIZE - 1, page_count)
-            images = convert_from_path(
-                str(pdf_path), dpi=OCR_DPI,
-                first_page=batch_start, last_page=batch_end,
-            )
-
-            for image in images:
-                data = pytesseract.image_to_data(
-                    image,
-                    lang=TESSERACT_LANG,
-                    output_type=pytesseract.Output.DICT
-                )
-
-                # Extract text and confidence
-                text_parts = []
-                page_confidences = []
-
-                for j, conf in enumerate(data['conf']):
-                    if conf != -1:  # -1 means no confidence (not a word)
-                        text_parts.append(data['text'][j])
-                        page_confidences.append(conf)
-
-                page_text = ' '.join(text_parts)
-                pages_text.append(page_text)
-
-                if page_confidences:
-                    confidences.append(sum(page_confidences) / len(page_confidences))
-
-            del images
-
-        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-        return pages_text, avg_confidence / 100.0  # Normalize to 0-1
+        results = extract_text_from_pdf_pages_ocr(pdf_path, range(page_count))
+        pages_text = [results.get(page, ("", 0.0))[0] for page in range(page_count)]
+        confidences = [
+            confidence
+            for text, confidence in (results.get(page, ("", 0.0)) for page in range(page_count))
+            if text.strip()
+        ]
+        average = sum(confidences) / len(confidences) if confidences else 0.0
+        return pages_text, average
 
     except Exception as e:
         logger.error(f"OCR extraction failed for {pdf_path}: {e}")
         return [], 0.0
+
+
+def extract_text_from_pdf_hybrid(pdf_path: Path) -> Tuple[List[str], float, str]:
+    """Use native text per page and OCR only pages without meaningful text."""
+    native_pages, _ = extract_text_from_pdf_native(pdf_path)
+    if not native_pages:
+        pages, confidence = extract_text_from_pdf_ocr(pdf_path)
+        return pages, confidence, "ocr"
+
+    ocr_page_numbers = [
+        page_number
+        for page_number, text in enumerate(native_pages)
+        if len(text.strip()) < MIN_TEXT_LENGTH
+    ]
+    if not ocr_page_numbers:
+        return native_pages, 1.0, "native"
+
+    ocr_results = extract_text_from_pdf_pages_ocr(pdf_path, ocr_page_numbers)
+    pages_text = list(native_pages)
+    page_confidences = [1.0 if text.strip() else 0.0 for text in native_pages]
+    used_ocr = False
+
+    for page_number in ocr_page_numbers:
+        ocr_text, ocr_confidence = ocr_results.get(page_number, ("", 0.0))
+        native_text = native_pages[page_number]
+        # Preserve exact embedded text unless OCR materially adds content. This
+        # keeps sparse native labels intact while still recovering a scanned
+        # body from pages that only embed a page number or similar artifact.
+        materially_adds_text = (
+            not native_text.strip()
+            or len(ocr_text.strip()) > len(native_text.strip()) * 1.25
+        )
+        if ocr_text.strip() and materially_adds_text:
+            pages_text[page_number] = ocr_text
+            page_confidences[page_number] = ocr_confidence
+            used_ocr = True
+
+    nonempty_confidences = [
+        page_confidences[page_number]
+        for page_number, text in enumerate(pages_text)
+        if text.strip()
+    ]
+    average = (
+        sum(nonempty_confidences) / len(nonempty_confidences)
+        if nonempty_confidences
+        else 0.0
+    )
+    if used_ocr and any(len(text.strip()) >= MIN_TEXT_LENGTH for text in native_pages):
+        method = "hybrid"
+    elif used_ocr:
+        method = "ocr"
+    else:
+        method = "native"
+    return pages_text, average, method
 
 
 def extract_text_from_image(image_path: Path) -> Tuple[str, float]:
@@ -162,27 +356,8 @@ def extract_text_from_image(image_path: Path) -> Tuple[str, float]:
         return "", 0.0
 
     try:
-        image = Image.open(str(image_path))
-
-        # Get OCR data with confidence
-        data = pytesseract.image_to_data(
-            image,
-            lang=TESSERACT_LANG,
-            output_type=pytesseract.Output.DICT
-        )
-
-        text_parts = []
-        confidences = []
-
-        for i, conf in enumerate(data['conf']):
-            if conf != -1:
-                text_parts.append(data['text'][i])
-                confidences.append(conf)
-
-        text = ' '.join(text_parts)
-        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-
-        return text, avg_confidence / 100.0
+        with Image.open(str(image_path)) as image:
+            return _ocr_image(image)
 
     except Exception as e:
         logger.error(f"Image OCR failed for {image_path}: {e}")
@@ -213,52 +388,40 @@ def process_document(doc: Document) -> ExtractionResult:
 
     # Handle PDFs
     if 'pdf' in content_type or filename_lower.endswith('.pdf'):
-        # CRITICAL: Check for improper redactions FIRST
-        # This protects against accidentally exposing hidden victim names
-        redaction_report = redaction_detector.detect_improper_redactions(str(file_path))
+        redaction_policy = get_redaction_policy()
+        if redaction_policy == "off":
+            redaction_report = RedactionReport(
+                document_path=str(file_path),
+                status=RedactionStatus.UNCHECKED,
+                recommendation="Redaction detector disabled by archive policy.",
+            )
+        else:
+            redaction_report = redaction_detector.detect_improper_redactions(
+                str(file_path)
+            )
 
         if not redaction_report.is_safe_to_index:
             logger.warning(
                 f"REDACTION ISSUE in {doc.filename}: {redaction_report.status.value}. "
-                f"Document flagged for manual review. Text will NOT be indexed."
+                f"policy={redaction_policy}. {redaction_report.recommendation}"
             )
-            duration_ms = int((time.time() - start_time) * 1000)
-            return ExtractionResult(
-                success=False,  # Treat as failure - needs human review
-                full_text="",   # DO NOT extract text
-                pages_text=[],
-                word_count=0,
-                average_confidence=0.0,
-                method="blocked",
-                error=f"REDACTION_ISSUE: {redaction_report.recommendation}",
-                duration_ms=duration_ms,
-                redaction_status=redaction_report.status.value,
-                redaction_safe_to_index=False,
-                redaction_issues=len(redaction_report.issues)
-            )
+            if redaction_policy == "block":
+                duration_ms = int((time.time() - start_time) * 1000)
+                return ExtractionResult(
+                    success=False,
+                    full_text="",
+                    pages_text=[],
+                    word_count=0,
+                    average_confidence=0.0,
+                    method="blocked",
+                    error=f"REDACTION_ISSUE: {redaction_report.recommendation}",
+                    duration_ms=duration_ms,
+                    redaction_status=redaction_report.status.value,
+                    redaction_safe_to_index=False,
+                    redaction_issues=len(redaction_report.issues),
+                )
 
-        # Try native extraction first
-        pages_text, has_text = extract_text_from_pdf_native(file_path)
-
-        if has_text:
-            full_text = '\n\n'.join(pages_text)
-            duration_ms = int((time.time() - start_time) * 1000)
-            return ExtractionResult(
-                success=True,
-                full_text=full_text,
-                pages_text=pages_text,
-                word_count=len(full_text.split()),
-                average_confidence=1.0,  # Native extraction is high confidence
-                method="native",
-                duration_ms=duration_ms,
-                redaction_status=redaction_report.status.value,
-                redaction_safe_to_index=True,
-                redaction_issues=len(redaction_report.issues)
-            )
-
-        # Fall back to OCR
-        logger.info(f"Native extraction insufficient for {doc.filename}, using OCR...")
-        pages_text, confidence = extract_text_from_pdf_ocr(file_path)
+        pages_text, confidence, method = extract_text_from_pdf_hybrid(file_path)
 
         if pages_text:
             full_text = '\n\n'.join(pages_text)
@@ -269,10 +432,10 @@ def process_document(doc: Document) -> ExtractionResult:
                 pages_text=pages_text,
                 word_count=len(full_text.split()),
                 average_confidence=confidence,
-                method="ocr",
+                method=method,
                 duration_ms=duration_ms,
                 redaction_status=redaction_report.status.value,
-                redaction_safe_to_index=True,
+                redaction_safe_to_index=redaction_report.is_safe_to_index,
                 redaction_issues=len(redaction_report.issues)
             )
 
@@ -282,7 +445,7 @@ def process_document(doc: Document) -> ExtractionResult:
             pages_text=[],
             word_count=0,
             average_confidence=0.0,
-            method="ocr",
+            method=method,
             error="OCR extraction failed or returned no text"
         )
 
@@ -307,7 +470,7 @@ def process_document(doc: Document) -> ExtractionResult:
         return ExtractionResult(
             success=True,
             full_text="",
-            pages_text=[],
+            pages_text=[""],
             word_count=0,
             average_confidence=0.0,
             method="ocr",
@@ -332,13 +495,13 @@ def save_extraction_result(session, doc: Document, result: ExtractionResult):
         # Update document
         doc.processing_status = ProcessingStatus.COMPLETED.value if result.success else ProcessingStatus.FAILED.value
         doc.ocr_confidence = result.average_confidence
-        doc.ocr_completed_at = datetime.utcnow()
+        doc.ocr_completed_at = utc_now()
         doc.has_text = result.word_count > 0
         doc.needs_ocr = False
 
         # Create or update text content
+        text_record = session.query(DocumentText).filter_by(document_id=doc.id).first()
         if result.success and result.word_count > 0:
-            text_record = session.query(DocumentText).filter_by(document_id=doc.id).first()
             if text_record:
                 text_record.full_text = result.full_text
                 text_record.pages_text = result.pages_text
@@ -356,13 +519,24 @@ def save_extraction_result(session, doc: Document, result: ExtractionResult):
                     ocr_language=TESSERACT_LANG
                 )
                 session.add(text_record)
+        elif result.success and text_record:
+            # A successful re-run that finds no text must not leave stale text
+            # behind while marking the document as textless.
+            session.delete(text_record)
+
+        if result.success:
+            sync_fts_document(session, doc.id, result.full_text)
 
         # Log the processing
         log = ProcessingLog(
             document_id=doc.id,
             action="text_extraction",
             status="success" if result.success else "failed",
-            message=f"Method: {result.method}, Words: {result.word_count}, Confidence: {result.average_confidence:.2f}",
+            message=(
+                f"Method: {result.method}, Words: {result.word_count}, "
+                f"Confidence: {result.average_confidence:.2f}, "
+                f"Redaction: {result.redaction_status}"
+            ),
             error_details=result.error,
             duration_ms=result.duration_ms
         )
@@ -373,6 +547,7 @@ def save_extraction_result(session, doc: Document, result: ExtractionResult):
     except Exception as e:
         logger.error(f"Failed to save extraction result for doc {doc.id}: {e}")
         session.rollback()
+        raise
 
 
 def process_pending_documents(batch_size: int = 10):

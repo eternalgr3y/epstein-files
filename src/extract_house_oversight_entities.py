@@ -7,14 +7,13 @@ Targets documents with data_set='house-oversight-estate' that don't have mention
 import re
 import logging
 from collections import defaultdict
-from datetime import datetime
 from typing import Optional, Dict, List, Set
 
 import spacy
 
 from models import (
     get_engine, get_session, Document, DocumentText,
-    Entity, Mention, MentionRole
+    Entity, Mention, MentionRole, utc_now
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -274,7 +273,7 @@ def run_house_oversight_extraction():
             existing = session.query(Entity).get(entity_id)
             if existing:
                 existing.mention_count += info['mention_count']
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = utc_now()
             entity_map[normalized] = entity_id
             merged_entities += 1
         else:
@@ -285,8 +284,8 @@ def run_house_oversight_extraction():
                 mention_count=info['mention_count'],
                 confidence=0.8,
                 needs_review=False,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=utc_now(),
+                updated_at=utc_now(),
             )
             session.add(entity)
             session.flush()
@@ -310,7 +309,7 @@ def run_house_oversight_extraction():
             name_as_appears=m['name_as_appears'],
             context_snippet=m['context'][:500] if m['context'] else None,
             role=MentionRole.UNKNOWN.value,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
         )
         session.add(mention)
 

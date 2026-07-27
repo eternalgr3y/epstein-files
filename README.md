@@ -68,7 +68,9 @@ src/
 ├── search.py           # FTS5 search logic
 ├── entity_extractor.py # spaCy NER pipeline
 ├── scraper.py          # DOJ document scraper
-├── ocr_pipeline.py     # PDF text extraction
+├── ocr_pipeline.py     # Page-level native/PDF OCR extraction
+├── transcription_pipeline.py # Audio/video speech-to-text
+├── fts_index.py        # Local FTS5 index maintenance
 └── config.py           # Paths/settings
 
 frontend/
@@ -100,13 +102,64 @@ python src/scraper.py
 DROPBOX_TOKEN=xxx python scrape_dropbox.py house-oversight-estate
 ```
 
+## OCR and transcription
+
+PDF extraction is page-aware: pages with meaningful embedded text use native
+extraction, while image-only pages in the same PDF use Tesseract. Redaction
+integrity findings are logged but source content is indexed by default. Set
+`REDACTION_POLICY=block` to require review or `REDACTION_POLICY=off` to skip
+inspection.
+
+```bash
+# Rebuild local full-text search after importing an existing database
+python rebuild_fts.py
+
+# Create a stratified 50-page reviewed reference set for CER/WER measurement
+python ocr_evaluation.py sample --per-band 10
+python ocr_evaluation.py evaluate processed/ocr-gold/manifest.jsonl \
+  --output processed/ocr-gold/report.json
+
+# Retry one-page low-confidence exhibits; only results crossing 0.50 are saved
+python reprocess_low_confidence_ocr.py --dry-run
+python reprocess_low_confidence_ocr.py
+
+# Install the optional speech engine without modifying system Python
+python -m pip install --target .transcription-deps \
+  -r requirements-transcription.txt
+
+# Inspect and process media in resumable batches
+python transcribe_media.py --dry-run --limit 100
+python transcribe_media.py --status
+python transcribe_media.py --limit 10 --model small.en \
+  --device cpu --compute-type int8
+
+# Optional: run disjoint shards on machines with spare CPU/RAM
+python transcribe_media.py --limit 100 --shard-count 2 --shard-index 0 --cpu-threads 3
+python transcribe_media.py --limit 100 --shard-count 2 --shard-index 1 --cpu-threads 3
+
+# Build a bounded, idempotent D1 import after the batch completes
+python build_transcript_d1_import.py
+
+# Or wait for the batch and create the export plus an integrity report
+python finalize_transcription_batch.py --wait
+```
+
+The OCR evaluator fails when any reference file is empty and reports
+micro-averaged CER/WER for the whole sample, each confidence band, and every
+page. Reference transcriptions should contain only readable, visible text in
+reading order; preserve spelling, capitalization, punctuation, exhibit labels,
+and Bates stamps, while omitting content hidden by redaction boxes.
+
 ## Contributing
 
 PRs welcome. Run tests:
 
 ```bash
-python stress_test.py      # API tests
-python full_system_test.py # Integration tests
+bun test                              # Worker/frontend tests
+python -m unittest discover -s tests  # OCR/FTS/transcription unit tests
+RUN_REAL_DATA_TESTS=1 python -m unittest tests.test_ocr_real_data -v
+python stress_test.py                 # In-process API tests
+python full_system_test.py            # Local-server integration tests
 ```
 
 ### Roadmap
@@ -114,7 +167,8 @@ python full_system_test.py # Integration tests
 - [ ] Chapter/source filtering UI
 - [ ] Timeline visualization
 - [ ] Document relationship mapping
-- [ ] Better OCR for low-quality scans
+- [ ] Tune rotation, handwriting, and form preprocessing against OCR CER/WER
+- [ ] Finish media transcription and import transcripts into production D1
 
 ## License
 

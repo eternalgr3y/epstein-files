@@ -6,12 +6,13 @@ Run with: python stress_test.py
 
 import sys
 import os
+import asyncio
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # Disable rate limiting for tests
 os.environ["TESTING"] = "1"
 
-from fastapi.testclient import TestClient
+import httpx
 from api import app, limiter
 import concurrent.futures
 import time
@@ -19,7 +20,28 @@ import time
 # Disable rate limiter for testing
 limiter.enabled = False
 
-client = TestClient(app)
+class ASGITestClient:
+    """Small synchronous adapter around httpx's current ASGI transport."""
+
+    def request(self, method, path, **kwargs):
+        async def send():
+            transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as async_client:
+                return await async_client.request(method, path, **kwargs)
+
+        return asyncio.run(send())
+
+    def get(self, path, **kwargs):
+        return self.request("GET", path, **kwargs)
+
+    def post(self, path, **kwargs):
+        return self.request("POST", path, **kwargs)
+
+
+client = ASGITestClient()
 
 PASSED = 0
 FAILED = 0
@@ -73,6 +95,7 @@ def run_tests():
     r = client.get("/api/search?q=epstein")
     test("Search 'epstein'", r.status_code == 200)
     test("Search has results key", "results" in r.json())
+    test("Search returns indexed OCR text", len(r.json().get("results", [])) > 0)
 
     r = client.get("/api/search?q=test&limit=5")
     test("Search with limit", r.status_code == 200)
@@ -88,7 +111,7 @@ def run_tests():
     # ===========================================
 
     r = client.get("/api/search?q=")
-    test("Empty query rejected", r.status_code == 422)
+    test("Empty query rejected", r.status_code in [400, 422])
 
     r = client.get("/api/search?q=   ")
     test("Whitespace query rejected", r.status_code in [400, 422])

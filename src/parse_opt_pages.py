@@ -1,4 +1,4 @@
-"""
+r"""
 Parse OPT file to extract document-to-page mappings for House Oversight.
 
 The OPT format:

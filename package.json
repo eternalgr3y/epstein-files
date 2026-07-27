@@ -8,6 +8,9 @@
   },
   "scripts": {
     "test": "bun test",
+    "test:python": "python3 -m unittest discover -s tests -v",
+    "test:api": "python3 stress_test.py",
+    "test:all": "bun test && python3 -m unittest discover -s tests -v && python3 stress_test.py",
     "deploy:worker": "bunx wrangler deploy",
     "deploy:pages": "wrangler --cwd frontend pages deploy . --project-name=epstein"
   },

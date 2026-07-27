@@ -5,7 +5,7 @@ SQLAlchemy ORM models with full provenance tracking.
 Designed for SQLite initially, can migrate to PostgreSQL for production.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional, List
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, DateTime,
@@ -15,6 +15,11 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from enum import Enum as PyEnum
 
 Base = declarative_base()
+
+
+def utc_now():
+    """Return a naive UTC timestamp for existing SQLite DateTime columns."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 # ============================================================================
@@ -114,7 +119,7 @@ class Document(Base):
 
     # Dates
     document_date = Column(DateTime)  # Date of the document itself
-    download_timestamp = Column(DateTime, default=datetime.utcnow)
+    download_timestamp = Column(DateTime, default=utc_now)
     last_modified = Column(String(100))  # From HTTP headers
 
     # Processing status
@@ -132,8 +137,8 @@ class Document(Base):
     content_warning = Column(String(500))
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationships
     text_content = relationship("DocumentText", back_populates="document", uselist=False)
@@ -171,7 +176,7 @@ class DocumentText(Base):
     # Word count for quick stats
     word_count = Column(Integer)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     document = relationship("Document", back_populates="text_content")
 
@@ -211,8 +216,8 @@ class Entity(Base):
     # Stats
     mention_count = Column(Integer, default=0)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationships
     mentions = relationship("Mention", back_populates="entity")
@@ -258,7 +263,7 @@ class Mention(Base):
     disambiguation_confidence = Column(Float, default=0.5)
     needs_review = Column(Boolean, default=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Relationships
     document = relationship("Document", back_populates="mentions")
@@ -301,8 +306,8 @@ class Relationship(Base):
     confidence = Column(Float, default=0.5)
     needs_review = Column(Boolean, default=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationships
     entity1 = relationship("Entity", foreign_keys=[entity1_id])
@@ -345,8 +350,8 @@ class VerifiedClaim(Base):
     reviewed_at = Column(DateTime)
     review_notes = Column(Text)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
         Index('idx_claims_status', 'status'),
@@ -371,7 +376,7 @@ class ProcessingLog(Base):
 
     duration_ms = Column(Integer)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     __table_args__ = (
         Index('idx_logs_document', 'document_id'),

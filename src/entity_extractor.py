@@ -8,7 +8,6 @@ Includes deduplication and quality filtering.
 import re
 import logging
 from collections import defaultdict
-from datetime import datetime
 from typing import Optional, Dict, List, Set, Tuple
 
 import spacy
@@ -16,7 +15,7 @@ from spacy.tokens import Doc
 
 from models import (
     get_engine, get_session, Document, DocumentText,
-    Entity, Mention, MentionRole
+    Entity, Mention, MentionRole, utc_now
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -331,8 +330,8 @@ def run_extraction(batch_size: int = 100, limit: Optional[int] = None):
             mention_count=ent['mention_count'],
             confidence=0.8,  # spaCy NER confidence
             needs_review=False,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
         )
         session.add(entity)
         session.flush()  # Get the ID
@@ -354,7 +353,7 @@ def run_extraction(batch_size: int = 100, limit: Optional[int] = None):
             name_as_appears=m['name_as_appears'],
             context_snippet=m['context'][:500] if m['context'] else None,
             role=MentionRole.UNKNOWN.value,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
         )
         session.add(mention)
 

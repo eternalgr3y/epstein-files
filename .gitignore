@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 venv/
 .venv/
+.transcription-deps/
 ENV/
 
 # Database (too large for git, transfer separately)

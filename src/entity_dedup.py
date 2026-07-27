@@ -7,10 +7,9 @@ Merges duplicate entities, fixes entity types, removes junk.
 import re
 import logging
 from collections import defaultdict
-from datetime import datetime
 from typing import Dict, List, Set, Tuple
 
-from models import get_engine, get_session, Entity, Mention
+from models import get_engine, get_session, Entity, Mention, utc_now
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -102,7 +101,7 @@ def merge_entities(session, keep_id: int, merge_ids: List[int]):
     keep_entity = session.get(Entity, keep_id)
     count = session.query(Mention).filter(Mention.entity_id == keep_id).count()
     keep_entity.mention_count = count
-    keep_entity.updated_at = datetime.utcnow()
+    keep_entity.updated_at = utc_now()
 
     # Delete merged entities
     for merge_id in merge_ids:
@@ -123,7 +122,7 @@ def fix_entity_types(session):
 
         for ent in entities:
             ent.entity_type = 'person'
-            ent.updated_at = datetime.utcnow()
+            ent.updated_at = utc_now()
             fixed += 1
 
     session.commit()

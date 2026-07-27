@@ -13,7 +13,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from models import get_engine, get_session, create_tables, Document, ProcessingStatus
+from models import (
+    get_engine, get_session, Document,
+    ProcessingLog, ProcessingStatus,
+)
 from ocr_pipeline import process_document, save_extraction_result
 
 # Enable SQLite WAL mode for better concurrency
@@ -27,6 +30,30 @@ def enable_wal_mode():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.close()
+
+
+def claim_next_document(session):
+    """Atomically claim one pending OCR document across worker processes."""
+    while True:
+        candidate = session.query(Document.id).filter(
+            Document.processing_status == ProcessingStatus.PENDING.value,
+            Document.needs_ocr == True,
+        ).order_by(Document.id).first()
+        if candidate is None:
+            return None
+
+        claimed = session.query(Document).filter(
+            Document.id == candidate.id,
+            Document.processing_status == ProcessingStatus.PENDING.value,
+            Document.needs_ocr == True,
+        ).update(
+            {Document.processing_status: ProcessingStatus.PROCESSING.value},
+            synchronize_session=False,
+        )
+        session.commit()
+        if claimed:
+            return session.get(Document, candidate.id)
+        session.expire_all()
 
 def worker(worker_id: int, counter: Value, lock: Lock, total_docs: int):
     """Worker process that claims and processes documents."""
@@ -43,20 +70,14 @@ def worker(worker_id: int, counter: Value, lock: Lock, total_docs: int):
     processed = 0
 
     while True:
+        doc_id = None
         try:
-            # Claim a document (use PROCESSING status to prevent others from taking it)
-            doc = session.query(Document).filter(
-                Document.processing_status == ProcessingStatus.PENDING.value,
-                Document.needs_ocr == True
-            ).first()
+            doc = claim_next_document(session)
 
             if not doc:
                 logger.info(f"No more documents. Processed {processed} total.")
                 break
-
-            # Mark as processing
-            doc.processing_status = ProcessingStatus.PROCESSING.value
-            session.commit()
+            doc_id = doc.id
 
             # Process it
             result = process_document(doc)
@@ -76,6 +97,22 @@ def worker(worker_id: int, counter: Value, lock: Lock, total_docs: int):
         except Exception as e:
             logger.error(f"Error: {e}")
             session.rollback()
+            if doc_id is not None:
+                try:
+                    failed_doc = session.get(Document, doc_id)
+                    if failed_doc:
+                        failed_doc.processing_status = ProcessingStatus.FAILED.value
+                        failed_doc.needs_ocr = False
+                    session.add(ProcessingLog(
+                        document_id=doc_id,
+                        action="text_extraction",
+                        status="failed",
+                        error_details=str(e),
+                    ))
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    logger.exception("Could not persist failure for document %s", doc_id)
             time.sleep(1)
 
     session.close()
@@ -95,7 +132,7 @@ def main():
     engine = get_engine(DB_PATH)
     session = get_session(engine)
     total_pending = session.query(Document).filter(
-        Document.processing_status.in_([ProcessingStatus.PENDING.value, ProcessingStatus.PROCESSING.value]),
+        Document.processing_status == ProcessingStatus.PENDING.value,
         Document.needs_ocr == True
     ).count()
     already_done = session.query(Document).filter(

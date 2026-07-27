@@ -12,7 +12,7 @@ from typing import Optional, Dict, List, Tuple
 
 from models import (
     get_engine, get_session, Document, DocumentText, DocumentType,
-    ProcessingStatus, init_database
+    ProcessingStatus, init_database, utc_now
 )
 from config import RAW_DIR
 
@@ -228,7 +228,7 @@ def import_documents(session, documents: List[Dict], doc_images: Dict[str, List[
             document_type=doc_type,
             title=doc['_title'] or doc['_filename'] or bates_begin,
             document_date=doc_date,
-            download_timestamp=datetime.utcnow(),
+            download_timestamp=utc_now(),
             processing_status=ProcessingStatus.COMPLETED.value,
             page_count=doc['_pages'] or len(images) or 1,
             has_text=bool(doc['_text_link']),

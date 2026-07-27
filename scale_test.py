@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import sqlite3
+import argparse
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -15,13 +16,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from models import get_engine, get_session, Document, DocumentText
 from search import search_documents, search_entities, get_document_types, get_data_sets
 from importer import get_document_stats
+from fts_index import fts_table_exists, rebuild_fts_index
 
 DB_PATH = Path(__file__).parent / "database" / "epstein_files.db"
 
 def fmt(n):
     return f"{n:,}"
 
-def main():
+def main(build_fts=False):
     print("=" * 60)
     print("SCALE READINESS TEST - Target: 1,000,000 documents")
     print("=" * 60)
@@ -66,31 +68,44 @@ def main():
     print(f"  Page size:    {page_size} bytes")
 
     # Check FTS5 index
-    cur.execute("SELECT count(*) FROM document_fts")
-    fts_count = cur.fetchone()[0]
-    print(f"  FTS5 indexed: {fmt(fts_count)} documents")
+    has_fts = fts_table_exists(conn)
+    if not has_fts and build_fts:
+        conn.close()
+        fts_count = rebuild_fts_index(DB_PATH)
+        conn = sqlite3.connect(str(DB_PATH))
+        cur = conn.cursor()
+        has_fts = True
+        print(f"  FTS5 rebuilt: {fmt(fts_count)} documents")
+    elif has_fts:
+        cur.execute("SELECT count(*) FROM document_fts")
+        fts_count = cur.fetchone()[0]
+        print(f"  FTS5 indexed: {fmt(fts_count)} documents")
+    else:
+        fts_count = 0
+        print("  FTS5 indexed: MISSING (run with --build-fts)")
 
     conn.close()
 
     # Performance benchmarks
     print(f"\n[Performance Benchmarks]")
 
-    queries = ["epstein", "flight", "island", "maxwell", "victim"]
     times = []
+    if has_fts:
+        queries = ["epstein", "flight", "island", "maxwell", "victim"]
+        for q in queries:
+            start = time.time()
+            results = search_documents(q, limit=50)
+            elapsed_ms = (time.time() - start) * 1000
+            times.append(elapsed_ms)
+            print(f"  Search '{q}': {len(results)} results in {elapsed_ms:.1f}ms")
 
-    for q in queries:
-        start = time.time()
-        results = search_documents(q, limit=50)
-        elapsed_ms = (time.time() - start) * 1000
-        times.append(elapsed_ms)
-        print(f"  Search '{q}': {len(results)} results in {elapsed_ms:.1f}ms")
-
-    avg_ms = sum(times) / len(times)
-    print(f"  Average: {avg_ms:.1f}ms")
-
-    # FTS5 scales O(log n), so at 1M docs expect ~2x slower
-    projected_ms = avg_ms * 1.5  # Conservative estimate
-    print(f"  Projected at 1M: ~{projected_ms:.0f}ms (FTS5 scales well)")
+        avg_ms = sum(times) / len(times)
+        print(f"  Average: {avg_ms:.1f}ms")
+        projected_ms = avg_ms * 1.5
+        print(f"  Projected at 1M: ~{projected_ms:.0f}ms (FTS5 scales well)")
+    else:
+        avg_ms = float("inf")
+        print("  Skipped: local FTS5 index is missing")
 
     # Stats endpoint
     print(f"\n[Stats Endpoint]")
@@ -119,6 +134,9 @@ def main():
     if journal != 'wal':
         issues.append("Enable WAL mode: PRAGMA journal_mode=WAL")
 
+    if not has_fts:
+        issues.append("Build the local FTS5 index: python scale_test.py --build-fts")
+
     if projected_db_gb > 20:
         issues.append("Consider PostgreSQL for better concurrency")
 
@@ -145,5 +163,8 @@ def main():
 
 
 if __name__ == "__main__":
-    success = main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--build-fts', action='store_true', help='Build a missing local FTS5 index')
+    args = parser.parse_args()
+    success = main(build_fts=args.build_fts)
     sys.exit(0 if success else 1)

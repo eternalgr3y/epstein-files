@@ -1,23 +1,17 @@
 """
 Redaction Integrity Detector
 
-Detects improperly redacted PDFs where text is visually obscured but still
-extractable. This is critical for survivor protection - we must not accidentally
-expose information that was intended to be redacted.
+Detects PDF content where text is visually obscured but remains extractable.
 
-Confidence: 85%
-
-ETHICAL PRINCIPLE: When we detect hidden text under redactions, we:
-1. Flag the document for review
-2. DO NOT index the hidden content
-3. Log the issue for manual review
-4. Protect potentially sensitive information
+The detector reports integrity findings. Whether those findings block indexing
+is an archive policy decision made by the OCR pipeline.
 """
 
-import re
+import io
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple
+from typing import List
 from pathlib import Path
 from enum import Enum
 
@@ -27,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class RedactionStatus(Enum):
     """Status of redaction integrity check."""
+    UNCHECKED = "unchecked"            # Detector disabled by archive policy
     CLEAN = "clean"                    # No redaction issues detected
     IMPROPER_REDACTION = "improper"    # Hidden text found under visual redaction
     HEAVY_REDACTION = "heavy"          # Extensively redacted (>50% black)
@@ -62,12 +57,12 @@ class RedactionReport:
 
     @property
     def is_safe_to_index(self) -> bool:
-        """Can we safely index this document's text?"""
-        if self.status == RedactionStatus.IMPROPER_REDACTION:
-            return False  # DO NOT index - contains hidden text
-        if self.status == RedactionStatus.NEEDS_REVIEW:
-            return False  # Wait for human review
-        return True
+        """Whether a fail-closed policy can index without manual review."""
+        return self.status in {
+            RedactionStatus.UNCHECKED,
+            RedactionStatus.CLEAN,
+            RedactionStatus.HEAVY_REDACTION,
+        }
 
 
 class RedactionDetector:
@@ -75,9 +70,9 @@ class RedactionDetector:
     Detects improper PDF redactions.
 
     Methods:
-    1. Compare OCR text vs selectable text
-    2. Detect black rectangles with underlying content
-    3. Check for text extraction anomalies
+    1. Locate redaction annotations and black vector/image overlays
+    2. Compare their rectangles with selectable text spans
+    3. Report overlap without logging the underlying text
     """
 
     def __init__(self):
@@ -107,9 +102,9 @@ class RedactionDetector:
         Check a PDF for improper redactions.
 
         Strategy:
-        1. Extract text via direct PDF parsing (gets hidden text)
-        2. Render pages and OCR (gets only visible text)
-        3. Compare: if direct extraction > OCR, there's hidden text
+        1. Locate likely visual redaction rectangles
+        2. Locate selectable text spans underneath those rectangles
+        3. Record only the hidden character count and sensitivity score
         """
         try:
             import fitz  # PyMuPDF
@@ -130,17 +125,15 @@ class RedactionDetector:
             for page_num in range(total_pages):
                 page = doc[page_num]
 
-                # Method 1: Get all text (including under redactions)
-                raw_text = page.get_text("text")
-
-                # Method 2: Check for redaction annotations or black rectangles
-                has_visual_redaction = self._detect_visual_redactions(page)
+                redaction_rects = self._find_redaction_rects(page)
+                has_visual_redaction = bool(redaction_rects)
 
                 if has_visual_redaction:
                     redacted_pages += 1
 
-                    # Method 3: Get text from specific areas that appear redacted
-                    hidden_text = self._extract_hidden_under_redactions(page)
+                    hidden_text = self._extract_hidden_under_redactions(
+                        page, redaction_rects
+                    )
 
                     if hidden_text:
                         # Check if hidden text contains sensitive patterns
@@ -166,9 +159,8 @@ class RedactionDetector:
             if issues:
                 status = RedactionStatus.IMPROPER_REDACTION
                 recommendation = (
-                    "DO NOT INDEX - Document contains improperly redacted content. "
-                    "Hidden text may contain victim names or sensitive information. "
-                    "Requires manual review before any text extraction."
+                    "Source contains selectable text beneath a visual redaction. "
+                    "Retain this finding in the processing audit log."
                 )
             elif redacted_pages > total_pages * 0.5:
                 status = RedactionStatus.HEAVY_REDACTION
@@ -198,43 +190,86 @@ class RedactionDetector:
                 recommendation=f"Error during analysis: {str(e)}"
             )
 
-    def _detect_visual_redactions(self, page) -> bool:
-        """Detect black rectangles or redaction annotations on a page."""
-        # Check for redaction annotations
+    def _find_redaction_rects(self, page) -> List:
+        """Return likely redaction rectangles from annotations, vectors, and images."""
+        rects = []
+
         for annot in page.annots() or []:
             if annot.type[0] == 12:  # Redact annotation type
-                return True
+                rects.append(annot.rect)
 
-        # Check for black rectangles (common redaction method)
         drawings = page.get_drawings()
         for drawing in drawings:
-            # Look for filled black rectangles
-            if drawing.get("fill") == (0, 0, 0):  # Black fill
+            if self._is_dark_fill(drawing.get("fill")):
                 rect = drawing.get("rect")
-                if rect:
-                    # Check if it's a reasonable redaction size (not tiny, not full page)
-                    width = rect.width
-                    height = rect.height
-                    if 10 < width < page.rect.width * 0.9 and 5 < height < 50:
-                        return True
+                if rect and self._is_redaction_sized(rect, page.rect):
+                    rects.append(rect)
 
-        # Check for images that might be redaction overlays
-        image_list = page.get_images()
-        for img in image_list:
-            # Small black images often used as redaction bars
+        dark_images = {}
+        for img in page.get_images(full=True):
             xref = img[0]
             try:
-                base_image = page.parent.extract_image(xref)
-                if base_image:
-                    # Check if it's predominantly black
-                    # This is a heuristic - truly black images are suspicious
-                    pass
-            except:
-                pass
+                candidate_rects = [
+                    rect
+                    for rect in page.get_image_rects(xref)
+                    if self._is_redaction_sized(rect, page.rect)
+                ]
+                if not candidate_rects:
+                    continue
+                if xref not in dark_images:
+                    dark_images[xref] = self._is_predominantly_dark_image(
+                        page.parent.extract_image(xref)
+                    )
+                if dark_images[xref]:
+                    rects.extend(candidate_rects)
+            except Exception:
+                logger.debug("Unable to inspect PDF image xref %s", xref, exc_info=True)
 
-        return False
+        return rects
 
-    def _extract_hidden_under_redactions(self, page) -> str:
+    def _detect_visual_redactions(self, page) -> bool:
+        """Detect black rectangles or redaction annotations on a page."""
+        return bool(self._find_redaction_rects(page))
+
+    @staticmethod
+    def _is_dark_fill(fill) -> bool:
+        if not fill:
+            return False
+        try:
+            return max(float(component) for component in fill[:3]) <= 0.1
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _is_redaction_sized(rect, page_rect) -> bool:
+        max_height = max(100, page_rect.height * 0.15)
+        return (
+            10 < rect.width < page_rect.width * 0.95
+            and 5 < rect.height < max_height
+        )
+
+    @staticmethod
+    def _is_predominantly_dark_image(base_image) -> bool:
+        if not base_image or not base_image.get("image"):
+            return False
+        try:
+            from PIL import Image
+
+            with Image.open(io.BytesIO(base_image["image"])) as image:
+                image = image.convert("RGB")
+                image.thumbnail((256, 256))
+                if hasattr(image, "get_flattened_data"):
+                    pixels = list(image.get_flattened_data())
+                else:
+                    pixels = list(image.getdata())
+            if not pixels:
+                return False
+            dark = sum(1 for pixel in pixels if max(pixel) <= 32)
+            return dark / len(pixels) >= 0.95
+        except Exception:
+            return False
+
+    def _extract_hidden_under_redactions(self, page, redaction_rects=None) -> str:
         """
         Extract text that appears to be under redaction rectangles.
 
@@ -242,30 +277,21 @@ class RedactionDetector:
         """
         hidden_text = ""
 
-        # Get all drawings (potential redaction boxes)
-        drawings = page.get_drawings()
-        black_rects = []
-
-        for drawing in drawings:
-            if drawing.get("fill") == (0, 0, 0):
-                rect = drawing.get("rect")
-                if rect:
-                    black_rects.append(rect)
+        redaction_rects = redaction_rects or self._find_redaction_rects(page)
 
         # Get text blocks with their positions
         blocks = page.get_text("dict")["blocks"]
 
         for block in blocks:
             if block.get("type") == 0:  # Text block
-                block_rect = block.get("bbox")
-                if block_rect:
-                    # Check if this text block is under any black rectangle
-                    for black_rect in black_rects:
-                        if self._rects_overlap(block_rect, black_rect):
-                            # This text is under a redaction
-                            for line in block.get("lines", []):
-                                for span in line.get("spans", []):
-                                    hidden_text += span.get("text", "") + " "
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        span_rect = span.get("bbox")
+                        if span_rect and any(
+                            self._rects_overlap(span_rect, redaction_rect)
+                            for redaction_rect in redaction_rects
+                        ):
+                            hidden_text += span.get("text", "") + " "
 
         return hidden_text.strip()
 
@@ -348,4 +374,4 @@ if __name__ == "__main__":
         print("Usage: python redaction_detector.py <pdf_file_or_directory>")
         print("\nThis tool detects improperly redacted PDFs where hidden text")
         print("can be extracted despite visual black boxes.")
-        print("\nFor survivor protection, we flag but DO NOT expose hidden content.")
+        print("\nThe report never prints the underlying hidden content.")

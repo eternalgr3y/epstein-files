@@ -17,13 +17,13 @@ video/audio Document rows.
 
 import logging
 from pathlib import Path
-from datetime import datetime
 from typing import Optional, Dict, List
 
 import fitz  # PyMuPDF
 
 from models import (
-    get_engine, get_session, init_database, Document, DocumentType, ProcessingStatus
+    get_engine, get_session, init_database, Document, DocumentType,
+    ProcessingStatus, utc_now,
 )
 from config import BASE_DIR
 
@@ -220,7 +220,7 @@ def import_documents(session, dat_rows: List[Dict], doc_pages: Dict[str, Dict]):
                 content_type=content_type,
                 document_type=doc_type,
                 title=row['filename'] or bates_begin,
-                download_timestamp=datetime.utcnow(),
+                download_timestamp=utc_now(),
                 processing_status=ProcessingStatus.COMPLETED.value,
                 page_count=1,
                 has_text=False,
@@ -253,7 +253,7 @@ def import_documents(session, dat_rows: List[Dict], doc_pages: Dict[str, Dict]):
                 content_type='application/pdf',
                 document_type=DocumentType.PDF.value,
                 title=row['filename'] or bates_begin,
-                download_timestamp=datetime.utcnow(),
+                download_timestamp=utc_now(),
                 processing_status=ProcessingStatus.PENDING.value,
                 page_count=page_count,
                 has_text=False,

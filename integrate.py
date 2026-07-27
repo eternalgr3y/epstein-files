@@ -18,7 +18,6 @@ import hashlib
 import logging
 import argparse
 from pathlib import Path
-from datetime import datetime
 from typing import Optional, List
 
 # Add src to path
@@ -26,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from models import (
     get_engine, get_session, create_tables,
-    Document, DocumentText, ProcessingStatus
+    Document, DocumentText, ProcessingStatus, utc_now
 )
 from ocr_pipeline import process_document, save_extraction_result
 
@@ -169,7 +168,7 @@ def import_to_database(documents: List[dict], session) -> int:
             source_page="DOJ Epstein Files",
             data_set=doc_info.get('data_set'),
             category=doc_info.get('category'),
-            download_timestamp=datetime.utcnow(),
+            download_timestamp=utc_now(),
             processing_status=ProcessingStatus.PENDING.value,
             needs_ocr=True,
         )

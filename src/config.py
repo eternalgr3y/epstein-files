@@ -41,6 +41,15 @@ REQUEST_TIMEOUT = 60  # seconds
 # OCR settings
 TESSERACT_LANG = "eng"
 OCR_DPI = 300
+OCR_PAGE_BATCH_SIZE = int(os.getenv("OCR_PAGE_BATCH_SIZE", "10"))
+
+# The archive preserves and indexes the content contained in source files as
+# they were released. Redaction checks therefore warn by default instead of
+# suppressing extraction. Set this to "block" for deployments that require a
+# fail-closed review gate, or "off" to skip the detector entirely.
+REDACTION_POLICY = os.getenv("REDACTION_POLICY", "warn").strip().lower()
+if REDACTION_POLICY not in {"warn", "block", "off"}:
+    raise ValueError("REDACTION_POLICY must be one of: warn, block, off")
 
 # Ensure directories exist
 for d in [RAW_DIR, PROCESSED_DIR, METADATA_DIR, TEXT_DIR, DATABASE_DIR, EXTRACTED_DIR, THUMBNAIL_DIR]:
