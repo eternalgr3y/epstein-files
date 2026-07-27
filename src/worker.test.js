@@ -54,6 +54,158 @@ describe('Worker request validation', () => {
   });
 });
 
+describe('Search result metadata', () => {
+  test('derives has_text from stored text, not the documents column', async () => {
+    const env = {
+      DB: {
+        prepare(sql) {
+          if (sql.includes('snippet(document_fts')) {
+            // documents.has_text is wrong for ~2,500 rows (marked completed
+            // with has_text=1 but no document_texts row), so the search
+            // response must not be built from that column.
+            expect(sql).toContain('FROM document_texts dt');
+            expect(sql).not.toContain('d.has_text');
+            expect(sql).toContain('d.processing_status');
+            expect(sql).toContain('d.ocr_confidence');
+            return {
+              bind() {
+                return {
+                  async all() {
+                    return {
+                      results: [{
+                        id: 42,
+                        filename: 'source.pdf',
+                        title: 'Source PDF',
+                        data_set: 'data-set-8',
+                        document_type: 'pdf',
+                        source_url: 'https://example.test/source.pdf',
+                        has_text: 1,
+                        processing_status: 'completed',
+                        ocr_confidence: 0.91,
+                        snippet: 'matching text',
+                      }],
+                    };
+                  },
+                };
+              },
+            };
+          }
+          if (sql.includes('SELECT COUNT(*) as total')) {
+            return {
+              bind() {
+                return { async first() { return { total: 1 }; } };
+              },
+            };
+          }
+          if (sql.includes('FROM entities')) {
+            return {
+              bind() {
+                return { async all() { return { results: [] }; } };
+              },
+            };
+          }
+          throw new Error(`Unexpected SQL: ${sql}`);
+        },
+      },
+    };
+
+    const { response, body } = await responseJson('/api/search?q=matching', env);
+    expect(response.status).toBe(200);
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0].has_text).toBe(true);
+    expect(body.results[0].processing_status).toBe('completed');
+    expect(body.results[0].ocr_confidence).toBe(0.91);
+  });
+});
+
+describe('Document text availability', () => {
+  // Regression: ~2,500 documents are stored as processing_status='completed'
+  // with has_text=1 but have no document_texts row at all. The API used to
+  // echo that column, so the UI promised searchable text and the follow-up
+  // /documents/:id/text request then 404'd.
+  test('reports has_text false when the documents column lies', async () => {
+    const env = {
+      DB: {
+        prepare(sql) {
+          if (sql.includes('FROM documents')) {
+            return {
+              bind() {
+                return {
+                  async first() {
+                    return {
+                      id: 4080,
+                      filename: 'EFTA00009676.pdf',
+                      data_set: 'data-set-8',
+                      document_type: 'pdf',
+                      processing_status: 'completed',
+                      has_text: 1, // the lie
+                    };
+                  },
+                };
+              },
+            };
+          }
+          if (sql.includes('FROM document_texts')) {
+            return {
+              bind() {
+                return { async first() { return null; } }; // no text stored
+              },
+            };
+          }
+          throw new Error(`Unexpected SQL: ${sql}`);
+        },
+      },
+    };
+
+    const { response, body } = await responseJson('/api/documents/4080', env);
+    expect(response.status).toBe(200);
+    expect(body.has_text).toBe(false);
+    expect(body.word_count).toBe(0);
+    expect(body.text_preview).toBe(null);
+  });
+
+  test('reports has_text true when text is actually stored', async () => {
+    const env = {
+      DB: {
+        prepare(sql) {
+          if (sql.includes('FROM documents')) {
+            return {
+              bind() {
+                return {
+                  async first() {
+                    return {
+                      id: 4197,
+                      filename: 'EFTA00010062.pdf',
+                      processing_status: 'completed',
+                      has_text: 1,
+                    };
+                  },
+                };
+              },
+            };
+          }
+          if (sql.includes('FROM document_texts')) {
+            return {
+              bind() {
+                return {
+                  async first() {
+                    return { full_text: 'EPSTEIN JEFFREY', word_count: 2 };
+                  },
+                };
+              },
+            };
+          }
+          throw new Error(`Unexpected SQL: ${sql}`);
+        },
+      },
+    };
+
+    const { body } = await responseJson('/api/documents/4197', env);
+    expect(body.has_text).toBe(true);
+    expect(body.word_count).toBe(2);
+  });
+});
+
 describe('Worker security behavior', () => {
   test('uses the Cloudflare rate-limit binding and returns 429', async () => {
     let key;

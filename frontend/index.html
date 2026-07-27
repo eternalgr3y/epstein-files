@@ -85,6 +85,32 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
     <style>
 
+        /* Metric-matched fallbacks for the Google-hosted webfonts.
+           display=swap renders in the platform fallback first and swaps when
+           the webfont lands; without matched metrics every text block reflows
+           on swap and the accumulated shift lands on the footer (measured
+           CLS 0.172, worst on Android where the fonts arrive late). These
+           overrides make the fallback occupy the same box, so the swap is
+           visually invisible to layout. Values computed from the shipped font
+           tables (x-height ratio vs Arial / Times New Roman). */
+        @font-face {
+            font-family: "IBM Plex Sans Fallback";
+            src: local("Arial"), local("Liberation Sans"), local("Roboto");
+            size-adjust: 99.51%;
+            ascent-override: 103.01%;
+            descent-override: 27.64%;
+            line-gap-override: 0%;
+        }
+
+        @font-face {
+            font-family: "Fraunces Fallback";
+            src: local("Times New Roman"), local("Liberation Serif"), local("Tinos");
+            size-adjust: 107.77%;
+            ascent-override: 90.75%;
+            descent-override: 23.66%;
+            line-gap-override: 0%;
+        }
+
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
@@ -113,8 +139,8 @@
             --modal-bg: rgba(27, 30, 33, 0.92);
             --on-accent: #f5f6f4;
             --pdf-bg: #dcdbd5;
-            --font-sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
-            --font-serif: "Fraunces", "Iowan Old Style", "Times New Roman", serif;
+            --font-sans: "IBM Plex Sans", "IBM Plex Sans Fallback", "Helvetica Neue", Arial, sans-serif;
+            --font-serif: "Fraunces", "Fraunces Fallback", "Iowan Old Style", "Times New Roman", serif;
             --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
         }
 
@@ -1970,7 +1996,7 @@
 
     <div id="sr-announce" class="sr-only" aria-live="assertive"></div>
 
-    <script src="/app.js?v=20260722-about-cleanup" defer></script>
+    <script src="/app.js?v=20260726-inp-cls" defer></script>
     <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "deeb9a9acadd4b9e88871189785a062e"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>

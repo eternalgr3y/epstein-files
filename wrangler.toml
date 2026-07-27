@@ -9,6 +9,14 @@ routes = [
   { pattern = "epsteinproject.org/api/*", zone_name = "epsteinproject.org" }
 ]
 
+# Without this there is no queryable request/error data at all -- the
+# observability API returns zero events, which reads as "no traffic" rather
+# than "not collecting". Needed to debug production from logs instead of
+# inference.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [vars]
 R2_PUBLIC_URL = "https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev"
 

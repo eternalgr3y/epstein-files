@@ -5,6 +5,7 @@
     let currentView = 'home';
     let currentHash = '';  // Track current hash to prevent redundant fetches
     let isLoading = false; // Prevent double-fetches
+    let searchSeq = 0;     // Orders deferred search renders against late fetches
     let currentPdfBlobUrl = null;
     let archiveStats = null;
     const documentFilters = { dataSet: '', hasText: '' };
@@ -373,8 +374,19 @@
         saveScrollPosition();
 
         setView('search');
-        resultsView.innerHTML = '<div class="loading">Searching</div>';
         isLoading = true;
+
+        // Swapping in the loading state tears down the previous result set (up
+        // to 50 cards plus entity cards). Done inline it runs inside the click
+        // handler and delays the paint the tap is waiting on — the measured
+        // INP 1,640ms attributed to the outgoing results header. Yield first,
+        // and skip the swap entirely if the fetch already won the race.
+        const seq = ++searchSeq;
+        afterPaint(() => {
+            if (seq === searchSeq && isLoading) {
+                resultsView.innerHTML = '<div class="loading">Searching</div>';
+            }
+        });
 
         const newHash = `search/${encodeURIComponent(q)}${searchFilters.source ? `/${searchFilters.source}` : ''}`;
         currentHash = newHash;
@@ -391,8 +403,10 @@
                 body: JSON.stringify({ query: q, limit: 5 })
             }).then(r => r.json())
         ]).then(([docs, ents]) => {
+            if (seq !== searchSeq) return; // superseded by a newer search
             renderSearchResults(q, docs, ents);
         }).catch(() => {
+            if (seq !== searchSeq) return;
             resultsView.innerHTML = `
                 <div class="error-state">
                     <h3>Search failed</h3>
@@ -905,7 +919,7 @@
         modal.innerHTML = `
             <div class="image-modal-content">
                 <button class="image-modal-close" aria-label="Close">×</button>
-                <img src="${esc(initialImageUrl)}" alt="Page ${Number(initialItem.page) + 1} from document ${Number(initialItem.docId)}">
+                <img src="${esc(initialImageUrl)}" decoding="async" fetchpriority="high" alt="Page ${Number(initialItem.page) + 1} from document ${Number(initialItem.docId)}">
                 <div class="image-modal-meta" aria-live="polite"></div>
                 <div class="image-modal-actions">
                     <button class="btn" data-modal-action="prev">← Prev</button>
@@ -935,7 +949,11 @@
             modal.querySelector('[data-modal-action="prev"]').disabled = imagesState.index === 0;
             modal.querySelector('[data-modal-action="next"]').disabled = imagesState.index === imagesState.items.length - 1;
             currentHash = `images/${imagesState.offset}/${imagesState.index}`;
-            history.replaceState(null, '', `#${currentHash}`);
+            // history.replaceState forces a synchronous commit that kept the
+            // prev/next tap from painting (measured INP 2,408ms). The URL only
+            // needs to be right by the time the user can act again, so let the
+            // interaction paint first.
+            afterPaint(() => history.replaceState(null, '', `#${currentHash}`));
         };
         const onKey = (e) => {
             if (e.key === 'Escape') close();
@@ -1290,6 +1308,13 @@
         return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
+    // Run work after the browser has painted the current interaction. Used to
+    // keep non-visual bookkeeping (history updates, heavy list rebuilds) out of
+    // the input handler, which is what INP actually measures.
+    function afterPaint(fn) {
+        requestAnimationFrame(() => setTimeout(fn, 0));
+    }
+
     function safeHttpUrl(value) {
         if (!value) return '';
         try {
@@ -1311,6 +1336,9 @@
         }
         const status = String(doc?.processing_status || '').toLowerCase();
         if (status && !['complete', 'completed', 'done'].includes(status)) return `OCR ${status}`;
+        // Processing finished but produced nothing searchable (image-only scan,
+        // or media). "OCR pending" would imply text is still on its way.
+        if (status) return 'No searchable text';
         return 'OCR pending';
     }
 

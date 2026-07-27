@@ -26,8 +26,10 @@ class HttpError extends Error {
 
 // Friendly source collections spanning one or more data_set values, used by
 // the `source` query param on /search and /browse. 'Data Set 8' is a legacy
-// mislabel of 'data-set-8' still present in D1 (writes are currently blocked
-// by the plan's max DB size, so it is aliased here instead of updated).
+// mislabel of 'data-set-8' still present in D1, aliased here at read time.
+// (This previously said writes were blocked by the plan's max DB size; that
+// is no longer true — a 32 MB import ran fine on 2026-07-27 — so the rows
+// could now simply be corrected, making this alias removable.)
 const DATA_SET_ALIASES = { 'data-set-8': ['Data Set 8'] };
 
 const SOURCE_GROUPS = {
@@ -71,6 +73,18 @@ function resolveDataSetFilter(searchParams) {
 
 function dataSetPlaceholders(sets) {
   return sets.map(() => '?').join(', ');
+}
+
+// documents.has_text does not mean the text exists. ~2,500 rows are marked
+// processing_status='completed' with has_text=1 but have no document_texts
+// row and no document_fts entry, so the API advertised searchable text that
+// /documents/:id/text then 404'd on. Derive the flag from the text that is
+// actually stored instead of trusting the column. document_texts.document_id
+// is UNIQUE, so this is an indexed lookup, not a scan.
+//
+// `idColumn` is always a literal from this file, never user input.
+function hasTextExpr(idColumn) {
+  return `EXISTS (SELECT 1 FROM document_texts dt WHERE dt.document_id = ${idColumn})`;
 }
 
 function mergeDataSetCounts(rows) {
@@ -170,6 +184,53 @@ function isMediaDeliveryPath(path) {
   );
 }
 
+// Largest response we will store at the edge. Cloudflare caps cacheable
+// objects (512 MB on this plan) and the DOJ-OGR videos run past 1 GB, so
+// anything big is streamed straight through rather than failing a put.
+const MAX_EDGE_CACHE_BYTES = 100 * 1024 * 1024;
+
+// Cloudflare's edge does NOT cache Worker-generated responses on its own --
+// the Cache-Control headers set below only instruct the visitor's browser.
+// The result was a 55 / 153,560 cache hit ratio: every media request re-read
+// R2 and re-streamed through the Worker, even for a file thousands of people
+// had already fetched. Putting media responses in the Cache API lets repeat
+// requests be served at the edge, which cuts latency plus R2 Class B
+// operations and Worker CPU. (Bytes delivered to the visitor are unchanged --
+// caching moves where they are served from, it does not reduce them.)
+//
+// Range requests bypass this deliberately: storing a 206 would poison the
+// entry for whole-file requests, and video seeking depends on them.
+async function withEdgeCache(request, ctx, produce) {
+  if (request.method !== 'GET' || request.headers.has('Range')) {
+    return await produce();
+  }
+
+  // caches/waitUntil are absent in lightweight local and unit-test
+  // environments, same as the rate-limit binding above. Serving uncached is
+  // always correct, so fall through rather than fail the request.
+  if (typeof caches === 'undefined' || !caches?.default || !ctx?.waitUntil) {
+    return await produce();
+  }
+
+  const cache = caches.default;
+  const hit = await cache.match(request);
+  if (hit) return hit;
+
+  const response = await produce();
+  if (response.status === 200) {
+    const declared = Number(response.headers.get('Content-Length') || 0);
+    if (!declared || declared <= MAX_EDGE_CACHE_BYTES) {
+      // waitUntil so the visitor is never made to wait on the cache write.
+      ctx.waitUntil(
+        cache.put(request, response.clone()).catch(e => {
+          console.error('Edge cache put failed:', e);
+        })
+      );
+    }
+  }
+  return response;
+}
+
 // Security headers
 const securityHeaders = {
   'Content-Security-Policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
@@ -204,6 +265,20 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+
+    // D1 read replication only takes effect through the Sessions API: without
+    // withSession() every query is served by the primary in ENAM regardless of
+    // the dashboard toggle. This API performs zero writes and the archive only
+    // changes via occasional batch imports, so 'first-unconstrained' is the
+    // right constraint -- read from whichever replica is nearest rather than
+    // waiting on the primary. Sequential consistency still holds within the
+    // session, so a single request never sees results move backwards.
+    //
+    // The guard keeps the unit-test env (a bare object exposing prepare()) and
+    // any pre-replication binding working unchanged.
+    const db = typeof env.DB?.withSession === 'function'
+      ? env.DB.withSession('first-unconstrained')
+      : env.DB;
 
     // Handle CORS preflight
     if (method === 'OPTIONS') {
@@ -242,51 +317,54 @@ export default {
       }
 
       if (path === '/api/stats') {
-        return await getStats(env.DB);
+        return await getStats(db);
       }
 
       if (path === '/api/search') {
-        return await searchDocuments(url, env.DB);
+        return await searchDocuments(url, db);
       }
 
       if (path === '/api/browse') {
-        return await browseDocuments(url, env.DB);
+        return await browseDocuments(url, db);
       }
 
       // Document routes
       const docMatch = path.match(/^\/api\/documents\/(\d+)$/);
       if (docMatch) {
-        return await getDocument(parseInt(docMatch[1]), env.DB);
+        return await getDocument(parseInt(docMatch[1]), db);
       }
 
       const docTextMatch = path.match(/^\/api\/documents\/(\d+)\/text$/);
       if (docTextMatch) {
-        return await getDocumentText(parseInt(docTextMatch[1]), url, env.DB);
+        return await getDocumentText(parseInt(docTextMatch[1]), url, db);
       }
 
       const docFileMatch = path.match(/^\/api\/documents\/(\d+)\/file$/);
       if (docFileMatch) {
-        return await getDocumentFile(parseInt(docFileMatch[1]), request, env.DB, env.R2);
+        return await withEdgeCache(request, ctx, () =>
+          getDocumentFile(parseInt(docFileMatch[1]), request, db, env.R2));
       }
 
       const docThumbMatch = path.match(/^\/api\/documents\/(\d+)\/thumbnail$/);
       if (docThumbMatch) {
-        return await getDocumentThumbnail(parseInt(docThumbMatch[1]), env.DB, env.R2);
+        return await withEdgeCache(request, ctx, () =>
+          getDocumentThumbnail(parseInt(docThumbMatch[1]), db, env.R2));
       }
 
       // Video routes
       if (path === '/api/videos') {
-        return await listVideos(url, env.DB);
+        return await listVideos(url, db);
       }
 
       const videoThumbMatch = path.match(/^\/api\/videos\/(\d+)\/thumb$/);
       if (videoThumbMatch) {
-        return await getVideoThumbnail(parseInt(videoThumbMatch[1]), env.R2);
+        return await withEdgeCache(request, ctx, () =>
+          getVideoThumbnail(parseInt(videoThumbMatch[1]), env.R2));
       }
 
       // Maxwell tapes
       if (path === '/api/maxwell-tapes') {
-        return await listMaxwellTapes(env.DB);
+        return await listMaxwellTapes(db);
       }
 
       // Images
@@ -296,27 +374,27 @@ export default {
 
       const imageMatch = path.match(/^\/api\/images\/([^/]+)$/);
       if (imageMatch) {
-        return await getImage(imageMatch[1], env.R2);
+        return await withEdgeCache(request, ctx, () => getImage(imageMatch[1], env.R2));
       }
 
       // Entity routes
       const entityMatch = path.match(/^\/api\/entities\/(\d+)$/);
       if (entityMatch) {
-        return await getEntity(parseInt(entityMatch[1]), env.DB);
+        return await getEntity(parseInt(entityMatch[1]), db);
       }
 
       const entityMentionsMatch = path.match(/^\/api\/entities\/(\d+)\/mentions$/);
       if (entityMentionsMatch) {
-        return await getEntityMentions(parseInt(entityMentionsMatch[1]), url, env.DB);
+        return await getEntityMentions(parseInt(entityMentionsMatch[1]), url, db);
       }
 
       const entityCoocMatch = path.match(/^\/api\/entities\/(\d+)\/co-occurrences$/);
       if (entityCoocMatch) {
-        return await getEntityCoOccurrences(parseInt(entityCoocMatch[1]), url, env.DB);
+        return await getEntityCoOccurrences(parseInt(entityCoocMatch[1]), url, db);
       }
 
       if (path === '/api/entities/search' && method === 'POST') {
-        return await searchEntities(request, env.DB);
+        return await searchEntities(request, db);
       }
 
       // Utility routes
@@ -325,21 +403,21 @@ export default {
       }
 
       if (path === '/api/document-types') {
-        return await getDocumentTypes(env.DB);
+        return await getDocumentTypes(db);
       }
 
       if (path === '/api/data-sets') {
-        return await getDataSets(env.DB);
+        return await getDataSets(db);
       }
 
       // House Oversight routes
       if (path === '/api/house-oversight/documents') {
-        return await listHouseOversightDocs(url, env.DB);
+        return await listHouseOversightDocs(url, db);
       }
 
       const hoDocMatch = path.match(/^\/api\/house-oversight\/documents\/(HOUSE_OVERSIGHT_\d+)$/);
       if (hoDocMatch) {
-        return await getHouseOversightDoc(hoDocMatch[1], env.DB, env.R2);
+        return await getHouseOversightDoc(hoDocMatch[1], db, env.R2);
       }
 
       const hoPageMatch = path.match(/^\/api\/house-oversight\/page\/(HOUSE_OVERSIGHT_\d+)\/(\d+)$/);
@@ -348,16 +426,18 @@ export default {
         if (!Number.isSafeInteger(pageIndex) || pageIndex > 10_000) {
           throw new HttpError('page index must be between 0 and 10000');
         }
-        return await getHouseOversightPage(hoPageMatch[1], pageIndex, env.R2);
+        return await withEdgeCache(request, ctx, () =>
+          getHouseOversightPage(hoPageMatch[1], pageIndex, env.R2));
       }
 
       const hoThumbMatch = path.match(/^\/api\/house-oversight\/thumbnail\/(HOUSE_OVERSIGHT_\d+)$/);
       if (hoThumbMatch) {
-        return await getHouseOversightThumbnail(hoThumbMatch[1], env.R2);
+        return await withEdgeCache(request, ctx, () =>
+          getHouseOversightThumbnail(hoThumbMatch[1], env.R2));
       }
 
       if (path === '/api/house-oversight/stats') {
-        return await getHouseOversightStats(env.DB);
+        return await getHouseOversightStats(db);
       }
 
       if (path === '/health') {
@@ -489,6 +569,8 @@ async function searchDocuments(url, db) {
     // Document search
     db.prepare(`
       SELECT d.id, d.filename, d.title, d.data_set, d.document_type, d.source_url,
+             ${hasTextExpr('d.id')} AS has_text,
+             d.processing_status, d.ocr_confidence,
              snippet(document_fts, 1, '>>>', '<<<', '...', 32) as snippet
       FROM document_fts
       JOIN documents d ON d.id = document_fts.document_id
@@ -609,15 +691,20 @@ async function browseDocuments(url, db) {
     params.push(...dataSets);
   }
 
+  // Filter on stored text rather than the has_text column, so the filter and
+  // the flag the response reports can never disagree.
   if (hasText !== null) {
-    sql += ' AND has_text = ?';
-    params.push(Number(hasText));
+    sql += Number(hasText)
+      ? ` AND ${hasTextExpr('documents.id')}`
+      : ` AND NOT ${hasTextExpr('documents.id')}`;
   }
 
-  // Get total
+  // Get total. Built before the select list gains the derived column below,
+  // so the `SELECT *` replacement still matches.
   const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as count');
   const total = await db.prepare(countSql).bind(...params).first();
 
+  sql = sql.replace('SELECT *', `SELECT *, ${hasTextExpr('documents.id')} AS has_text_actual`);
   sql += ' ORDER BY id DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
@@ -636,7 +723,7 @@ async function browseDocuments(url, db) {
       data_set: normalizeDataSet(d.data_set),
       document_type: d.document_type,
       page_count: d.page_count,
-      has_text: !!d.has_text,
+      has_text: !!d.has_text_actual,
       processing_status: d.processing_status,
       ocr_confidence: d.ocr_confidence,
     })),
@@ -666,7 +753,9 @@ async function getDocument(id, db) {
     file_size: doc.file_size,
     file_hash: doc.file_hash,
     page_count: doc.page_count,
-    has_text: !!doc.has_text,
+    // The text row was just fetched — report what is actually there rather
+    // than the stale column, so this never disagrees with /documents/:id/text.
+    has_text: !!text?.full_text,
     processing_status: doc.processing_status,
     ocr_confidence: doc.ocr_confidence,
     download_timestamp: doc.download_timestamp,

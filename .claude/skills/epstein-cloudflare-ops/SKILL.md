@@ -34,6 +34,12 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
 - FTS5 virtual tables (`document_fts`, `house_oversight_fts`) can't be
   exported and don't need backup — rebuildable from document_texts /
   house_oversight_documents.
+- **`document_fts.rowid` is NOT `document_id`.** The table is
+  `fts5(document_id UNINDEXED, full_text)` and its rowid is an unrelated
+  counter — rowid 4080 holds document 4622's text. Joining or filtering on
+  rowid silently returns real-looking rows for the wrong documents, which is
+  exactly how a "these 2,500 docs are indexed" conclusion got produced from
+  data that showed the opposite. **Always join on `document_fts.document_id`.**
 
 ## Backups
 
@@ -84,10 +90,22 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
 
 ## Deploys
 
-- Worker: `bunx wrangler deploy`. **Wrangler is flaky here — it has died
-  after printing just the version banner multiple times.** Always confirm
-  the `Deployed epstein-files-api triggers` line, then curl the new
-  behavior on epsteinproject.org; retry the deploy if the line is absent.
+- **NEVER run wrangler under bun.** `bunx wrangler deploy` prints its version
+  banner, exits **0**, and deploys nothing — silently, every time (3/3). This
+  was previously recorded here as "wrangler is flaky"; it is not flaky, it is
+  bun. `node_modules/.bin/wrangler` has a `#!/usr/bin/env node` shebang and
+  works first try:
+  `PATH=~/.local/node/bin:$PATH node_modules/.bin/wrangler deploy`
+  Note `package.json`'s `deploy:worker` script still says `bunx wrangler
+  deploy` and therefore does not work.
+- The exit code is useless here, so still confirm the `Deployed
+  epstein-files-api triggers` line and curl the new behaviour before believing
+  a deploy landed.
+- **Pages deploys need `CLOUDFLARE_API_TOKEN` explicitly**; worker deploys fall
+  back to stored OAuth credentials and succeed without sourcing `.env`. A Pages
+  deploy without it fails with "In a non-interactive environment, it's
+  necessary to set a CLOUDFLARE_API_TOKEN". `~/deploy-pages.sh` handles both
+  this and the node-on-PATH requirement.
 - Pages: `PATH=~/.local/node/bin:$PATH bun run deploy:pages` (needs Node,
   bun alone won't do it).
 - Tests: `bun test` (worker + frontend suites). `bun test | tail` swallows
@@ -106,6 +124,40 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   frontend/index.html and functions/_lib/html.js. CSP already allowlists
   static.cloudflareinsights.com (script-src) + cloudflareinsights.com
   (connect-src) — keep both if the CSP changes.
+- Workers Logs is now enabled (`[observability]` in wrangler.toml,
+  head_sampling_rate 1), so request/error data is queryable via the
+  observability MCP. Before 2026-07-27 it was off and queries returned zero
+  events — which reads as "no traffic" rather than "not collecting".
+- **Bandwidth is not billed.** CDN bandwidth is unmetered on all plans, R2 has
+  zero egress fees, and Workers bill on requests/CPU. 30 GB/month of traffic
+  costs nothing; the only R2 charge is storage (~$1.62/mo for 198 GB).
+
+## Caching and replication (learned 2026-07-27)
+
+- **Cloudflare does NOT edge-cache Worker-generated responses.** The
+  `Cache-Control` headers the worker sets only instruct the *browser*; the CDN
+  ignores them for anything a Worker constructs. This produced a 55/153,560
+  cache hit ratio. `withEdgeCache()` in worker.js now wraps the six media
+  routes with the Cache API. Range requests bypass it (a cached 206 would
+  poison whole-file requests and break video seeking) and objects >100 MB are
+  skipped (Cloudflare caps cacheable objects; DOJ-OGR videos exceed 1 GB).
+- Caching moves *where* bytes are served from; it does not reduce bandwidth.
+  What it cuts is latency, R2 Class B operations, and Worker CPU.
+- **D1 read replication requires the Sessions API.** The dashboard toggle alone
+  is inert — without `env.DB.withSession(...)` every query still goes to the
+  primary. worker.js creates one session per request with
+  `'first-unconstrained'` (correct here: zero writes, archive changes only via
+  batch imports).
+- **Pages HTML shows `cf-cache-status: DYNAMIC`, and that is fine.** Pages
+  serves assets from Cloudflare's own distributed network with tiered caching.
+  Measured TTFB for cache-busted index.html (86–153 ms) matches a fully cached
+  immutable asset (83–121 ms). A "cache everything" rule for HTML buys
+  essentially nothing and adds a purge-on-deploy staleness footgun — it was
+  proposed, measured, and rejected.
+- `frontend/_headers` marks `app.js` and the icons `immutable`. **This makes
+  bumping the `?v=` string in index.html mandatory** — editing app.js without
+  it strands returning visitors on the old file for a year. index.html itself
+  stays `max-age=0`, which is what makes the versioning safe.
 
 ## Data conventions
 
@@ -146,3 +198,32 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   one-shot commands, hand the user a single line to run with the `!`
   prefix; keep it short enough not to wrap, or stage files at short paths
   (e.g. $HOME) first.
+- Reliably blocked, so do not waste turns retrying: **sourcing `.env`**
+  (`set -a && . ./.env && set +a && …`), **D1 writes via the MCP
+  `d1_database_query` tool**, and **typing into dashboard forms** via the
+  browser tools. Each needs a staged script the user runs with `!`.
+- Long command lines get **truncated by terminal wrapping** when the user
+  pastes them — a `bun run deploy:pages` invocation lost its script argument
+  this way. Stage anything long as a script at `$HOME` and hand over
+  `! ~/name.sh` instead.
+- Ready-made staged scripts: `~/deploy-pages.sh`, `~/backfill-texts.sh`,
+  `import-ocr.sh` (repo root).
+
+## OCR backfill (added 2026-07-27)
+
+- Originals are **no longer on local disk** — `documents.local_path` points at
+  `/mnt/e/...`, a drive that is not attached. R2 is the only source, reachable
+  via `/api/documents/<id>/file`, which bypasses the rate limiter because it is
+  classed as media delivery.
+- `ocr_backfill.py` (repo root) re-OCRs everything with no stored text:
+  downloads from R2, renders at 300 DPI, tesseract via TSV for text +
+  confidence, results into a resumable local SQLite state file. Then
+  `export_ocr_sql.py` → `import-ocr.sh`. ~8 docs/min on 6 workers.
+- It deliberately does **not** import `src/ocr_pipeline.py`: that module drives
+  the stale local SQLite and expects the missing `/mnt/e` originals.
+- Only `status='done'` is exported. Documents that OCR to nothing are recorded
+  as `empty` and get **no** `document_texts` row — the worker derives
+  `has_text` from that table, so an empty row would recreate the
+  "advertises text, then 404s" bug.
+- Run under `systemd-inhibit --what=idle:sleep` — this laptop suspends, and a
+  multi-hour run will otherwise be interrupted mid-document.

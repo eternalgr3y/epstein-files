@@ -5,3 +5,32 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# app.js is cache-busted by query string (index.html references
+# /app.js?v=<date>-<slug>), so a new build is a new URL and can safely be
+# immutable. Pages' default was max-age=14400, which made every visitor
+# revalidate it six times a day for nothing.
+#
+# !! THIS MAKES BUMPING THE ?v= STRING MANDATORY !!
+# Editing app.js without changing the ?v= in index.html leaves returning
+# visitors on the old file for up to a year, with no way to force a refresh
+# short of a URL change. index.html itself stays max-age=0, so a version bump
+# always reaches everyone immediately.
+/app.js
+  Cache-Control: public, max-age=31536000, immutable
+
+# Icons and the social card change essentially never, and are referenced by
+# fixed paths. A year of browser cache costs nothing; replacing one means
+# renaming it or purging the cache.
+/favicon.ico
+  Cache-Control: public, max-age=31536000, immutable
+/favicon-32.png
+  Cache-Control: public, max-age=31536000, immutable
+/favicon-64.png
+  Cache-Control: public, max-age=31536000, immutable
+/favicon-180.png
+  Cache-Control: public, max-age=31536000, immutable
+/apple-touch-icon.png
+  Cache-Control: public, max-age=31536000, immutable
+/og-image.png
+  Cache-Control: public, max-age=31536000, immutable
