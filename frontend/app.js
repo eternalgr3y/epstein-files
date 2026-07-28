@@ -348,6 +348,32 @@
         }
     }
 
+    // The #sr-announce live region has existed in index.html since the start
+    // and nothing ever wrote to it, document.title never changed between
+    // views, and setView() hides #home-view while the search input that
+    // triggered the search lives inside it -- so focus fell to <body> on every
+    // search and again on every pagination click, since resultsView.innerHTML
+    // is replaced wholesale. To a screen reader or a keyboard user, navigating
+    // this site was silent and lost their place. WCAG 4.1.3 and 2.4.3.
+    //
+    // Compose the message from real values, never from the rendered <h1>:
+    // renderSearchResults emits a literal "Search Results", which is why
+    // sharePage() currently shares every search under that name.
+    function announceView(pageTitle, message) {
+        document.title = pageTitle
+            ? `${pageTitle} | Epstein Project`
+            : 'Epstein Project — Public Archive of Jeffrey Epstein Case Records';
+        const region = document.getElementById('sr-announce');
+        if (region) region.textContent = message || pageTitle || '';
+        // Move focus to the new heading so the next Tab continues from the
+        // content rather than restarting at the top of the document.
+        const heading = resultsView.querySelector('h1');
+        if (heading) {
+            heading.setAttribute('tabindex', '-1');
+            heading.focus({ preventScroll: true });
+        }
+    }
+
     function setView(view) {
         currentView = view;
         homeView.style.display = view === 'home' ? 'block' : 'none';
@@ -563,6 +589,14 @@
         }
 
         resultsView.innerHTML = html;
+
+        const docTotal = Number(docs.total) || 0;
+        announceView(
+            `Search: ${query}`,
+            docTotal
+                ? `${docTotal.toLocaleString()} documents match ${query}. Showing ${docs.results?.length || 0}.`
+                : `No documents match ${query}.`
+        );
     }
 
     // === VIDEOS ===
@@ -600,6 +634,7 @@
                 </div>
             `;
             resultsView.innerHTML = html;
+            announceView('Video evidence', `${Number(r.total || 0).toLocaleString()} videos in this collection.`);
         } catch (e) {
             resultsView.innerHTML = `
                 <div class="error-state">
@@ -752,6 +787,7 @@
             `;
 
             resultsView.innerHTML = html;
+            announceView('Documents', `${Number(r.total || 0).toLocaleString()} documents in this collection.`);
         } catch (e) {
             resultsView.innerHTML = `
                 <div class="error-state">
@@ -818,6 +854,7 @@
             `;
 
             resultsView.innerHTML = html;
+            announceView('House Oversight estate records', `${Number(r.total || 0).toLocaleString()} records in this collection.`);
             if (!totalPages) {
                 statsPromise.then(lateStats => {
                     const pageTotal = resultsView.querySelector('[data-oversight-page-total]');
