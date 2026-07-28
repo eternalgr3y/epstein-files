@@ -627,10 +627,18 @@
             padding: 1.25rem 1.5rem;
             background: transparent;
             border: none;
+            /* No outline while typing, but the ring is restored on
+               :focus-visible below -- removing it outright left the site's
+               primary control with no visible keyboard focus at all. */
             outline: none;
             color: var(--text);
             font-size: 1rem;
             letter-spacing: 0.01em;
+        }
+
+        .search-box input:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: -2px;
         }
 
         .search-box input::placeholder {
@@ -1228,7 +1236,9 @@
         }
 
         .btn:focus-visible, a:focus-visible, button:focus-visible {
-            outline: 1px solid var(--accent);
+            /* Was 1px, against 3px on cards and 2px on selects -- inconsistent
+               enough to read as an artefact rather than a focus ring. */
+            outline: 2px solid var(--accent);
             outline-offset: 2px;
         }
 
@@ -2033,7 +2043,7 @@
 
     <div id="sr-announce" class="sr-only" aria-live="polite"></div>
 
-    <script src="/app.js?v=20260728-a11y" defer></script>
+    <script src="/app.js?v=20260728-focus" defer></script>
     <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "deeb9a9acadd4b9e88871189785a062e"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>
