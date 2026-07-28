@@ -854,7 +854,7 @@
             `;
 
             resultsView.innerHTML = html;
-            announceView('House Oversight estate records', `${Number(r.total || 0).toLocaleString()} records in this collection.`);
+            announceView('House Oversight estate records', `${totalDocs.toLocaleString()} records in this collection.`);
             if (!totalPages) {
                 statsPromise.then(lateStats => {
                     const pageTotal = resultsView.querySelector('[data-oversight-page-total]');
