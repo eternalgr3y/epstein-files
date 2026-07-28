@@ -926,6 +926,9 @@
             }
 
             resultsView.innerHTML = html;
+            const docName = doc.title || doc.bates;
+            const pages = pageLabel(doc.page_count);
+            announceView(docName, pages ? `${docName}. ${pages}.` : `${docName}.`);
         } catch (e) {
             resultsView.innerHTML = `
                 <div class="error-state">
