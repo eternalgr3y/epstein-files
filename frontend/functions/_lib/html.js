@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-07-28g';
+export const PAGE_CACHE_VERSION = '2026-07-28h';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -40,6 +40,29 @@ const DATA_SET_LABELS = {
 
 export function setLabel(name) {
   return DATA_SET_LABELS[name] || name;
+}
+
+
+// house-oversight-doj rows carry the original upload filename in `title` while
+// `filename` holds the real Bates number -- e.g. title
+// "20250115134822946_Certificate of Service.pdf", filename
+// "DOJ-OGR-00000001". Discarding the title would throw away the only human
+// description these 1,657 documents have; using it raw puts an upload
+// timestamp in the page title. Strip the machinery and keep the words.
+//
+// Returns '' when nothing meaningful survives, so callers can fall back.
+export function cleanDocTitle(raw) {
+  const text = String(raw || '')
+    .replace(/\.[a-z0-9]{2,4}$/i, '')       // trailing extension
+    .replace(/^\d{6,}[_-]\s*/, '')          // leading upload timestamp
+    .replace(/[_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Reject anything that is mostly digits or punctuation: Bates numbers,
+  // scanner artefacts and OCR sludge make worse titles than none.
+  const letters = (text.match(/[a-z]/gi) || []).length;
+  if (text.length < 4 || letters < text.length * 0.4) return '';
+  return text;
 }
 
 export function esc(s) {

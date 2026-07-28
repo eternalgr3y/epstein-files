@@ -1,4 +1,4 @@
-import { esc, htmlResponseHeaders, pageCacheKey, renderDocPage, setLabel } from '../_lib/html.js';
+import { cleanDocTitle, esc, htmlResponseHeaders, pageCacheKey, renderDocPage, setLabel } from '../_lib/html.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
@@ -28,12 +28,20 @@ export async function onRequestGet(context) {
     'SELECT full_text FROM document_texts WHERE document_id = ?'
   ).bind(id).first();
 
-  const title = doc.title || doc.filename || `Document ${id}`;
+  // The Bates number identifies the document; a cleaned-up title describes it.
+  // Prefer both. `doc.title` alone would put an upload timestamp in the page
+  // title for the 1,657 house-oversight-doj rows, and discarding it would
+  // throw away their only human description.
+  const batesId = String(doc.filename || '').replace(/\.[a-z0-9]+$/i, '');
+  const describedAs = cleanDocTitle(doc.title) || cleanDocTitle(doc.filename);
+  const title = describedAs
+    ? `${batesId || `Document ${id}`} — ${describedAs}`
+    : (batesId || `Document ${id}`);
   const preview = (text?.full_text || '').slice(0, 2000);
   const description = preview
     ? preview.replace(/\s+/g, ' ').trim().slice(0, 280)
     : `${doc.document_type || 'Document'} from ${doc.data_set ? setLabel(doc.data_set) : 'the Epstein case archive'}, `
-      + `Bates ${String(doc.filename || '').replace(/\.[a-z0-9]+$/i, '') || id}.`;
+      + `Bates ${batesId || id}.`;
   const isVideo = doc.document_type === 'video';
   const isAudio = doc.document_type === 'audio';
   const sourceDate = doc.download_timestamp || doc.created_at;
@@ -75,9 +83,8 @@ export async function onRequestGet(context) {
   // The Bates/production number is the document's real identifier -- it is how
   // these records are cited in filings and by reporters -- so it leads, and
   // the descriptive title (often just the filename) follows as a caption.
-  const bates = String(doc.filename || '').replace(/\.[a-z0-9]+$/i, '');
-  const heading = bates || title;
-  const subtitle = doc.title && doc.title !== doc.filename ? doc.title : '';
+  const heading = batesId || `Document ${id}`;
+  const subtitle = describedAs;
 
   const SET_LABELS = {
     'court-records': 'Court records',
