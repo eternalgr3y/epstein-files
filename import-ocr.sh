@@ -26,9 +26,28 @@ if [ ${#chunks[@]} -eq 0 ]; then
 fi
 
 echo "importing ${#chunks[@]} chunk(s) into epstein-files-db"
+failed=0
 for f in "${chunks[@]}"; do
-    echo "--- $f"
-    node_modules/.bin/wrangler d1 execute epstein-files-db \
-        --remote --yes --file="$f"
+    # Back-to-back imports race each other -- D1 answers "Not currently
+    # importing anything" if the previous session has not settled. Retry with a
+    # pause rather than aborting the run; every statement is NOT EXISTS-guarded
+    # so a repeat is harmless.
+    for attempt in 1 2 3; do
+        if node_modules/.bin/wrangler d1 execute epstein-files-db \
+               --remote --yes --file="$f" >/tmp/ocr-import-out.txt 2>&1; then
+            rows=$(grep -oE '"rows_written": [0-9]+' /tmp/ocr-import-out.txt | tail -1)
+            echo "  ok   $(basename "$f")  ${rows:-}"
+            break
+        fi
+        if [ "$attempt" = 3 ]; then
+            echo "  FAIL $(basename "$f") after 3 attempts:"
+            tail -3 /tmp/ocr-import-out.txt | sed 's/^/       /'
+            failed=$((failed + 1))
+        else
+            sleep 5
+        fi
+    done
+    sleep 2
 done
-echo "done -- ${#chunks[@]} chunk(s) imported"
+echo "done -- ${#chunks[@]} chunk(s), ${failed} failed"
+[ "$failed" -eq 0 ]
