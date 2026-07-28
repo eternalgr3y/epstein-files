@@ -31,6 +31,29 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   --file=<path>`** works excellently (839k rows in ~1.5 s). Multi-row
   INSERTs, ~1000 rows per statement. Atomic: on failure the DB rolls back.
 - The MCP `d1_database_query` tool is fine for small queries/updates.
+- **D1 rejects statements over ~32-52 KB** with `statement too long:
+  SQLITE_TOOBIG`. Measured on 2026-07-27: a 32,071-char statement imports, a
+  52,150-char one fails. Since OCR text runs to 236k chars per document, no
+  single INSERT can carry one. `export_ocr_sql.py` writes an INSERT with the
+  first 20k characters then UPDATEs appending the rest, and populates
+  `document_fts` by copying from `document_texts` server-side rather than
+  resending the text. Chunking files by row count or by total bytes does NOT
+  help -- the limit is per statement.
+- Make every generated statement idempotent, because chunks get retried. Guard
+  appends on `length(full_text) = <expected prefix>`, not on "the row is ours":
+  the latter double-appends when a partial import is re-run.
+- **Imports take the live site down briefly.** `wrangler d1 execute` warns that
+  the database is unavailable during an import, and it means it -- concurrent
+  `/api/documents/<id>/file` requests returned HTTP 500 mid-import, which
+  surfaced as failures in an unrelated OCR job that was downloading at the
+  time. Do not run bulk imports alongside anything that reads D1 and matters.
+- Back-to-back `d1 execute` calls race: the second gets "Not currently
+  importing anything" if the previous session has not settled. Sleep a couple
+  of seconds between chunks and retry.
+- **Expression indexes work and are worth it.** `LOWER(canonical_name)` could
+  not use `idx_entities_name`, making entity sibling lookup a 216k-row scan at
+  66ms. `CREATE INDEX idx_entities_name_lower ON entities(LOWER(canonical_name))`
+  took it to 922 rows at 3ms.
 - FTS5 virtual tables (`document_fts`, `house_oversight_fts`) can't be
   exported and don't need backup — rebuildable from document_texts /
   house_oversight_documents.
@@ -158,6 +181,35 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   bumping the `?v=` string in index.html mandatory** — editing app.js without
   it strands returning visitors on the old file for a year. index.html itself
   stays `max-age=0`, which is what makes the versioning safe.
+- **The SSR pages cache their own HTML for an hour** in the Cache API, keyed on
+  path with the query string stripped, so a deploy is invisible until the hour
+  is up and no `?cachebust=` on the request can dodge it. The `.env` token has
+  no cache-purge scope either. **Bump `PAGE_CACHE_VERSION` in
+  `frontend/functions/_lib/html.js`** whenever you change what those pages
+  render — it changes every cache key at once and the deploy lands instantly.
+- To check a Pages deploy before the cache clears, fetch the preview hostname
+  (`https://<hash>.epstein-chd.pages.dev/...`) — separate cache, real code.
+- Browsers cache these pages too (`max-age=3600`), so a stale-looking page in
+  Chrome after a deploy may just be the local cache; append a query string.
+
+## Entity data (as of 2026-07-27)
+
+- **41% of `entities` is duplicates.** The table holds two extraction
+  vocabularies side by side — spaCy's uppercase `PERSON`/`ORG` (83k rows) and a
+  lowercase `person`/`organization` set (133k) — plus exact duplicates within
+  each. 27,774 name+type groups hold more than one row; 88,571 of 216,591 rows
+  are redundant. `entities.mention_count` is also out of sync with the
+  `mentions` table (29,111 claimed vs 370,382 actual rows for Jeffrey Epstein).
+- worker.js merges these **at read time** rather than migrating: search groups
+  by `LOWER(canonical_name)` + normalised type and sums counts, and the entity/
+  mentions endpoints expand an id to its siblings. Repointing 3.7M
+  `mentions.entity_id` rows is destructive; this reverts with a deploy.
+- Two traps when touching that code: `ORG` and `organization` lowercase to
+  different strings so SQL must normalise them the way the JS does, and sibling
+  sets have a long tail of one-mention rows (Jeffrey Epstein has 827 siblings,
+  826 holding a single mention). Expanding all of them made
+  `ORDER BY m.id LIMIT 100` sort every matching mention — 1,418ms over 1.1M
+  rows. Queries joining `mentions` use the 20 heaviest siblings instead.
 
 ## Data conventions
 
