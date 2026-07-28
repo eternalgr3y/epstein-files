@@ -192,6 +192,34 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
 - Browsers cache these pages too (`max-age=3600`), so a stale-looking page in
   Chrome after a deploy may just be the local cache; append a query string.
 
+## Server-rendered pages (frontend/functions/)
+
+- These are where **all** organic search traffic lands. Treat them as the
+  primary reading surface, not a crawler fallback.
+- `_lib/html.js` holds the shared shell, CSS, `setLabel()` and
+  `cleanDocTitle()`. **No webfonts there on purpose** — a render-blocking font
+  request on the highest-volume template would undo the CWV work.
+- **Data traps that bit on 2026-07-27**, all verified in D1:
+  - `house_oversight_documents.text_content` is empty on all 2,897 rows; the
+    text lives in `document_texts` via `legacy_document_id` (2,895 resolve).
+    Reading the column made every estate page say "no extracted text" while
+    `/api/search` returned the same documents *with* text.
+  - `house_oversight_documents.created_at` is NULL on all 2,897 rows.
+  - `documents.title` is NULL on 17,326 rows, and for the 1,657
+    `house-oversight-doj` rows it holds the *upload filename*
+    (`20250115134822946_Certificate of Service.pdf`) while `filename` holds the
+    real Bates. Use `cleanDocTitle()`; do not just prefer one field.
+  - `document_type` is a MIME bucket — 19,163 of 22,310 rows are plain `pdf`,
+    so it cannot supply a document-kind hint.
+- Collection indexes accept `?page=N`. Each page is its **own canonical** —
+  pointing them all at the bare path tells Google the deeper pages are
+  duplicates and undoes the crawl paths. JSON-LD `position` is absolute across
+  the collection, not per page.
+- A Pages Function **cannot reach the API through the zone**: a subrequest to
+  `https://epsteinproject.org/api/...` silently returned nothing and the page
+  rendered empty. Use the workers.dev origin
+  (`https://epstein-files-api.protonuser597.workers.dev/api/...`).
+
 ## Entity data (as of 2026-07-27)
 
 - **41% of `entities` is duplicates.** The table holds two extraction
