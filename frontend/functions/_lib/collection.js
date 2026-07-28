@@ -1,4 +1,4 @@
-import { esc, htmlResponseHeaders, renderDocPage } from './html.js';
+import { cleanDocTitle, esc, htmlResponseHeaders, renderDocPage, setLabel } from './html.js';
 
 // Collection indexes were hardcoded to the newest 100 records with no next
 // link, so only 316 of 22,316 document URLs had any inbound internal link.
@@ -95,11 +95,24 @@ ${pagination}
 }
 
 export function documentItems(rows) {
-  return rows.map((doc) => ({
-    url: `/documents/${doc.id}`,
-    title: doc.title || doc.filename || `Document ${doc.id}`,
-    meta: [doc.data_set, doc.document_type, doc.page_count ? `${doc.page_count} ${doc.page_count === 1 ? 'page' : 'pages'}` : null]
-      .filter(Boolean)
-      .join(' · '),
-  }));
+  return rows.map((doc) => {
+    // A page count on a video or an audio file is not merely unhelpful, it is
+    // wrong -- every media row carries page_count 1, so the listing read
+    // "video · 1 page". Media gets no page count.
+    const isMedia = doc.document_type === 'video' || doc.document_type === 'audio';
+    const pages = !isMedia && doc.page_count
+      ? `${doc.page_count} ${doc.page_count === 1 ? 'page' : 'pages'}`
+      : null;
+    return {
+      url: `/documents/${doc.id}`,
+      // Same title composition as the document page itself: the Bates number
+      // identifies, the cleaned title describes.
+      title: cleanDocTitle(doc.title) || cleanDocTitle(doc.filename)
+        || String(doc.filename || '').replace(/\.[a-z0-9]+$/i, '')
+        || `Document ${doc.id}`,
+      meta: [doc.data_set ? setLabel(doc.data_set) : null, doc.document_type, pages]
+        .filter(Boolean)
+        .join(' · '),
+    };
+  });
 }
