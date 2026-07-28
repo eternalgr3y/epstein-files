@@ -408,24 +408,50 @@
             history.pushState(null, '', `#${newHash}`);
         }
 
+        // An error body is still valid JSON, so .json() resolved and .catch()
+        // never fired: a 400 (bad query syntax) or a 429 (rate limited) left
+        // docs.results undefined and the view rendered "No results found."
+        // On an archive of primary sources that is a factual claim the
+        // documents do not exist -- the worst thing this UI can say when it
+        // never actually looked. Fail loudly instead.
+        const readJson = async (response) => {
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+                const err = new Error(data?.error || `Request failed (${response.status})`);
+                err.status = response.status;
+                throw err;
+            }
+            return data;
+        };
+
         const sourceParam = searchFilters.source ? `&source=${encodeURIComponent(searchFilters.source)}` : '';
         Promise.all([
-            fetch(`${API}/search?q=${encodeURIComponent(q)}&limit=50${sourceParam}`).then(r => r.json()),
+            fetch(`${API}/search?q=${encodeURIComponent(q)}&limit=50${sourceParam}`).then(readJson),
             fetch(`${API}/entities/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query: q, limit: 5 })
-            }).then(r => r.json())
+            }).then(readJson)
         ]).then(([docs, ents]) => {
             if (seq !== searchSeq) return; // superseded by a newer search
             renderSearchResults(q, docs, ents);
-        }).catch(() => {
+        }).catch((err) => {
             if (seq !== searchSeq) return;
+            // Say what actually happened. A rejected query and a rate limit
+            // need different actions from the reader, and neither is "no
+            // results".
+            const rateLimited = err?.status === 429;
+            const detail = rateLimited
+                ? 'Too many searches from your network. Wait a minute and try again.'
+                : err?.status >= 400 && err?.status < 500 && err?.message
+                    ? esc(err.message)
+                    : 'Unable to reach the server. Check your connection and try again.';
             resultsView.innerHTML = `
                 <div class="error-state">
-                    <h3>Search failed</h3>
-                    <p>Unable to reach the server. Check your connection and try again.</p>
-                    <button class="btn" data-action="search">Retry</button>
+                    <h3>${rateLimited ? 'Search paused' : 'Search failed'}</h3>
+                    <p>${detail}</p>
+                    <p class="result-meta">Your search terms are still in the box above.</p>
+                    <button class="btn" data-action="search">Try again</button>
                 </div>
             `;
         }).finally(() => {

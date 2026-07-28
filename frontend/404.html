@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<title>Page not found | Epstein Project</title>
+<meta name="robots" content="noindex, follow">
+<!--
+  Without this file Cloudflare Pages falls back to index.html with HTTP 200 for
+  every unknown path, so /anything-at-all looked like a real page to crawlers.
+  Adding a 404.html is enough to make Pages return a real 404 status.
+
+  A functions/[[path]].js catch-all would NOT be a safe alternative: in Pages,
+  Functions match before static assets, so it would shadow /app.js,
+  /sitemap.xml, /robots.txt and every favicon.
+
+  Styles are inlined and kept minimal on purpose -- this page must not depend
+  on anything that might itself be missing.
+-->
+<style>
+:root{
+ color-scheme:light dark;
+ --paper:#eeefec;--ink:#1b1e21;--dim:#636970;--accent:#3a5463;--stamp:#8b3a3a;
+ --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+ --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);
+ max-width:44rem;margin:0 auto;padding:6rem 1.5rem;line-height:1.55}
+.eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.18em;
+ text-transform:uppercase;color:var(--stamp);margin:0 0 .6rem}
+h1{font-family:var(--mono);font-weight:500;font-size:clamp(1.6rem,5vw,2.6rem);
+ line-height:1.1;margin:0 0 1.25rem}
+p{margin:0 0 1rem;max-width:60ch}
+a{color:var(--accent)}
+a:focus-visible,input:focus-visible,button:focus-visible{
+ outline:2px solid var(--accent);outline-offset:2px}
+.find{display:flex;gap:.4rem;margin:2rem 0;max-width:26rem}
+.find input{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:.5rem .65rem;
+ border:1px solid rgba(27,30,33,.14);background:#f8f8f6;color:var(--ink);border-radius:0}
+.find button{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;
+ text-transform:uppercase;padding:.5rem .9rem;cursor:pointer;color:var(--paper);
+ background:var(--accent);border:1px solid var(--accent);border-radius:0}
+nav{display:flex;flex-wrap:wrap;gap:1.25rem;margin-top:2.5rem;
+ padding-top:1.25rem;border-top:1px solid rgba(27,30,33,.14)}
+nav a{font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;
+ text-transform:uppercase;text-decoration:none;color:var(--dim)}
+nav a:hover{color:var(--accent)}
+@media(prefers-color-scheme:dark){
+ :root{--paper:#14181a;--ink:#e7ece9;--dim:#9aa5a1;--accent:#8bb1c2;--stamp:#c07a7a}
+ .find input{background:#1a1f22;border-color:rgba(231,236,233,.14);color:var(--ink)}
+ .find button{color:#14181a}
+ nav{border-top-color:rgba(231,236,233,.14)}}
+</style>
+</head>
+<body>
+<p class="eyebrow">Not found</p>
+<h1>This page isn't in the archive</h1>
+<p>The address may be mistyped, or the document may be filed under a different
+Bates number. Search the archive for a name, place, or case reference.</p>
+
+<form class="find" action="/" method="get" role="search">
+<label for="q" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search the archive</label>
+<input id="q" name="q" type="search" placeholder="Search 22,310 documents" maxlength="200" autocomplete="off">
+<button type="submit">Search</button>
+</form>
+
+<nav aria-label="Collections">
+<a href="/">Home</a>
+<a href="/documents">Documents</a>
+<a href="/images">Images</a>
+<a href="/videos">Videos</a>
+<a href="/recordings">Recordings</a>
+<a href="/house-oversight">House Oversight</a>
+</nav>
+</body>
+</html>

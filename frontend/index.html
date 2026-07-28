@@ -122,7 +122,11 @@
             --border-hover: rgba(58, 84, 99, 0.4);
             --text: #1b1e21;
             --text-muted: #5c636a;
-            --text-dim: #7b8189;
+            /* 3.40:1 on --bg failed WCAG AA for small text, and all 25 rules
+               consuming this token are 0.8rem or smaller so the large-text
+               exemption never applied. #636970 is 4.81:1. Dark theme was
+               already 5.92:1 and is unchanged. */
+            --text-dim: #636970;
             --accent: #3a5463;
             --accent-hover: #4c6b7c;
             --accent-soft: rgba(58, 84, 99, 0.08);
@@ -1996,7 +2000,7 @@
 
     <div id="sr-announce" class="sr-only" aria-live="assertive"></div>
 
-    <script src="/app.js?v=20260726-inp-cls" defer></script>
+    <script src="/app.js?v=20260728-errors" defer></script>
     <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "deeb9a9acadd4b9e88871189785a062e"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>

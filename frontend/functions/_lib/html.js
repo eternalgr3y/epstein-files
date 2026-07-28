@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-07-27b';
+export const PAGE_CACHE_VERSION = '2026-07-28b';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -79,7 +79,7 @@ ${structuredDataHtml}
    Colours mirror the SPA so a click through does not feel like a new site. */
 :root{
  color-scheme:light dark;
- --paper:#eeefec;--surface:#f8f8f6;--ink:#1b1e21;--muted:#5c636a;--dim:#7b8189;
+ --paper:#eeefec;--surface:#f8f8f6;--ink:#1b1e21;--muted:#5c636a;--dim:#636970;
  --rule:rgba(27,30,33,.14);--accent:#3a5463;--stamp:#8b3a3a;
  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
@@ -138,6 +138,9 @@ video,audio,img{max-width:100%}
 .item-list li{padding:1rem 0;border-top:1px solid var(--rule)}
 .item-list small{display:block;color:var(--muted);margin-top:.25rem;
  font-family:var(--mono);font-size:.72rem}
+/* Filenames like 01_06CF009454_Controlled_Call_from_S.G._to_Haley_R.wav have no
+   UAX#14 break opportunity and pushed the body sideways on a 360px screen. */
+.item-list a,.item-list small,.record-title{overflow-wrap:anywhere}
 .onward{margin-top:2.5rem;padding-top:1.25rem;border-top:1px solid var(--rule)}
 .onward a{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
  text-transform:uppercase;text-decoration:none}

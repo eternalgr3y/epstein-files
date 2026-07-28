@@ -1464,9 +1464,16 @@ async function listHouseOversightDocs(url, db) {
 }
 
 async function getHouseOversightDoc(bates, db, r2) {
-  const doc = await db.prepare(
-    "SELECT * FROM house_oversight_documents WHERE bates_number = ?"
-  ).bind(bates).first();
+  // text_content is empty on all 2,897 estate rows -- the importer writes their
+  // OCR text to document_texts keyed by legacy_document_id. Reading the column
+  // made this endpoint report no text for documents whose text /api/search was
+  // already returning.
+  const doc = await db.prepare(`
+    SELECT h.*, t.full_text
+    FROM house_oversight_documents h
+    LEFT JOIN document_texts t ON t.document_id = h.legacy_document_id
+    WHERE h.bates_number = ?
+  `).bind(bates).first();
 
   if (!doc) {
     return error('Document not found', 404);
@@ -1513,7 +1520,7 @@ async function getHouseOversightDoc(bates, db, r2) {
     title: doc.title,
     page_count: pageCount,
     pages,
-    text_preview: doc.text_content?.substring(0, 2000) || null,
+    text_preview: doc.full_text?.substring(0, 2000) || null,
     entities,
   });
 }
