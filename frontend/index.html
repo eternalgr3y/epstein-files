@@ -1343,6 +1343,15 @@
 
         /* Image modal */
         .image-modal {
+            /* The backdrop composites to #2c2f31 regardless of theme, so its
+               contents must be styled against a dark ground. In light theme
+               the .btn children inherited page tokens and came out at 2.21:1
+               text and 1.03:1 borders -- effectively invisible -- while
+               hovering the close button dropped it from 11.28:1 to 1.69:1.
+               Overriding the tokens here fixes every child at once. */
+            --text-muted: #b2bcb8;
+            --border: rgba(231, 238, 234, 0.30);
+            --accent: #8bb1c2;
             position: fixed;
             inset: 0;
             z-index: 1000;
@@ -1658,6 +1667,30 @@
 
         /* Mobile responsive */
         @media (max-width: 600px) {
+            /* .doc-toolbar is a flex item with no flex-wrap inside
+               .doc-viewer{overflow:hidden}, so its automatic minimum size
+               floored it at its children's combined min-content width (508px)
+               and the last buttons were clipped to 0px wide at a 360px
+               viewport -- New Tab and Download were unreachable, with no
+               gesture to get at them. */
+            .doc-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 1rem;
+            }
+
+            .doc-toolbar {
+                flex-wrap: wrap;
+            }
+
+            /* The modal centres its content with overflow:visible, so on short
+               viewports the action row sat off-screen with no way to scroll to
+               it. */
+            .image-modal {
+                align-items: flex-start;
+                overflow-y: auto;
+            }
+
             header {
                 padding: 1rem 1.25rem;
             }
@@ -2000,7 +2033,7 @@
 
     <div id="sr-announce" class="sr-only" aria-live="assertive"></div>
 
-    <script src="/app.js?v=20260728-pagination" defer></script>
+    <script src="/app.js?v=20260728-mobile" defer></script>
     <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "deeb9a9acadd4b9e88871189785a062e"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>
