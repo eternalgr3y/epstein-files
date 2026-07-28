@@ -19,7 +19,7 @@ export function pageParam(request, pageSize, total) {
 
 export function renderCollectionResponse({
   path, title, description, intro, items, total, spaHash,
-  page = 1, pageSize = 100,
+  page = 1, pageSize = 100, links = null,
 }) {
   const canonical = `https://epsteinproject.org${path}`;
   const pageCount = Number.isFinite(total) && pageSize > 0
@@ -54,6 +54,9 @@ ${page < pageCount ? `<a rel="next" href="${esc(pageUrl(page + 1))}">Next →</a
 ${Number.isFinite(total) ? `<p><strong>${Number(total).toLocaleString()}</strong> records in this collection${
     pageCount > 1 && items.length ? `, showing ${from.toLocaleString()}–${to.toLocaleString()}` : ''
   }.</p>` : ''}
+${links && links.length ? `<nav class="collection-links" aria-label="Collections">${
+  links.map((l) => `<a href="${esc(l.url)}">${esc(l.label)} <span>${Number(l.count).toLocaleString()}</span></a>`).join('')
+}</nav>` : ''}
 ${items.length ? `<ul class="item-list">${items.map((item) => `
 <li><a href="${esc(item.url)}">${esc(item.title)}</a>${item.meta ? `<small>${esc(item.meta)}</small>` : ''}</li>`).join('')}</ul>` : '<p>No records are currently available.</p>'}
 ${pagination}

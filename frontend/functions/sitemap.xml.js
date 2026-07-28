@@ -58,6 +58,11 @@ export async function onRequestGet(context) {
     url('https://epsteinproject.org/house-oversight', 'weekly', '0.9'),
     // The methodology and OCR-accuracy disclosure now has a real URL.
     url('https://epsteinproject.org/about', 'monthly', '0.5'),
+    // Per-release indexes: topic-clustered entry points into the corpus.
+    ...['data-set', 'data-set-2', 'data-set-3', 'data-set-4', 'data-set-5',
+        'data-set-6', 'data-set-7', 'data-set-8', 'court-records',
+        'doj-disclosures', 'house-oversight-doj', 'maxwell-interview']
+      .map((slug) => url(`https://epsteinproject.org/documents/set/${slug}`, 'weekly', '0.7')),
     ...docs.results.map((d) =>
       url(`https://epsteinproject.org/documents/${d.id}`, 'monthly', '0.6', d.lastmod)),
     ...houseOversight.results.map((d) =>

@@ -1,4 +1,5 @@
 import { documentItems, pageParam, renderCollectionResponse } from '../_lib/collection.js';
+import { setLabel } from '../_lib/html.js';
 
 const PAGE_SIZE = 100;
 
@@ -14,6 +15,19 @@ export async function onRequestGet({ env, request }) {
     + "WHERE data_set != 'house-oversight-estate' ORDER BY id DESC LIMIT ? OFFSET ?"
   ).bind(PAGE_SIZE, (page - 1) * PAGE_SIZE).all();
 
+  // Per-release indexes, ordered by size, as crawlable entry points.
+  const sets = await env.DB.prepare(
+    "SELECT data_set, COUNT(*) AS n FROM documents "
+    + "WHERE data_set != 'house-oversight-estate' GROUP BY data_set ORDER BY n DESC"
+  ).all();
+  const links = sets.results
+    .filter((r) => r.data_set && r.data_set !== 'Data Set 8')
+    .map((r) => ({
+      url: `/documents/set/${encodeURIComponent(r.data_set)}`,
+      label: setLabel(r.data_set),
+      count: r.n,
+    }));
+
   return renderCollectionResponse({
     path: '/documents',
     title: 'Epstein Case Documents',
@@ -25,6 +39,7 @@ export async function onRequestGet({ env, request }) {
     total: count.count,
     page,
     pageSize: PAGE_SIZE,
+    links,
     spaHash: 'documents/0',
   });
 }
