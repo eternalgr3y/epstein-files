@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-07-28c';
+export const PAGE_CACHE_VERSION = '2026-07-28e';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
