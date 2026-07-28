@@ -639,10 +639,10 @@
                 <button class="back-btn" data-action="home">← Back</button>
                 <div class="section-kicker">Audio Archive</div>
                 <div class="results-header">
-                    <h1>Maxwell Deposition Tapes</h1>
+                    <h1>Maxwell Interview Recordings</h1>
                     <span class="results-count">${r.total} recordings</span>
                 </div>
-                <div class="results-intro">Audio recordings from deposition exhibits.</div>
+                <div class="results-intro">DOJ interview audio released in the House Oversight production.</div>
 
                 <div class="tape-section">
                     <h2>Day 1</h2>

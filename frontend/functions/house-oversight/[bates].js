@@ -51,7 +51,7 @@ ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
 ${confidencePct ? `<dt>Text confidence</dt><dd>${esc(confidencePct)}</dd>` : ''}
 </dl>
 ${preview
-  ? `<h2>Text as released</h2><pre>${esc(preview)}${fullText.length > 2000 ? '\n\n[…]' : ''}</pre>`
+  ? `<h2>Text as released</h2><p class="ocr-note">Machine-read from the scan. Names, dates and numbers can be misread &mdash; check anything you rely on against the <a href="/about">original page</a>.</p><pre>${esc(preview)}${fullText.length > 2000 ? '\n\n[…]' : ''}</pre>`
   : '<h2>Text as released</h2><p>This scan produced no machine-readable text.</p>'}
 `;
 

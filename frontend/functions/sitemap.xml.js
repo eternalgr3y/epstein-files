@@ -56,6 +56,8 @@ export async function onRequestGet(context) {
     url('https://epsteinproject.org/videos', 'weekly', '0.8'),
     url('https://epsteinproject.org/recordings', 'weekly', '0.8'),
     url('https://epsteinproject.org/house-oversight', 'weekly', '0.9'),
+    // The methodology and OCR-accuracy disclosure now has a real URL.
+    url('https://epsteinproject.org/about', 'monthly', '0.5'),
     ...docs.results.map((d) =>
       url(`https://epsteinproject.org/documents/${d.id}`, 'monthly', '0.6', d.lastmod)),
     ...houseOversight.results.map((d) =>

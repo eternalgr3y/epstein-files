@@ -1092,7 +1092,7 @@ async function listMaxwellTapes(db) {
 
   return json({
     total: tapes.results.length,
-    description: 'Ghislaine Maxwell deposition recordings',
+    description: 'Ghislaine Maxwell DOJ interview recordings',
     tapes: tapes.results.map(t => ({
       id: t.id,
       filename: t.filename,

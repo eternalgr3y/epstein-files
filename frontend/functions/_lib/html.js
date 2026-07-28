@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-07-28e';
+export const PAGE_CACHE_VERSION = '2026-07-28f';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -159,6 +159,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);
  font-size:.82rem;line-height:1.7;background:var(--surface);
  border:1px solid var(--rule);border-left:3px solid var(--rule);
  padding:1.5rem;margin:0;max-width:62ch}
+.ocr-note{font-size:.8rem;color:var(--muted);margin:0 0 .75rem;max-width:62ch}
 video,audio,img{max-width:100%}
 .item-list{padding:0;list-style:none;margin:0}
 .item-list li{padding:1rem 0;border-top:1px solid var(--rule)}
@@ -171,7 +172,10 @@ video,audio,img{max-width:100%}
 .onward a{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
  text-transform:uppercase;text-decoration:none}
 .onward a:hover{text-decoration:underline}
-footer{margin-top:3rem;font-size:.8rem;color:var(--dim)}
+footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--rule);
+ font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
+ text-transform:uppercase;color:var(--dim)}
+footer a{text-decoration:none}footer a:hover{text-decoration:underline}
 @media(prefers-color-scheme:dark){
  :root{--paper:#14181a;--surface:#1a1f22;--ink:#e7ece9;--muted:#9aa5a1;--dim:#7e8a86;
   --rule:rgba(231,236,233,.14);--accent:#8bb1c2;--stamp:#c07a7a}
@@ -185,7 +189,7 @@ footer{margin-top:3rem;font-size:.8rem;color:var(--dim)}
 <nav aria-label="Collections"><a href="/documents">Documents</a><a href="/images">Images</a><a href="/videos">Videos</a><a href="/recordings">Recordings</a><a href="/house-oversight">House Oversight</a></nav>
 <form class="find" action="/" method="get" role="search">
 <label for="q" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search the archive</label>
-<input id="q" name="q" type="search" placeholder="Search 22,310 documents" maxlength="200" autocomplete="off">
+<input id="q" name="q" type="search" placeholder="Search the archive" maxlength="200" autocomplete="off">
 <button type="submit">Search</button>
 </form>
 </header>
@@ -193,6 +197,11 @@ footer{margin-top:3rem;font-size:.8rem;color:var(--dim)}
 ${bodyHtml}
 ${spaHash ? `<p class="onward"><a href="/#${esc(spaHash)}">Open in the archive</a></p>` : ''}
 </main>
+<footer>
+<a href="/about">About &amp; methodology</a> &nbsp;·&nbsp;
+<a href="https://docs.google.com/forms/d/e/1FAIpQLSdu5whC_64CsbCUP-6wjtwGx28y0oFOVMv290bREt45O0CWJg/viewform?usp=dialog" target="_blank" rel="noopener">Report a correction</a> &nbsp;·&nbsp;
+<a href="https://justice.gov/epstein" target="_blank" rel="noopener">Original source</a>
+</footer>
 <script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "deeb9a9acadd4b9e88871189785a062e"}'></script>
 </body>
 </html>`;

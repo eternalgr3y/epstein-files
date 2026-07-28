@@ -8,8 +8,8 @@ export async function onRequestGet({ env }) {
   return renderCollectionResponse({
     path: '/recordings',
     title: 'Epstein Case Audio Recordings',
-    description: 'Browse deposition recordings and other audio files in the Epstein Project public-record archive.',
-    intro: 'Audio preserved from official public releases, including deposition exhibits and DOJ records.',
+    description: 'Browse DOJ interview audio and other recordings in the Epstein Project public-record archive.',
+    intro: 'Audio preserved from official public releases: DOJ interview recordings and Palm Beach case audio, including controlled calls, witness interviews and voicemails.',
     items: documentItems(docs.results),
     total: count.count,
     spaHash: 'maxwell',

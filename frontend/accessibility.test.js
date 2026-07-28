@@ -12,7 +12,7 @@ describe('frontend navigation and heading semantics', () => {
 
   test('uses one primary heading for collection and detail views', async () => {
     const app = await Bun.file(new URL('app.js', frontendUrl)).text();
-    for (const title of ['Video Evidence', 'Maxwell Deposition Tapes', 'All Documents', 'Estate Documents', 'Images']) {
+    for (const title of ['Video Evidence', 'Maxwell Interview Recordings', 'All Documents', 'Estate Documents', 'Images']) {
       expect(app).toContain(`<h1>${title}</h1>`);
       expect(app).not.toContain(`<h2>${title}</h2>`);
     }
