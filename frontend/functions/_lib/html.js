@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-07-28f';
+export const PAGE_CACHE_VERSION = '2026-07-28g';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -168,6 +168,13 @@ video,audio,img{max-width:100%}
 /* Filenames like 01_06CF009454_Controlled_Call_from_S.G._to_Haley_R.wav have no
    UAX#14 break opportunity and pushed the body sideways on a 360px screen. */
 .item-list a,.item-list small,.record-title{overflow-wrap:anywhere}
+.collection-pages{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;
+ margin-top:2rem;padding-top:1.25rem;border-top:1px solid var(--rule);
+ font-family:var(--mono);font-size:.72rem;letter-spacing:.06em}
+.collection-pages a{text-decoration:none;padding:.25rem .4rem}
+.collection-pages a:hover{text-decoration:underline}
+.collection-pages [aria-current="page"]{color:var(--ink);font-weight:600;
+ padding:.25rem .4rem;border-bottom:2px solid var(--stamp)}
 .onward{margin-top:2.5rem;padding-top:1.25rem;border-top:1px solid var(--rule)}
 .onward a{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
  text-transform:uppercase;text-decoration:none}
