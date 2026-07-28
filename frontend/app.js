@@ -233,8 +233,22 @@
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
         loadStats();
-        currentHash = location.hash.slice(1) || 'home';
-        handleHash();
+
+        // The server-rendered document pages carry a plain GET form that posts
+        // here as /?q=... Those pages are where organic search traffic lands
+        // and they ship no JavaScript, so this is the handoff that lets a
+        // first-time visitor search without bouncing through the home page.
+        const handoff = new URLSearchParams(location.search).get('q');
+        if (handoff && !location.hash) {
+            searchInput.value = handoff.slice(0, 200);
+            // Drop ?q= so a refresh does not re-run the search; doSearch()
+            // pushes the #search/... hash immediately after.
+            history.replaceState(null, '', '/');
+            doSearch();
+        } else {
+            currentHash = location.hash.slice(1) || 'home';
+            handleHash();
+        }
 
         searchInput.addEventListener('keydown', e => {
             if (e.key === 'Enter') doSearch();

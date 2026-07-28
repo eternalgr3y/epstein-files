@@ -87,6 +87,62 @@ function hasTextExpr(idColumn) {
   return `EXISTS (SELECT 1 FROM document_texts dt WHERE dt.document_id = ${idColumn})`;
 }
 
+// The entities table holds two extraction vocabularies side by side -- spaCy's
+// uppercase PERSON/ORG (83k rows) and a lowercase person/organization set
+// (133k rows) -- plus exact duplicates within each. 27,774 name+type groups
+// contain more than one row, so 88,571 of 216,591 entities are redundant.
+//
+// The visible damage is on search: "maxwell" returned Ghislaine Maxwell twice
+// with the mentions split 15,543 / 1,126, so every count on the site reads low
+// and the reader cannot tell which row to click.
+//
+// These helpers merge duplicates at read time. That is deliberate: repointing
+// 3.7M mentions.entity_id rows is a destructive migration, whereas this is a
+// deploy away from being reverted, and it makes the data fix optional rather
+// than urgent. canonical_name is indexed (idx_entities_name), so expanding an
+// id to its siblings is cheap.
+// Takes the entity id TWICE as positional parameters. Numbered placeholders
+// (?1) would read better but mix badly with the bare ? used elsewhere in the
+// same statements, so callers bind the id twice.
+// spaCy emits ORG where the other extractor emits organization. LOWER() alone
+// leaves those in separate groups, so normalise in SQL exactly as
+// normalizeEntityType() does in JS -- otherwise search still shows "Maxwell"
+// twice under organization.
+const ENTITY_TYPE_NORM_SQL =
+  "CASE WHEN LOWER(entity_type) = 'org' THEN 'organization' ELSE LOWER(entity_type) END";
+
+const ENTITY_SIBLINGS_SQL = `
+  SELECT id FROM entities
+  WHERE canonical_name = (SELECT canonical_name FROM entities WHERE id = ?)
+    AND ${ENTITY_TYPE_NORM_SQL} = (SELECT ${ENTITY_TYPE_NORM_SQL} FROM entities WHERE id = ?)
+`;
+
+// Same expansion, bounded, for anything that joins `mentions`.
+//
+// Sibling sets have a long tail of single-mention rows: "Jeffrey Epstein" has
+// 827 siblings of which 826 hold exactly one mention. Merging all of them made
+// `ORDER BY m.id LIMIT 100` materialise and sort every matching mention --
+// measured at 1,418ms and 1.1M rows read. Taking the 20 heaviest siblings
+// instead returns a byte-identical first page in 3.5ms from 1,917 rows.
+//
+// The cap is a deliberate approximation: it merges the substantive duplicates
+// (Ghislaine Maxwell's 15,543 + 1,126) and drops a tail worth ~1 mention each.
+const ENTITY_SIBLINGS_CAPPED_SQL = `
+  SELECT id FROM entities
+  WHERE canonical_name = (SELECT canonical_name FROM entities WHERE id = ?)
+    AND ${ENTITY_TYPE_NORM_SQL} = (SELECT ${ENTITY_TYPE_NORM_SQL} FROM entities WHERE id = ?)
+  ORDER BY mention_count DESC
+  LIMIT 20
+`;
+
+// Type casing is an artefact of which extractor produced the row, never
+// something a reader should see. Present one vocabulary.
+function normalizeEntityType(type) {
+  const t = String(type || '').toLowerCase();
+  if (t === 'org') return 'organization';
+  return t;
+}
+
 function mergeDataSetCounts(rows) {
   const counts = new Map();
   for (const row of rows) {
@@ -1090,10 +1146,15 @@ async function getEntity(id, db) {
     return error('Entity not found', 404);
   }
 
+  // Report the merged total so this agrees with search and the mentions list.
+  const merged = await db.prepare(
+    `SELECT SUM(mention_count) AS total FROM entities WHERE id IN (${ENTITY_SIBLINGS_SQL})`
+  ).bind(id, id).first();
+
   return json({
     id: entity.id,
     canonical_name: entity.canonical_name,
-    entity_type: entity.entity_type,
+    entity_type: normalizeEntityType(entity.entity_type),
     first_name: entity.first_name,
     last_name: entity.last_name,
     aliases: entity.aliases ? JSON.parse(entity.aliases) : null,
@@ -1101,7 +1162,7 @@ async function getEntity(id, db) {
     is_public_figure: !!entity.is_public_figure,
     disambiguation_notes: entity.disambiguation_notes,
     confidence: entity.confidence,
-    mention_count: entity.mention_count,
+    mention_count: merged?.total ?? entity.mention_count,
     needs_review: !!entity.needs_review,
   });
 }
@@ -1157,13 +1218,16 @@ async function getEntityMentions(entityId, url, db) {
     return error('Entity not found', 404);
   }
 
+  // Search merges duplicate entity rows, so the mentions view must too --
+  // otherwise clicking a result showing 16,669 mentions lands on a page
+  // listing only the 15,543 that happen to hang off the representative id.
   let sql = `
     SELECT m.*, d.filename, d.title, d.document_type, d.data_set
     FROM mentions m
     JOIN documents d ON d.id = m.document_id
-    WHERE m.entity_id = ?
+    WHERE m.entity_id IN (${ENTITY_SIBLINGS_CAPPED_SQL})
   `;
-  const params = [entityId];
+  const params = [entityId, entityId];
 
   if (role) {
     sql += ' AND m.role = ?';
@@ -1232,18 +1296,26 @@ async function searchEntities(request, db) {
   }
   const resultLimit = parseIntegerValue(body.limit, 'limit', { defaultValue: 50, min: 1, max: 100 });
 
-  let sql = "SELECT * FROM entities WHERE canonical_name LIKE ? ESCAPE '\\'";
+  // Collapse duplicate rows into one result per name+type, summing the split
+  // mention counts, so a search for a person returns that person once with a
+  // true total rather than several partial rows.
+  let sql = `
+    SELECT MIN(id) AS id, canonical_name, ${ENTITY_TYPE_NORM_SQL} AS entity_type,
+           SUM(mention_count) AS mention_count
+    FROM entities
+    WHERE canonical_name LIKE ? ESCAPE '\\'
+  `;
   const params = [`%${escapeLikePattern(cleanQuery)}%`];
 
   if (entity_type) {
     if (typeof entity_type !== 'string' || entity_type.length > 50) {
       throw new HttpError('entity_type must be a string of at most 50 characters');
     }
-    sql += ' AND entity_type = ?';
+    sql += ` AND ${ENTITY_TYPE_NORM_SQL} = LOWER(?)`;
     params.push(entity_type);
   }
 
-  sql += ' ORDER BY mention_count DESC LIMIT ?';
+  sql += ` GROUP BY canonical_name, ${ENTITY_TYPE_NORM_SQL} ORDER BY SUM(mention_count) DESC LIMIT ?`;
   params.push(resultLimit);
 
   const results = await db.prepare(sql).bind(...params).all();
@@ -1254,15 +1326,15 @@ async function searchEntities(request, db) {
       SELECT DISTINCT m.document_id, d.filename as document_filename, m.role
       FROM mentions m
       JOIN documents d ON d.id = m.document_id
-      WHERE m.entity_id = ?
+      WHERE m.entity_id IN (${ENTITY_SIBLINGS_CAPPED_SQL})
       GROUP BY m.document_id
       LIMIT 5
-    `).bind(e.id).all();
+    `).bind(e.id, e.id).all();
 
     return {
       entity_id: e.id,
       canonical_name: e.canonical_name,
-      entity_type: e.entity_type,
+      entity_type: normalizeEntityType(e.entity_type),
       mention_count: e.mention_count,
       mentions: mentions.results.map(m => ({
         role: m.role || 'unknown',

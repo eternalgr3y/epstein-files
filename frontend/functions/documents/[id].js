@@ -71,18 +71,46 @@ export async function onRequestGet(context) {
     url: `https://epsteinproject.org/documents/${id}`,
   };
 
+  // The Bates/production number is the document's real identifier -- it is how
+  // these records are cited in filings and by reporters -- so it leads, and
+  // the descriptive title (often just the filename) follows as a caption.
+  const bates = String(doc.filename || '').replace(/\.[a-z0-9]+$/i, '');
+  const heading = bates || title;
+  const subtitle = doc.title && doc.title !== doc.filename ? doc.title : '';
+
+  const SET_LABELS = {
+    'court-records': 'Court records',
+    'doj-disclosures': 'DOJ disclosures',
+    'house-oversight-doj': 'House Oversight — DOJ production',
+    'maxwell-interview': 'Maxwell interview',
+  };
+  const provenance = SET_LABELS[doc.data_set]
+    || (/^data-set/.test(doc.data_set || '') ? 'DOJ evidence release' : 'Public release');
+
+  // has_text is unreliable on its own (see hasTextExpr in src/worker.js); the
+  // presence of extracted text is the honest signal.
+  const textStatus = preview
+    ? 'Searchable'
+    : `Not extracted${doc.processing_status ? ` — ${doc.processing_status}` : ''}`;
+
   const bodyHtml = `
-<h1>${esc(title)}</h1>
+<article class="record">
+<p class="eyebrow">${esc(provenance)}</p>
+<h1 class="bates">${esc(heading)}</h1>
+${subtitle ? `<p class="record-title">${esc(subtitle)}</p>` : ''}
+</article>
 ${mediaHtml}
 <dl>
-${doc.document_type ? `<dt>Type</dt><dd>${esc(doc.document_type)}</dd>` : ''}
-${doc.data_set ? `<dt>Source set</dt><dd>${esc(doc.data_set)}</dd>` : ''}
+${doc.document_type ? `<dt>Format</dt><dd>${esc(doc.document_type)}</dd>` : ''}
+${doc.data_set ? `<dt>Set</dt><dd>${esc(doc.data_set)}</dd>` : ''}
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
-<dt>Text status</dt><dd>${doc.has_text || preview ? 'Searchable text available' : esc(doc.processing_status || 'OCR pending')}</dd>
+<dt>Text</dt><dd>${esc(textStatus)}</dd>
 ${doc.ocr_confidence ? `<dt>OCR confidence</dt><dd>${esc(doc.ocr_confidence)}</dd>` : ''}
 </dl>
-${/^https?:\/\//i.test(doc.source_url || '') ? `<p><a href="${esc(doc.source_url)}" rel="noopener" target="_blank">Original source</a></p>` : ''}
-${preview ? `<h2>Extracted text</h2><pre>${esc(preview)}${text?.full_text?.length > 2000 ? '…' : ''}</pre>` : '<p>No extracted text available for this document.</p>'}
+${/^https?:\/\//i.test(doc.source_url || '') ? `<p class="onward"><a href="${esc(doc.source_url)}" rel="noopener" target="_blank">View at the original source</a></p>` : ''}
+${preview
+  ? `<h2>Text as released</h2><pre>${esc(preview)}${text?.full_text?.length > 2000 ? '\n\n[…]' : ''}</pre>`
+  : '<h2>Text as released</h2><p>This scan produced no machine-readable text. The original file is still available above.</p>'}
 `;
 
   const html = renderDocPage({
