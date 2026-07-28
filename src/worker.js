@@ -1352,9 +1352,25 @@ async function searchEntities(request, db) {
     };
   }));
 
+  // total_results used to be entities.length -- the page size. The UI rendered
+  // it as "5 found" under People & Organizations while the real match count
+  // for "maxwell" is in the hundreds, sitting next to a genuine COUNT(*) of
+  // documents, so the two read as equally authoritative. Count the merged
+  // groups, not the rows: a bare COUNT(*) over the same predicate returns the
+  // pre-merge row count, which is several times larger and equally wrong.
+  const totalRow = await db.prepare(`
+    SELECT COUNT(*) AS total FROM (
+      SELECT 1 FROM entities
+      WHERE canonical_name LIKE ? ESCAPE '\\'
+      ${entity_type ? `AND ${ENTITY_TYPE_NORM_SQL} = LOWER(?)` : ''}
+      GROUP BY LOWER(canonical_name), ${ENTITY_TYPE_NORM_SQL}
+    )
+  `).bind(`%${escapeLikePattern(cleanQuery)}%`, ...(entity_type ? [entity_type] : [])).first();
+
   return json({
     query,
     total_results: entities.length,
+    total_matches: totalRow?.total ?? entities.length,
     results: entities,
   });
 }

@@ -480,7 +480,7 @@
             html += `
                 <div class="results-header">
                     <h2>People & Organizations</h2>
-                    <span class="results-count">${ents.total_results.toLocaleString()} found</span>
+                    <span class="results-count">${entityCountLabel(ents)}</span>
                 </div>
             `;
             ents.results.forEach(e => {
@@ -1367,6 +1367,18 @@
 
     function imageApiUrl(filename) {
         return `${API}/images/${encodeURIComponent(String(filename ?? ''))}`;
+    }
+
+    // "N found" used to print the page size, so a query matching hundreds of
+    // people reported "5 found" beside a genuine document count. Say what is
+    // actually being shown. The total counts merged name+type groups, but OCR
+    // still fragments names ("NE MAXWELL", "en MAXWELL"), so it is framed as
+    // matches shown out of matches found rather than as a count of people.
+    function entityCountLabel(ents) {
+        const shown = ents?.results?.length || 0;
+        const total = Number(ents?.total_matches);
+        if (!Number.isFinite(total) || total <= shown) return `${shown} shown`;
+        return `top ${shown} of ${total.toLocaleString()}`;
     }
 
     function ocrLabel(doc) {

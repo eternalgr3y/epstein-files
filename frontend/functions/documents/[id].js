@@ -1,4 +1,4 @@
-import { esc, htmlResponseHeaders, pageCacheKey, renderDocPage } from '../_lib/html.js';
+import { esc, htmlResponseHeaders, pageCacheKey, renderDocPage, setLabel } from '../_lib/html.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
@@ -32,7 +32,8 @@ export async function onRequestGet(context) {
   const preview = (text?.full_text || '').slice(0, 2000);
   const description = preview
     ? preview.replace(/\s+/g, ' ').trim().slice(0, 280)
-    : `${doc.document_type || 'Document'} from ${doc.data_set || 'the Epstein case archive'}.`;
+    : `${doc.document_type || 'Document'} from ${doc.data_set ? setLabel(doc.data_set) : 'the Epstein case archive'}, `
+      + `Bates ${String(doc.filename || '').replace(/\.[a-z0-9]+$/i, '') || id}.`;
   const isVideo = doc.document_type === 'video';
   const isAudio = doc.document_type === 'audio';
   const sourceDate = doc.download_timestamp || doc.created_at;
@@ -109,7 +110,7 @@ ${subtitle ? `<p class="record-title">${esc(subtitle)}</p>` : ''}
 ${mediaHtml}
 <dl>
 ${doc.document_type ? `<dt>Format</dt><dd>${esc(doc.document_type)}</dd>` : ''}
-${doc.data_set ? `<dt>Set</dt><dd>${esc(doc.data_set)}</dd>` : ''}
+${doc.data_set ? `<dt>Set</dt><dd>${esc(setLabel(doc.data_set))}</dd>` : ''}
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
 <dt>Text</dt><dd>${esc(textStatus)}</dd>
 ${confidencePct ? `<dt>Text confidence</dt><dd>${esc(confidencePct)}</dd>` : ''}

@@ -7,13 +7,39 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-07-28b';
+export const PAGE_CACHE_VERSION = '2026-07-28c';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
   const url = new URL(path, request.url);
   url.search = `v=${PAGE_CACHE_VERSION}`;
   return new Request(url, request);
+}
+
+// The SPA has had DATA_SET_LABELS since the beginning, but the server-rendered
+// pages had no equivalent, so raw slugs reached readers -- and, worse, reached
+// Google: a text-less document's meta description read "pdf from data-set-5.",
+// which is the SERP snippet. Mirrors DATA_SET_LABELS in frontend/app.js; keep
+// the two in step.
+const DATA_SET_LABELS = {
+  'data-set': 'DOJ Data Set 1',
+  'data-set-2': 'DOJ Data Set 2',
+  'data-set-3': 'DOJ Data Set 3',
+  'data-set-4': 'DOJ Data Set 4',
+  'data-set-5': 'DOJ Data Set 5',
+  'data-set-6': 'DOJ Data Set 6',
+  'data-set-7': 'DOJ Data Set 7',
+  'data-set-8': 'DOJ Data Set 8',
+  'Data Set 8': 'DOJ Data Set 8',
+  'court-records': 'Court Records',
+  'doj-disclosures': 'DOJ Disclosures',
+  'house-oversight-doj': 'House Oversight (DOJ)',
+  'house-oversight-estate': 'House Oversight (Estate)',
+  'maxwell-interview': 'Maxwell Interview',
+};
+
+export function setLabel(name) {
+  return DATA_SET_LABELS[name] || name;
 }
 
 export function esc(s) {
