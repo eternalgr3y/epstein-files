@@ -162,6 +162,7 @@
             documentFilters.hasText = document.getElementById('documents-has-text')?.value || '';
             showDocuments(0);
         },
+        'search-page': control => doSearch(false, parseDataNumber(control, 'offset')),
         'search-filter': () => {
             searchFilters.source = document.getElementById('search-source')?.value || '';
             doSearch();
@@ -305,7 +306,10 @@
         if (type === 'search' && rest[0]) {
             searchInput.value = decodeURIComponent(rest[0]);
             searchFilters.source = SOURCE_OPTIONS.some(o => o.value === rest[1]) ? rest[1] : '';
-            doSearch(true); // true = don't pushState, we're already at this hash
+            // rest[2] is the offset; '-' is the placeholder for "no source
+            // filter". Older links without either segment still work.
+            const searchOffset = /^\d+$/.test(rest[2] || '') ? parseInt(rest[2], 10) : 0;
+            doSearch(true, searchOffset); // true = don't pushState, we're already at this hash
         } else if (type === 'images') {
             const parsedOffset = rest[0] ? parseInt(rest[0]) : 0;
             const parsedIndex = rest[1] !== undefined ? parseInt(rest[1]) : null;
@@ -381,7 +385,12 @@
         }
     }
 
-    function doSearch(skipPush = false) {
+    // Search was the only paged view with no pagination: a hard limit=50 with
+    // no offset, while the page printed "3,387 found". The API already
+    // accepted offset, so ~92% of matches were simply unreachable.
+    const SEARCH_PAGE = 50;
+
+    function doSearch(skipPush = false, offset = 0) {
         const q = searchInput.value.trim();
         if (!q) return;
         if (isLoading) return; // Prevent double-fetch
@@ -402,7 +411,11 @@
             }
         });
 
-        const newHash = `search/${encodeURIComponent(q)}${searchFilters.source ? `/${searchFilters.source}` : ''}`;
+        // The offset lives in the hash so a page of results is linkable and
+        // survives back/forward. The source segment stays in place even when
+        // empty, so the offset never shifts position.
+        const newHash = `search/${encodeURIComponent(q)}/${searchFilters.source || '-'}`
+            + (offset ? `/${offset}` : '');
         currentHash = newHash;
         if (!skipPush) {
             history.pushState(null, '', `#${newHash}`);
@@ -426,7 +439,7 @@
 
         const sourceParam = searchFilters.source ? `&source=${encodeURIComponent(searchFilters.source)}` : '';
         Promise.all([
-            fetch(`${API}/search?q=${encodeURIComponent(q)}&limit=50${sourceParam}`).then(readJson),
+            fetch(`${API}/search?q=${encodeURIComponent(q)}&limit=${SEARCH_PAGE}&offset=${offset}${sourceParam}`).then(readJson),
             fetch(`${API}/entities/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -434,7 +447,7 @@
             }).then(readJson)
         ]).then(([docs, ents]) => {
             if (seq !== searchSeq) return; // superseded by a newer search
-            renderSearchResults(q, docs, ents);
+            renderSearchResults(q, docs, ents, offset);
         }).catch((err) => {
             if (seq !== searchSeq) return;
             // Say what actually happened. A rejected query and a rate limit
@@ -459,7 +472,7 @@
         });
     }
 
-    function renderSearchResults(query, docs, ents) {
+    function renderSearchResults(query, docs, ents, offset = 0) {
         let html = `
             <button class="back-btn" data-action="home">← Back</button>
             <div class="section-kicker">Search Results</div>
@@ -530,6 +543,23 @@
 
         if (!ents.results?.length && !docs.results?.length) {
             html += '<div class="empty">No results found.</div>';
+        }
+
+        // Pagination over documents. Total comes from the API's real COUNT, so
+        // the range is stated explicitly rather than leaving the reader to
+        // guess how much of "3,387 found" they have actually seen.
+        const shown = docs.results?.length || 0;
+        const total = Number(docs.total) || 0;
+        if (shown && total > SEARCH_PAGE) {
+            const from = offset + 1;
+            const to = offset + shown;
+            html += `
+                <div class="pagination">
+                    ${offset > 0 ? `<button class="btn" data-action="search-page" data-offset="${Math.max(0, offset - SEARCH_PAGE)}">← Previous</button>` : ''}
+                    <span class="results-count">${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()}</span>
+                    ${to < total ? `<button class="btn" data-action="search-page" data-offset="${offset + SEARCH_PAGE}">Next →</button>` : ''}
+                </div>
+            `;
         }
 
         resultsView.innerHTML = html;
