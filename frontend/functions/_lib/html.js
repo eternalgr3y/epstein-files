@@ -1,3 +1,21 @@
+// These pages cache their own HTML in the Cache API for an hour, keyed on path
+// with the query string deliberately stripped (so "?x=" cannot force a
+// full-table scan). That also means a deploy is invisible until the hour is
+// up, and no amount of cache-busting on the request will help -- confirmed
+// twice while shipping the sitemap and the document redesign, and the API
+// token in .env has no cache-purge scope to work around it.
+//
+// Bumping this string changes every cache key at once, so a deploy takes
+// effect immediately. Change it whenever you change what these pages render.
+export const PAGE_CACHE_VERSION = '2026-07-27b';
+
+// Build the Cache API key for a server-rendered page.
+export function pageCacheKey(request, path) {
+  const url = new URL(path, request.url);
+  url.search = `v=${PAGE_CACHE_VERSION}`;
+  return new Request(url, request);
+}
+
 export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',

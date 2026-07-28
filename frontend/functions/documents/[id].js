@@ -1,4 +1,4 @@
-import { esc, htmlResponseHeaders, renderDocPage } from '../_lib/html.js';
+import { esc, htmlResponseHeaders, pageCacheKey, renderDocPage } from '../_lib/html.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
@@ -8,7 +8,7 @@ export async function onRequestGet(context) {
   }
 
   const cache = caches.default;
-  const cacheKey = new Request(new URL(`/documents/${id}`, request.url), request);
+  const cacheKey = pageCacheKey(request, `/documents/${id}`);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
@@ -93,6 +93,13 @@ export async function onRequestGet(context) {
     ? 'Searchable'
     : `Not extracted${doc.processing_status ? ` — ${doc.processing_status}` : ''}`;
 
+  // ocr_confidence is a 0-1 float and was rendered raw, so most documents read
+  // "OCR confidence 1", which tells a reader nothing. Show it as a percentage,
+  // and only where there is text for it to describe.
+  const confidencePct = preview && Number.isFinite(Number(doc.ocr_confidence))
+    ? `${Math.round(Number(doc.ocr_confidence) * 100)}%`
+    : '';
+
   const bodyHtml = `
 <article class="record">
 <p class="eyebrow">${esc(provenance)}</p>
@@ -105,7 +112,7 @@ ${doc.document_type ? `<dt>Format</dt><dd>${esc(doc.document_type)}</dd>` : ''}
 ${doc.data_set ? `<dt>Set</dt><dd>${esc(doc.data_set)}</dd>` : ''}
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
 <dt>Text</dt><dd>${esc(textStatus)}</dd>
-${doc.ocr_confidence ? `<dt>OCR confidence</dt><dd>${esc(doc.ocr_confidence)}</dd>` : ''}
+${confidencePct ? `<dt>Text confidence</dt><dd>${esc(confidencePct)}</dd>` : ''}
 </dl>
 ${/^https?:\/\//i.test(doc.source_url || '') ? `<p class="onward"><a href="${esc(doc.source_url)}" rel="noopener" target="_blank">View at the original source</a></p>` : ''}
 ${preview

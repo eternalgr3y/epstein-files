@@ -1,4 +1,4 @@
-import { esc, htmlResponseHeaders, renderDocPage } from '../_lib/html.js';
+import { esc, htmlResponseHeaders, pageCacheKey, renderDocPage } from '../_lib/html.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
@@ -8,7 +8,7 @@ export async function onRequestGet(context) {
   }
 
   const cache = caches.default;
-  const cacheKey = new Request(new URL(`/house-oversight/${bates}`, request.url), request);
+  const cacheKey = pageCacheKey(request, `/house-oversight/${bates}`);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 

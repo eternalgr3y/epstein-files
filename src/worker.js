@@ -111,9 +111,17 @@ function hasTextExpr(idColumn) {
 const ENTITY_TYPE_NORM_SQL =
   "CASE WHEN LOWER(entity_type) = 'org' THEN 'organization' ELSE LOWER(entity_type) END";
 
+// Names are matched case-insensitively: "Jeffrey Epstein" (29,111 mentions)
+// and "JEFFREY EPSTEIN" (4,709) are one person, and readers saw them as two
+// results. Grouping merges 902 variants into a single row of 33,822, and
+// SQLite's bare-column rule means the displayed name and id come from the
+// heaviest variant -- so the well-cased "Jeffrey Epstein" wins, not the
+// shouted one. Needs idx_entities_name_lower, an expression index on
+// LOWER(canonical_name): without it this is a 216k-row scan at 66ms, with it
+// 922 rows at 3ms.
 const ENTITY_SIBLINGS_SQL = `
   SELECT id FROM entities
-  WHERE canonical_name = (SELECT canonical_name FROM entities WHERE id = ?)
+  WHERE LOWER(canonical_name) = (SELECT LOWER(canonical_name) FROM entities WHERE id = ?)
     AND ${ENTITY_TYPE_NORM_SQL} = (SELECT ${ENTITY_TYPE_NORM_SQL} FROM entities WHERE id = ?)
 `;
 
@@ -129,7 +137,7 @@ const ENTITY_SIBLINGS_SQL = `
 // (Ghislaine Maxwell's 15,543 + 1,126) and drops a tail worth ~1 mention each.
 const ENTITY_SIBLINGS_CAPPED_SQL = `
   SELECT id FROM entities
-  WHERE canonical_name = (SELECT canonical_name FROM entities WHERE id = ?)
+  WHERE LOWER(canonical_name) = (SELECT LOWER(canonical_name) FROM entities WHERE id = ?)
     AND ${ENTITY_TYPE_NORM_SQL} = (SELECT ${ENTITY_TYPE_NORM_SQL} FROM entities WHERE id = ?)
   ORDER BY mention_count DESC
   LIMIT 20
@@ -1300,8 +1308,8 @@ async function searchEntities(request, db) {
   // mention counts, so a search for a person returns that person once with a
   // true total rather than several partial rows.
   let sql = `
-    SELECT MIN(id) AS id, canonical_name, ${ENTITY_TYPE_NORM_SQL} AS entity_type,
-           SUM(mention_count) AS mention_count
+    SELECT id, canonical_name, ${ENTITY_TYPE_NORM_SQL} AS entity_type,
+           SUM(mention_count) AS mention_count, MAX(mention_count) AS heaviest
     FROM entities
     WHERE canonical_name LIKE ? ESCAPE '\\'
   `;
@@ -1315,7 +1323,7 @@ async function searchEntities(request, db) {
     params.push(entity_type);
   }
 
-  sql += ` GROUP BY canonical_name, ${ENTITY_TYPE_NORM_SQL} ORDER BY SUM(mention_count) DESC LIMIT ?`;
+  sql += ` GROUP BY LOWER(canonical_name), ${ENTITY_TYPE_NORM_SQL} ORDER BY SUM(mention_count) DESC LIMIT ?`;
   params.push(resultLimit);
 
   const results = await db.prepare(sql).bind(...params).all();

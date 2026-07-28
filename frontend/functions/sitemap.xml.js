@@ -1,4 +1,4 @@
-import { SECURITY_HEADERS } from './_lib/html.js';
+import { SECURITY_HEADERS, pageCacheKey } from './_lib/html.js';
 
 const CACHE_SECONDS = 3600;
 
@@ -7,7 +7,7 @@ export async function onRequestGet(context) {
   const cache = caches.default;
   // Key on the path only — dropping the query string prevents cache-busting
   // via arbitrary "?x=..." params from forcing a full-table scan every hit.
-  const cacheKey = new Request(new URL('/sitemap.xml', request.url), request);
+  const cacheKey = pageCacheKey(request, '/sitemap.xml');
 
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
