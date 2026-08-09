@@ -28,6 +28,17 @@ export async function onRequestGet(context) {
     'SELECT full_text FROM document_texts WHERE document_id = ?'
   ).bind(id).first();
 
+  // Prev/next within the same release give every record two crawlable
+  // sibling links. Document pages were leaves — nothing linked onward from
+  // them, which starved the crawler of paths into the not-yet-indexed
+  // backlog and left readers at a dead end. Uses idx_documents_data_set;
+  // the within-set filename sort is a few ms and this render caches for an
+  // hour, so no composite index is needed yet.
+  const [prevDoc, nextDoc] = doc.data_set && doc.filename ? await Promise.all([
+    env.DB.prepare('SELECT id, filename FROM documents WHERE data_set = ? AND filename < ? ORDER BY filename DESC LIMIT 1').bind(doc.data_set, doc.filename).first(),
+    env.DB.prepare('SELECT id, filename FROM documents WHERE data_set = ? AND filename > ? ORDER BY filename LIMIT 1').bind(doc.data_set, doc.filename).first(),
+  ]) : [null, null];
+
   // The Bates number identifies the document; a cleaned-up title describes it.
   // Prefer both. `doc.title` alone would put an upload timestamp in the page
   // title for the 1,657 house-oversight-doj rows, and discarding it would
@@ -140,6 +151,10 @@ ${/^https?:\/\//i.test(doc.source_url || '') ? `<p class="onward"><a href="${esc
 ${preview
   ? `<h2>Text as released</h2><p class="ocr-note">Machine-read from the scan. Names, dates and numbers can be misread &mdash; check anything you rely on against the <a href="/about">original page</a>.</p><pre>${esc(preview)}${text?.full_text?.length > 2000 ? '\n\n[…]' : ''}</pre>`
   : '<h2>Text as released</h2><p>This scan produced no machine-readable text. The original file is still available above.</p>'}
+${prevDoc || nextDoc ? `<nav class="siblings" aria-label="Adjacent records in this release">
+${prevDoc ? `<a href="/documents/${prevDoc.id}" rel="prev">&larr; ${esc(String(prevDoc.filename).replace(/\.[a-z0-9]+$/i, ''))}</a>` : '<span></span>'}
+${nextDoc ? `<a href="/documents/${nextDoc.id}" rel="next">${esc(String(nextDoc.filename).replace(/\.[a-z0-9]+$/i, ''))} &rarr;</a>` : '<span></span>'}
+</nav>` : ''}
 `;
 
   const html = renderDocPage({

@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-08-09d';
+export const PAGE_CACHE_VERSION = '2026-08-09e';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -235,6 +235,11 @@ video,audio,img{max-width:100%}
 .collection-pages a:hover{text-decoration:underline}
 .collection-pages [aria-current="page"]{color:var(--ink);font-weight:600;
  padding:.25rem .4rem;border-bottom:2px solid var(--stamp)}
+.siblings{display:flex;justify-content:space-between;gap:1rem;margin-top:2rem;
+ padding-top:1.25rem;border-top:1px solid var(--rule);
+ font-family:var(--mono);font-size:.72rem;letter-spacing:.06em}
+.siblings a{text-decoration:none;overflow-wrap:anywhere}
+.siblings a:hover{text-decoration:underline}
 .onward{margin-top:2.5rem;padding-top:1.25rem;border-top:1px solid var(--rule)}
 .onward a{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
  text-transform:uppercase;text-decoration:none}
