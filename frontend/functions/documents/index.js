@@ -31,7 +31,7 @@ export async function onRequestGet({ env, request }) {
   return renderCollectionResponse({
     path: '/documents',
     title: 'Epstein Case Documents',
-    description: 'Browse searchable DOJ releases, court records, and evidence files in the Epstein Project public-record archive.',
+    description: `Browse and search ${Number(count.count).toLocaleString('en-US')} public records from the Jeffrey Epstein case — DOJ evidence releases, court filings, depositions, flight logs, and House Oversight files — each linked to its official source.`,
     // Ordered newest-first by id, which is why the opening pages are
     // media-heavy: the most recently imported records have the highest ids.
     intro: 'Public records from official releases, most recently added first. Open a record for its source information and available searchable text.',

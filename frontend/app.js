@@ -1401,7 +1401,7 @@
                 <h1 style="font-family: var(--font-serif); font-size: 2.5rem; font-weight: 400; margin-bottom: 2rem; color: var(--text);">About</h1>
 
                 <p style="font-size: 1rem; color: var(--text-muted); line-height: 2; margin-bottom: 3rem;">
-                    This site indexes public records from official releases of the Jeffrey Epstein case and preserves links back to source material.
+                    The Epstein Project is an independent, non-commercial archive that indexes public records from official releases of the Jeffrey Epstein case and preserves links back to source material.
                 </p>
 
                 <div class="methodology-card">

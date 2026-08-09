@@ -16,7 +16,8 @@ export async function onRequestGet(context) {
 
   const title = 'About this archive';
   const description =
-    'How the Epstein Project archive is built: sources, text extraction, '
+    'The Epstein Project is an independent, non-commercial archive of official '
+    + 'Jeffrey Epstein case records. How it is built: sources, text extraction, '
     + 'OCR accuracy and its limits, and how to report corrections.';
 
   const bodyHtml = `
@@ -27,10 +28,12 @@ export async function onRequestGet(context) {
 </article>
 
 <h2>What this is</h2>
-<p>This site indexes public records from official releases of the Jeffrey
-Epstein case &mdash; Department of Justice productions, court filings, and House
-Oversight Committee releases &mdash; and preserves a link back to the source
-material for every document.</p>
+<p>The Epstein Project is an independent, non-commercial archive that indexes
+public records from official releases of the Jeffrey Epstein case &mdash;
+Department of Justice productions, court filings, and House Oversight Committee
+releases &mdash; and preserves a link back to the source material for every
+document. It is not affiliated with any government body, and nothing here is
+paywalled or tracked beyond anonymous page counts.</p>
 
 <h2>How the text is produced</h2>
 <p>Where a document carries a machine-readable text layer, that text is used as
