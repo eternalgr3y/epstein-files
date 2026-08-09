@@ -1,7 +1,7 @@
 import {
   documentItems, pageParam, renderCollectionResponse,
 } from '../../_lib/collection.js';
-import { setLabel } from '../../_lib/html.js';
+import { notFoundResponse, setLabel } from '../../_lib/html.js';
 
 const PAGE_SIZE = 100;
 
@@ -36,7 +36,7 @@ const ALIASES = { 'data-set-8': ['Data Set 8'] };
 export async function onRequestGet({ params, env, request }) {
   const slug = params.slug;
   if (!Object.prototype.hasOwnProperty.call(SETS, slug)) {
-    return new Response('Not found', { status: 404 });
+    return notFoundResponse('Collection not found');
   }
 
   const values = [slug, ...(ALIASES[slug] || [])];

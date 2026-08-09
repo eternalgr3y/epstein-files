@@ -1,10 +1,10 @@
-import { esc, htmlResponseHeaders, pageCacheKey, renderDocPage } from '../_lib/html.js';
+import { cleanDocTitle, esc, htmlResponseHeaders, notFoundResponse, pageCacheKey, renderDocPage } from '../_lib/html.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
   const bates = params.bates;
   if (!/^[A-Z_\d]+$/.test(bates || '')) {
-    return new Response('Not found', { status: 404 });
+    return notFoundResponse();
   }
 
   const cache = caches.default;
@@ -25,17 +25,20 @@ export async function onRequestGet(context) {
     WHERE h.bates_number = ?
   `).bind(bates).first();
   if (!doc) {
-    return new Response('Document not found', { status: 404 });
+    return notFoundResponse('Document not found');
   }
 
   const fullText = doc.full_text || '';
-  const title = doc.title || bates;
+  // Estate titles are upload filenames ("James Patterson 3_4.pdf"); clean them
+  // the way document pages do, with the Bates leading as the citable name.
+  const described = cleanDocTitle(doc.title);
+  const title = described ? `${bates} — ${described}` : bates;
   const preview = fullText.slice(0, 2000);
   const description = preview
     ? preview.replace(/\s+/g, ' ').trim().slice(0, 280)
     : `House Oversight Committee document, Bates ${bates}.`;
 
-  const confidencePct = preview && Number.isFinite(Number(doc.ocr_confidence))
+  const confidencePct = preview && Number(doc.ocr_confidence) > 0
     ? `${Math.round(Number(doc.ocr_confidence) * 100)}%`
     : '';
 
@@ -43,7 +46,7 @@ export async function onRequestGet(context) {
 <article class="record">
 <p class="eyebrow">House Oversight — Estate records</p>
 <h1 class="bates">${esc(bates)}</h1>
-${doc.title && doc.title !== bates ? `<p class="record-title">${esc(doc.title)}</p>` : ''}
+${described ? `<p class="record-title">${esc(described)}</p>` : ''}
 </article>
 <dl>
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}

@@ -1,10 +1,10 @@
-import { cleanDocTitle, esc, htmlResponseHeaders, pageCacheKey, renderDocPage, setLabel } from '../_lib/html.js';
+import { cleanDocTitle, esc, htmlResponseHeaders, notFoundResponse, pageCacheKey, renderDocPage, setLabel } from '../_lib/html.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
   const id = parseInt(params.id, 10);
   if (!Number.isInteger(id) || String(id) !== params.id) {
-    return new Response('Not found', { status: 404 });
+    return notFoundResponse();
   }
 
   const cache = caches.default;
@@ -14,7 +14,7 @@ export async function onRequestGet(context) {
 
   const doc = await env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first();
   if (!doc) {
-    return new Response('Document not found', { status: 404 });
+    return notFoundResponse('Document not found');
   }
 
   // house-oversight-estate docs already have a canonical URL at
@@ -104,7 +104,7 @@ export async function onRequestGet(context) {
   // ocr_confidence is a 0-1 float and was rendered raw, so most documents read
   // "OCR confidence 1", which tells a reader nothing. Show it as a percentage,
   // and only where there is text for it to describe.
-  const confidencePct = preview && Number.isFinite(Number(doc.ocr_confidence))
+  const confidencePct = preview && Number(doc.ocr_confidence) > 0
     ? `${Math.round(Number(doc.ocr_confidence) * 100)}%`
     : '';
 

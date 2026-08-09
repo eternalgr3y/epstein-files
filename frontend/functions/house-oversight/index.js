@@ -1,4 +1,5 @@
 import { pageParam, renderCollectionResponse } from '../_lib/collection.js';
+import { cleanDocTitle } from '../_lib/html.js';
 
 const PAGE_SIZE = 100;
 
@@ -16,7 +17,9 @@ export async function onRequestGet({ env, request }) {
 
   const items = docs.results.map((doc) => ({
     url: `/house-oversight/${encodeURIComponent(doc.bates_number)}`,
-    title: doc.title || doc.bates_number,
+    // Raw estate titles are upload filenames ("James Patterson 3_4.pdf");
+    // clean them the way every other listing does, falling back to the Bates.
+    title: cleanDocTitle(doc.title) || doc.bates_number,
     meta: `${doc.bates_number} · ${doc.page_count} ${doc.page_count === 1 ? 'page' : 'pages'}`,
   }));
 

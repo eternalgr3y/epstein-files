@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-08-09a';
+export const PAGE_CACHE_VERSION = '2026-08-09b';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -86,6 +86,31 @@ export function htmlResponseHeaders(cacheControl = 'public, max-age=3600') {
     'content-type': 'text/html;charset=UTF-8',
     'cache-control': cacheControl,
   };
+}
+
+// A plain-text 404 is a dead end for a reader arriving from a search result
+// or a stale link, and those arrivals are this site's main traffic. Render
+// the full shell — masthead, search field, footer — so a miss is a fork in
+// the road instead of a wall. The 404 status keeps crawlers away on its own;
+// no-store keeps browsers and the SSR cache from holding onto it.
+export function notFoundResponse(heading = 'Record not found') {
+  const html = renderDocPage({
+    canonicalPath: '/',
+    title: heading,
+    description: 'This record is not in the archive.',
+    bodyHtml: `
+<article class="record">
+<p class="eyebrow">Not in the archive</p>
+<h1 class="bates">${esc(heading)}</h1>
+</article>
+<p>There is no record at this address. It may have been renumbered, or the link may be mistyped. The search above covers the full archive.</p>
+<p class="onward"><a href="/documents">Browse the document index</a></p>`,
+    spaHash: null,
+  });
+  return new Response(html, {
+    status: 404,
+    headers: htmlResponseHeaders('no-store'),
+  });
 }
 
 export function renderDocPage({
