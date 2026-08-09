@@ -122,6 +122,7 @@ ${subtitle ? `<p class="record-title">${esc(subtitle)}</p>` : ''}
 ${mediaHtml}
 <dl>
 ${doc.document_type ? `<dt>Format</dt><dd>${esc(doc.document_type)}</dd>` : ''}
+${doc.filename && doc.filename !== batesId && doc.filename !== `${batesId}.pdf` ? `<dt>File</dt><dd>${esc(doc.filename)}</dd>` : ''}
 ${doc.data_set ? `<dt>Set</dt><dd>${esc(setLabel(doc.data_set))}</dd>` : ''}
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
 <dt>Text</dt><dd>${esc(textStatus)}</dd>
