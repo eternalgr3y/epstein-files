@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-07-28j';
+export const PAGE_CACHE_VERSION = '2026-08-09a';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -72,7 +72,7 @@ export function esc(s) {
 }
 
 export const SECURITY_HEADERS = Object.freeze({
-  'content-security-policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self'; form-action 'self'; upgrade-insecure-requests",
+  'content-security-policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'sha256-bYsn7nsGP7uuXfrf/dG7upexhfvmAGHpMI8+IRI8cEs=' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self'; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; upgrade-insecure-requests",
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'SAMEORIGIN',
   'referrer-policy': 'strict-origin-when-cross-origin',
@@ -108,6 +108,7 @@ export function renderDocPage({
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
+<script>(function(){var d=document.documentElement,K='epstein-project-theme';function g(){try{var v=localStorage.getItem(K);return v==='light'||v==='dark'?v:'auto'}catch(e){return'auto'}}function a(t){t==='auto'?d.removeAttribute('data-theme'):d.setAttribute('data-theme',t);var b=document.querySelector('[data-action=theme]');if(b){var l=b.querySelector('[data-theme-label]');if(l)l.textContent=t[0].toUpperCase()+t.slice(1);b.setAttribute('aria-label','Color theme: '+t+'. Activate to change.')}}a(g());addEventListener('DOMContentLoaded',function(){a(g());var b=document.querySelector('[data-action=theme]');if(b)b.addEventListener('click',function(){var c=g(),n=c==='auto'?'light':c==='light'?'dark':'auto';try{n==='auto'?localStorage.removeItem(K):localStorage.setItem(K,n)}catch(e){}a(n)})})})();</script>
 <title>${esc(title)} | Epstein Project</title>
 <meta name="description" content="${esc(description)}">
 <link rel="canonical" href="${canonical}">
@@ -146,6 +147,11 @@ a:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(-
  padding-bottom:1rem;border-bottom:1px solid var(--rule);margin-bottom:2.5rem}
 .wordmark{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;
  text-transform:uppercase;text-decoration:none;color:var(--ink);font-weight:600}
+.wordmark span{color:var(--accent)}
+.theme-btn{font-family:var(--mono);font-size:.66rem;letter-spacing:.12em;
+ text-transform:uppercase;padding:.45rem .8rem;cursor:pointer;
+ color:var(--muted);background:none;border:1px solid var(--rule);border-radius:0}
+.theme-btn:hover{color:var(--accent);border-color:var(--accent)}
 .masthead nav{display:flex;flex-wrap:wrap;gap:1rem;margin-right:auto}
 .masthead nav a{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;
  text-transform:uppercase;text-decoration:none;color:var(--muted)}
@@ -181,7 +187,7 @@ h2{font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;
 pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);
  font-size:.82rem;line-height:1.7;background:var(--surface);
  border:1px solid var(--rule);border-left:3px solid var(--rule);
- padding:1.5rem;margin:0;max-width:62ch}
+ padding:1.5rem;margin:0;max-width:min(80ch,100%)}
 .ocr-note{font-size:.8rem;color:var(--muted);margin:0 0 .75rem;max-width:62ch}
 video,audio,img{max-width:100%}
 .item-list{padding:0;list-style:none;margin:0}
@@ -212,22 +218,33 @@ footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--rule);
  font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
  text-transform:uppercase;color:var(--dim)}
 footer a{text-decoration:none}footer a:hover{text-decoration:underline}
+/* Theme is synced with the SPA: the head script reads the same
+   localStorage key ('epstein-project-theme') and stamps data-theme on <html>
+   before first paint. It has to happen client-side — this HTML is cached in
+   the Cache API and shared across visitors, so the server cannot know the
+   reader's choice. No attribute = follow the system, matching the SPA's
+   "auto". */
 @media(prefers-color-scheme:dark){
- :root{--paper:#14181a;--surface:#1a1f22;--ink:#e7ece9;--muted:#9aa5a1;--dim:#7e8a86;
-  --rule:rgba(231,236,233,.14);--accent:#8bb1c2;--stamp:#c07a7a}
- .find button{color:#14181a}}
+ :root:not([data-theme=light]){--paper:#14181a;--surface:#1a1f22;--ink:#e7ece9;--muted:#9aa5a1;--dim:#7e8a86;
+  --rule:rgba(231,236,233,.14);--accent:#8bb1c2;--stamp:#c07a7a;color-scheme:dark}
+ :root:not([data-theme=light]) .find button{color:#14181a}}
+:root[data-theme=dark]{--paper:#14181a;--surface:#1a1f22;--ink:#e7ece9;--muted:#9aa5a1;--dim:#7e8a86;
+ --rule:rgba(231,236,233,.14);--accent:#8bb1c2;--stamp:#c07a7a;color-scheme:dark}
+:root[data-theme=dark] .find button{color:#14181a}
+:root[data-theme=light]{color-scheme:light}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <header class="masthead">
-<a class="wordmark" href="/">Epstein Project</a>
-<nav aria-label="Collections"><a href="/documents">Documents</a><a href="/images">Images</a><a href="/videos">Videos</a><a href="/recordings">Recordings</a><a href="/house-oversight">House Oversight</a></nav>
+<a class="wordmark" href="/">Epstein<span>Project</span>.org</a>
+<nav aria-label="Collections"><a href="/documents">Documents</a><a href="/house-oversight">House Oversight</a><a href="/images">Images</a><a href="/videos">Videos</a><a href="/recordings">Recordings</a><a href="/about">About</a></nav>
 <form class="find" action="/" method="get" role="search">
 <label for="q" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search the archive</label>
 <input id="q" name="q" type="search" placeholder="Search the archive" maxlength="200" autocomplete="off">
 <button type="submit">Search</button>
 </form>
+<button class="theme-btn" type="button" data-action="theme" aria-label="Color theme: auto. Activate to change.">Theme: <span data-theme-label>Auto</span></button>
 </header>
 <main class="doc-page">
 ${bodyHtml}

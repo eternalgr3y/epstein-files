@@ -553,12 +553,13 @@
                 // Estate docs open in the House Oversight scan viewer, not the
                 // generic document view.
                 const isEstate = d.data_set === 'house-oversight-estate';
+                const named = docLabel(d);
                 const titleLink = isEstate
-                    ? `<a href="/house-oversight/${esc(d.filename)}" data-action="house-oversight" data-bates="${esc(d.filename)}">${esc(d.title || d.filename)}</a>`
-                    : `<a href="/documents/${Number(d.document_id)}" data-action="doc" data-id="${Number(d.document_id)}">${esc(d.title || d.filename)}</a>`;
+                    ? `<a href="/house-oversight/${esc(d.filename)}" data-action="house-oversight" data-bates="${esc(d.filename)}">${esc(named.label)}</a>`
+                    : `<a href="/documents/${Number(d.document_id)}" data-action="doc" data-id="${Number(d.document_id)}">${esc(named.label)}</a>`;
                 html += `
                     <div class="result-card">
-                        <div class="result-title${titleClass(d.title || d.filename)}">${titleLink}</div>
+                        <div class="result-title${named.cls}">${titleLink}</div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                         ${d.snippet ? `<div class="result-snippet">${highlight(esc(d.snippet))}</div>` : ''}
                         ${sourceUrl ? `<a class="source-link" href="${esc(sourceUrl)}" target="_blank" rel="noopener">Open Source</a>` : ''}
@@ -771,9 +772,10 @@
                     d.document_id ? `DOC ${d.document_id}` : null,
                     ocrLabel(d)
                 ].filter(Boolean);
+                const named = docLabel(d);
                 html += `
                     <div class="result-card" style="cursor:pointer;">
-                        <div class="result-title${titleClass(d.title || d.filename)}"><a href="/documents/${Number(d.document_id)}" data-action="doc" data-id="${Number(d.document_id)}">${esc(d.title || d.filename)}</a></div>
+                        <div class="result-title${named.cls}"><a href="/documents/${Number(d.document_id)}" data-action="doc" data-id="${Number(d.document_id)}">${esc(named.label)}</a></div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                     </div>
                 `;
@@ -1139,8 +1141,9 @@
 
         try {
             const doc = await fetch(`${API}/documents/${id}`).then(r => r.json());
-            const docTitle = esc(doc.title || doc.filename);
-            const docTitleClass = titleClass(doc.title || doc.filename);
+            const docNamed = docLabel(doc);
+            const docTitle = esc(docNamed.label);
+            const docTitleClass = docNamed.cls;
             const docMetaParts = [
                 doc.data_set ? setLabel(doc.data_set) : null,
                 doc.document_type,
@@ -1477,4 +1480,37 @@
 
     function titleClass(s) {
         return looksLikeFilename(s) ? ' is-filename' : '';
+    }
+
+    // Mirrors cleanDocTitle in functions/_lib/html.js; keep the two in step.
+    // house-oversight-doj rows carry the original upload filename in `title`
+    // ("20250115134822946_Certificate of Service.pdf") while `filename` holds
+    // the real Bates number — strip the machinery, keep the words.
+    function cleanDocTitle(raw) {
+        const text = String(raw || '')
+            .replace(/\.[a-z0-9]{2,4}$/i, '')
+            .replace(/^\d{6,}[_-]\s*/, '')
+            .replace(/[_]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const letters = (text.match(/[a-z]/gi) || []).length;
+        if (text.length < 4 || letters < text.length * 0.4) return '';
+        return text;
+    }
+
+    // The Bates/production number is how these records are cited, so it leads
+    // and a cleaned description follows — unless the description is just the
+    // filename with the underscores swapped out, in which case one of them is
+    // noise. Returns the class alongside the label because only a bare number
+    // should keep the monospace filename treatment.
+    function docLabel(d) {
+        const bates = String(d.filename || '').replace(/\.[a-z0-9]{2,4}$/i, '');
+        const described = cleanDocTitle(d.title) || cleanDocTitle(d.filename);
+        const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (described && norm(described) !== norm(bates)) {
+            return { label: `${bates} — ${described}`, cls: '' };
+        }
+        if (described) return { label: described, cls: '' };
+        const label = bates || d.filename || (d.document_id ? `Document ${d.document_id}` : 'Document');
+        return { label, cls: ' is-filename' };
     }
