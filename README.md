@@ -23,7 +23,7 @@ Searchable archive of Epstein case documents. Live at **[epsteinproject.org](htt
 ## Quick Start (Local)
 
 ```bash
-git clone https://codeberg.org/rillow/epstein-files.git
+git clone https://github.com/eternalgr3y/epstein-files.git
 cd epstein-files
 
 # Download database

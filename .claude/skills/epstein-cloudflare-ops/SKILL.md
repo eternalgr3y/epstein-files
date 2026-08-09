@@ -123,11 +123,18 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   non-interactive shells (verified on the desktop 2026-08-09, wrangler 4.54) —
   the CLOUDFLARE_API_TOKEN requirement noted below was observed on the laptop
   before OAuth credentials existed there.
-- Desktop (Windows) specifics: repo at `D:\epstein-files` on branch
-  `production` (snapshot of codeberg main; push auth expired — the account is
-  now `thunksuck3r`, renamed from `rillow`). bun is not installed; run
-  wrangler as `node_modules\.bin\wrangler.cmd` and port bun:test assertions
-  to node when needed.
+- **Hosting moved to GitHub on 2026-08-09**: origin is
+  `https://github.com/eternalgr3y/epstein-files` (public), default branch
+  `main`. The Codeberg repo (`thunksuck3r/epstein-files`, renamed from
+  `rillow`) is abandoned — its git backend 504s on incremental fetches and
+  push auth there is expired. **On the laptop, switch once with:**
+  `git remote set-url origin https://github.com/eternalgr3y/epstein-files.git`
+  then `git pull` (its main fast-forwards; the old branch name `production`
+  from the desktop was renamed to `main` before the first push).
+- Desktop (Windows) specifics: repo at `D:\epstein-files`, git auth via
+  `gh` CLI (`gh auth setup-git`). bun is not installed; run wrangler as
+  `node_modules\.bin\wrangler.cmd` and port bun:test assertions to node
+  when needed.
 - **NEVER run wrangler under bun.** `bunx wrangler deploy` prints its version
   banner, exits **0**, and deploys nothing — silently, every time (3/3). This
   was previously recorded here as "wrangler is flaky"; it is not flaky, it is

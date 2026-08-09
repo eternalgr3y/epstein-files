@@ -113,7 +113,7 @@ For self-hosted deployment with nginx + Docker:
 ```bash
 # On server
 curl -fsSL https://get.docker.com | sh
-git clone https://codeberg.org/rillow/epstein-files.git
+git clone https://github.com/eternalgr3y/epstein-files.git
 cd epstein-files
 
 # Copy database
