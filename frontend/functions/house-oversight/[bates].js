@@ -31,7 +31,12 @@ export async function onRequestGet(context) {
   const fullText = doc.full_text || '';
   // Estate titles are upload filenames ("James Patterson 3_4.pdf"); clean them
   // the way document pages do, with the Bates leading as the citable name.
-  const described = cleanDocTitle(doc.title);
+  // Many rows carry the Bates itself as the title — cleaning turns it into
+  // "HOUSE OVERSIGHT 010477", which is not a description, just the name with
+  // the underscores swapped. Compare normalized forms and drop it.
+  const cleaned = cleanDocTitle(doc.title);
+  const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const described = cleaned && norm(cleaned) !== norm(bates) ? cleaned : '';
   const title = described ? `${bates} — ${described}` : bates;
   const preview = fullText.slice(0, 2000);
   const description = preview

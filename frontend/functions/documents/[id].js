@@ -33,10 +33,15 @@ export async function onRequestGet(context) {
   // title for the 1,657 house-oversight-doj rows, and discarding it would
   // throw away their only human description.
   const batesId = String(doc.filename || '').replace(/\.[a-z0-9]+$/i, '');
-  const describedAs = cleanDocTitle(doc.title) || cleanDocTitle(doc.filename);
+  // Court-records filenames like 2024.01.29_Notice_to_the_Court clean into
+  // the same words as the Bates line — compare normalized forms so the title
+  // is not the filename twice with different punctuation.
+  const cleaned = cleanDocTitle(doc.title) || cleanDocTitle(doc.filename);
+  const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const describedAs = cleaned && norm(cleaned) !== norm(batesId) ? cleaned : '';
   const title = describedAs
     ? `${batesId || `Document ${id}`} — ${describedAs}`
-    : (batesId || `Document ${id}`);
+    : (batesId || cleaned || `Document ${id}`);
   const preview = (text?.full_text || '').slice(0, 2000);
   const description = preview
     ? preview.replace(/\s+/g, ' ').trim().slice(0, 280)
