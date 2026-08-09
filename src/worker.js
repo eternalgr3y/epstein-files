@@ -7,8 +7,8 @@
 
 const R2_PUBLIC_URL = 'https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev';
 
-// Rate limiting: 100 requests per minute per IP
-const RATE_LIMIT = 100;
+// Rate limiting: 300 requests per minute per IP (increased for heavy browsing)
+const RATE_LIMIT = 300;
 const RATE_WINDOW = 60000; // 1 minute in ms
 const rateLimitMap = new Map();
 
@@ -129,6 +129,11 @@ export default {
       const docThumbMatch = path.match(/^\/api\/documents\/(\d+)\/thumbnail$/);
       if (docThumbMatch) {
         return await getDocumentThumbnail(parseInt(docThumbMatch[1]), env.DB, env.R2);
+      }
+
+      // Catch invalid document ID formats (non-numeric, negative, etc.)
+      if (path.match(/^\/api\/documents\/[^/]+/)) {
+        return error('Invalid document ID. Must be a positive integer.', 400);
       }
 
       // Video routes
@@ -1017,33 +1022,30 @@ async function getHouseOversightPage(bates, pageIndex, r2) {
   const imagePath = `IMAGES/${folder}/HOUSE_OVERSIGHT_${padded}.jpg`;
   const r2Key = `house-oversight/${imagePath}`;
 
-  // Serve directly from R2 binding
+  // Serve directly from R2 binding (no redirect - R2 public has no CORS headers)
   try {
     const object = await r2.get(r2Key);
     if (!object) {
-      return error('Image not found', 404);
+      console.error(`R2 not found: ${r2Key}`);
+      return error(`Image not found: ${r2Key}`, 404);
     }
 
     return new Response(object.body, {
       headers: {
         'Content-Type': 'image/jpeg',
+        'Content-Length': object.size,
         'Cache-Control': 'public, max-age=86400',
         ...corsHeaders,
       },
     });
   } catch (e) {
-    // Fallback to redirect
-    return new Response(null, {
-      status: 302,
-      headers: {
-        'Location': `${R2_PUBLIC_URL}/${r2Key}`,
-        ...corsHeaders,
-      },
-    });
+    console.error(`R2 error for ${r2Key}:`, e.message);
+    return error(`Image load failed: ${e.message}`, 500);
   }
 }
 
 async function getHouseOversightStats(db) {
+  // Simple fast queries only - no heavy JOINs
   const docCount = await db.prepare(
     "SELECT COUNT(*) as count FROM house_oversight_documents"
   ).first();
@@ -1052,41 +1054,9 @@ async function getHouseOversightStats(db) {
     "SELECT SUM(page_count) as total FROM house_oversight_documents"
   ).first();
 
-  const entityCount = await db.prepare(`
-    SELECT COUNT(DISTINCT e.id) as count
-    FROM mentions m
-    JOIN entities e ON e.id = m.entity_id
-    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
-  `).first();
-
-  const mentionCount = await db.prepare(`
-    SELECT COUNT(*) as count
-    FROM mentions m
-    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
-  `).first();
-
-  // Get top entities
-  const topEntities = await db.prepare(`
-    SELECT e.id, e.canonical_name, e.entity_type, COUNT(*) as mention_count
-    FROM mentions m
-    JOIN entities e ON e.id = m.entity_id
-    JOIN house_oversight_documents h ON h.legacy_document_id = m.document_id
-    GROUP BY e.id
-    ORDER BY mention_count DESC
-    LIMIT 20
-  `).all();
-
   return json({
     documents: docCount.count,
     pages: pageCount.total || 0,
-    entities: entityCount.count,
-    mentions: mentionCount.count,
-    description: 'House Oversight Committee Estate Documents - Litigation load files from the Epstein estate investigation',
-    top_entities: topEntities.results.map(e => ({
-      id: e.id,
-      name: e.canonical_name,
-      type: e.entity_type,
-      mentions: e.mention_count,
-    })),
+    description: 'House Oversight Committee Estate Documents',
   });
 }
