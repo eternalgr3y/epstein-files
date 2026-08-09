@@ -91,6 +91,14 @@ export async function onRequestGet(context) {
   const heading = batesId || `Document ${id}`;
   const subtitle = describedAs;
 
+  // The released file name is exact-match text for filename queries (they
+  // appear in Search Console). house-oversight-doj rows carry it in `title`
+  // while `filename` holds the Bates; plain DOJ rows carry it in `filename`,
+  // which is just the Bates plus .pdf and not worth repeating.
+  const rawFile = doc.filename && doc.filename !== batesId && doc.filename !== `${batesId}.pdf`
+    ? doc.filename
+    : (/\.[a-z0-9]{2,4}$/i.test(doc.title || '') ? doc.title : '');
+
   const SET_LABELS = {
     'court-records': 'Court records',
     'doj-disclosures': 'DOJ disclosures',
@@ -122,7 +130,7 @@ ${subtitle ? `<p class="record-title">${esc(subtitle)}</p>` : ''}
 ${mediaHtml}
 <dl>
 ${doc.document_type ? `<dt>Format</dt><dd>${esc(doc.document_type)}</dd>` : ''}
-${doc.filename && doc.filename !== batesId && doc.filename !== `${batesId}.pdf` ? `<dt>File</dt><dd>${esc(doc.filename)}</dd>` : ''}
+${rawFile ? `<dt>File</dt><dd>${esc(rawFile)}</dd>` : ''}
 ${doc.data_set ? `<dt>Set</dt><dd>${esc(setLabel(doc.data_set))}</dd>` : ''}
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
 <dt>Text</dt><dd>${esc(textStatus)}</dd>
