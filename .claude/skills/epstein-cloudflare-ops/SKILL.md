@@ -113,6 +113,21 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
 
 ## Deploys
 
+- **`wrangler pages deploy` tags the deployment with the current git branch.**
+  The project's production branch is `main`, so deploying from any other
+  branch silently produces a *preview* deployment — wrangler prints "Success"
+  and a pages.dev URL, but epsteinproject.org keeps serving the old code.
+  Pass `--branch=main` explicitly when deploying from another branch
+  (learned 2026-08-09 deploying from the desktop's `production` branch).
+- Stored OAuth from `wrangler login` DOES carry Pages deploys in
+  non-interactive shells (verified on the desktop 2026-08-09, wrangler 4.54) —
+  the CLOUDFLARE_API_TOKEN requirement noted below was observed on the laptop
+  before OAuth credentials existed there.
+- Desktop (Windows) specifics: repo at `D:\epstein-files` on branch
+  `production` (snapshot of codeberg main; push auth expired — the account is
+  now `thunksuck3r`, renamed from `rillow`). bun is not installed; run
+  wrangler as `node_modules\.bin\wrangler.cmd` and port bun:test assertions
+  to node when needed.
 - **NEVER run wrangler under bun.** `bunx wrangler deploy` prints its version
   banner, exits **0**, and deploys nothing — silently, every time (3/3). This
   was previously recorded here as "wrangler is flaky"; it is not flaky, it is
@@ -215,6 +230,13 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   pointing them all at the bare path tells Google the deeper pages are
   duplicates and undoes the crawl paths. JSON-LD `position` is absolute across
   the collection, not per page.
+- The SSR shell carries an inline theme-sync script (reads the SPA's
+  `epstein-project-theme` localStorage key, stamps `data-theme` pre-paint).
+  It is allowlisted **by sha256 hash in two places** — the function CSP in
+  `_lib/html.js` and `frontend/_headers` (the `_headers` copy is what
+  browsers actually receive). Editing that script means recomputing the hash
+  over the exact bytes between `<script>` and `</script>` and updating both,
+  or the theme silently stops applying.
 - A Pages Function **cannot reach the API through the zone**: a subrequest to
   `https://epsteinproject.org/api/...` silently returned nothing and the page
   rendered empty. Use the workers.dev origin
