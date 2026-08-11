@@ -8,7 +8,7 @@ describe('frontend navigation and heading semantics', () => {
     expect(html).toContain('aria-controls="slide-menu"');
     expect(html).toMatch(/\.menu-btn\s*\{[\s\S]*?z-index:\s*102;/);
     expect(html).toMatch(/@media \(max-width: 768px\)[\s\S]*?\.site-nav\s*\{[\s\S]*?z-index:\s*101;/);
-    expect(html).toMatch(/\/app\.js\?v=sha256-[a-f0-9]{12}/);
+    expect(html).toMatch(/\/app-[a-f0-9]{12}\.js/);
   });
 
   test('removes the closed mobile drawer from keyboard and accessibility navigation', async () => {

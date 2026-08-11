@@ -6,7 +6,7 @@ const frontendUrl = new URL('.', import.meta.url);
 describe('frontend browser hardening', () => {
   test('keeps executable JavaScript in an external file', async () => {
     const html = await Bun.file(new URL('index.html', frontendUrl)).text();
-    expect(html).toMatch(/<script src="\/app\.js\?v=[\w-]+" defer><\/script>/);
+    expect(html).toMatch(/<script src="\/app-[a-f0-9]{12}\.js" defer><\/script>/);
     expect(html).not.toMatch(/\son(?:click|error|load|change|input|submit|keydown)=/i);
   });
 
@@ -27,15 +27,18 @@ describe('frontend browser hardening', () => {
     }
   });
 
-  test('uses an app.js cache key derived from the file content', async () => {
+  test('uses a physical app path derived from the file content', async () => {
     const html = await Bun.file(new URL('index.html', frontendUrl)).text();
     const app = await Bun.file(new URL('app.js', frontendUrl)).text();
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(app)));
     const shortHash = [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 12);
-    expect(html).toContain(`/app.js?v=sha256-${shortHash}`);
+    expect(html).toContain(`/app-${shortHash}.js`);
+
+    const redirects = await Bun.file(new URL('_redirects', frontendUrl)).text();
+    expect(redirects).toContain(`/app-${shortHash}.js /app.js 200`);
 
     const headers = await Bun.file(new URL('_headers', frontendUrl)).text();
-    expect(headers).toMatch(/\/app\.js\s+Cache-Control: public, max-age=31536000, immutable/);
+    expect(headers).toMatch(/\/app-\*\.js\s+Cache-Control: public, max-age=31536000, immutable/);
   });
 
   test('keeps shared CSP restrictions and inline hashes aligned', async () => {
