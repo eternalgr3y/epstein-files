@@ -4,9 +4,11 @@
     // Navigation state
     let currentView = 'home';
     let currentHash = '';  // Track current hash to prevent redundant fetches
+    let navigationSeq = 0; // Prevent late async responses from replacing newer routes
+    let navigationAbortController = null; // Cancel obsolete API and file transfers
     let isLoading = false; // Prevent double-fetches
     let searchSeq = 0;     // Orders deferred search renders against late fetches
-    let currentPdfBlobUrl = null;
+    let dismissImageModal = null;
     let archiveStats = null;
     const documentFilters = { dataSet: '', hasText: '' };
     const searchFilters = { source: '' };
@@ -47,9 +49,24 @@
     const navOverlay = document.getElementById('nav-overlay');
     const slideMenu = document.getElementById('slide-menu');
     const menuButton = document.querySelector('.menu-btn');
+    const mobileMenuQuery = window.matchMedia('(max-width: 768px)');
     const imagesState = { items: [], index: 0, offset: 0, total: 0 };
     const themeButton = document.querySelector('[data-action="theme"]');
+    const menuBackgroundElements = [
+        document.querySelector('main'),
+        document.querySelector('footer'),
+        document.querySelector('.logo'),
+        themeButton,
+    ].filter(Boolean);
+    const modalBackgroundElements = [
+        document.querySelector('header'),
+        document.querySelector('main'),
+        document.querySelector('footer'),
+        navOverlay,
+    ].filter(Boolean);
     const THEME_KEY = 'epstein-project-theme';
+    const BASE_TITLE = 'Epstein Project — Public Archive of Jeffrey Epstein Case Records';
+    const API_TIMEOUT_MS = 20_000;
 
     function storedTheme() {
         try {
@@ -82,6 +99,21 @@
 
     applyTheme(storedTheme());
 
+    function syncMenuAccessibility(isOpen) {
+        const isClosedMobile = mobileMenuQuery.matches && !isOpen;
+        const isOpenMobile = mobileMenuQuery.matches && isOpen;
+        if (isClosedMobile && slideMenu.contains(document.activeElement)) {
+            menuButton?.focus({ preventScroll: true });
+        }
+        slideMenu.toggleAttribute('inert', isClosedMobile);
+        menuBackgroundElements.forEach(element => element.toggleAttribute('inert', isOpenMobile));
+        if (mobileMenuQuery.matches) {
+            slideMenu.setAttribute('aria-hidden', String(!isOpen));
+        } else {
+            slideMenu.removeAttribute('aria-hidden');
+        }
+    }
+
     function toggleMenu(forceOpen = null) {
         const shouldOpen = forceOpen === null ? !slideMenu.classList.contains('open') : forceOpen;
         slideMenu.classList.toggle('open', shouldOpen);
@@ -89,12 +121,91 @@
         document.body.style.overflow = shouldOpen ? 'hidden' : '';
         menuButton?.setAttribute('aria-expanded', String(shouldOpen));
         menuButton?.setAttribute('aria-label', shouldOpen ? 'Close menu' : 'Menu');
+        syncMenuAccessibility(shouldOpen);
+        if (shouldOpen && mobileMenuQuery.matches) {
+            requestAnimationFrame(() => slideMenu.querySelector('a[href]')?.focus({ preventScroll: true }));
+        }
     }
+
+    function syncMenuForViewport() {
+        const isOpen = slideMenu.classList.contains('open');
+        if (!mobileMenuQuery.matches && isOpen) {
+            toggleMenu(false);
+            return;
+        }
+        syncMenuAccessibility(isOpen);
+    }
+
+    syncMenuForViewport();
+    mobileMenuQuery.addEventListener?.('change', syncMenuForViewport);
+    window.addEventListener('resize', syncMenuForViewport);
 
     const parseDataNumber = (control, key, fallback = 0) => {
         const value = Number(control.dataset[key]);
         return Number.isFinite(value) ? value : fallback;
     };
+
+    async function readApiJson(response) {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+            const err = new Error(data?.error || `Request failed (${response.status})`);
+            err.status = response.status;
+            const retryAfter = Number(response.headers.get('Retry-After') || data?.retry_after);
+            if (Number.isFinite(retryAfter) && retryAfter > 0) err.retryAfter = retryAfter;
+            throw err;
+        }
+        return data;
+    }
+
+    function fetchForView(navigationId, input, init = {}, timeoutMs = API_TIMEOUT_MS) {
+        // Every route render owns one controller. Starting another render
+        // aborts its database requests and, importantly, any whole-file PDF
+        // transfer that would otherwise continue after the reader left.
+        const navigationSignal = navigationId === navigationSeq
+            ? navigationAbortController?.signal
+            : AbortSignal.abort();
+        const signal = timeoutMs > 0
+            ? AbortSignal.any([navigationSignal, AbortSignal.timeout(timeoutMs)])
+            : navigationSignal;
+        return fetch(input, { ...init, signal });
+    }
+
+    function describeApiError(error, fallbackTitle, { rateLimitTitle = 'Request paused' } = {}) {
+        if (error?.status === 429) {
+            const wait = Number.isFinite(error.retryAfter)
+                ? ` Try again in about ${error.retryAfter} seconds.`
+                : ' Wait a minute and try again.';
+            return {
+                title: rateLimitTitle,
+                message: `Too many requests from your network.${wait}`,
+            };
+        }
+        if (error?.name === 'TimeoutError') {
+            return {
+                title: fallbackTitle,
+                message: 'The archive server took too long to respond. Try again.',
+            };
+        }
+        if (navigator.onLine === false) {
+            return {
+                title: fallbackTitle,
+                message: 'You appear to be offline. Reconnect and try again.',
+            };
+        }
+        if (error?.status >= 500) {
+            return {
+                title: fallbackTitle,
+                message: 'The archive server is temporarily unavailable. Try again shortly.',
+            };
+        }
+        if (error?.status >= 400 && error?.status < 500 && error?.message) {
+            return { title: fallbackTitle, message: error.message };
+        }
+        return {
+            title: fallbackTitle,
+            message: 'Unable to reach the archive server. Check your connection and try again.',
+        };
+    }
 
     const pageLabel = value => {
         const pages = Number(value);
@@ -132,6 +243,24 @@
 
         if (video.readyState >= HTMLMediaElement.HAVE_METADATA) hide();
         else show('Loading video…');
+    }
+
+    function initMediaFailureState() {
+        const media = resultsView.querySelector('[data-media-file]');
+        const errorState = resultsView.querySelector('[data-media-error]');
+        if (!media || !errorState) return;
+
+        const showFailure = () => {
+            errorState.hidden = false;
+            const shell = media.closest('.video-shell');
+            const buffering = shell?.querySelector('.video-buffering');
+            shell?.classList.remove('is-buffering');
+            shell?.setAttribute('aria-busy', 'false');
+            buffering?.setAttribute('aria-hidden', 'true');
+        };
+
+        media.addEventListener('error', showFailure);
+        media.querySelector('source')?.addEventListener('error', showFailure);
     }
 
     async function sharePage(control) {
@@ -189,7 +318,19 @@
         if (!handler) return;
         event.preventDefault();
         handler(control);
-        if (!['toggle-menu', 'theme'].includes(control.dataset.action)) toggleMenu(false);
+        if (!['toggle-menu', 'theme'].includes(control.dataset.action)
+            && slideMenu.classList.contains('open')) {
+            toggleMenu(false);
+        }
+    });
+
+    document.addEventListener('submit', (event) => {
+        const form = event.target.closest('[data-search-form]');
+        if (!form) return;
+        event.preventDefault();
+        const input = form.querySelector('[data-results-search]');
+        searchInput.value = input?.value || '';
+        doSearch();
     });
 
     document.addEventListener('keydown', (event) => {
@@ -203,13 +344,42 @@
         const image = event.target;
         if (!(image instanceof HTMLImageElement)) return;
         image.classList.add('image-load-failed');
-        image.closest('.image-card, .video-card, .oversight-card')?.classList.add('is-broken');
+        const preview = image.closest('.image-card, .video-card, .oversight-card, .oversight-page');
+        if (preview) {
+            preview.classList.add('is-broken');
+            image.setAttribute('aria-hidden', 'true');
+            const fallback = preview.querySelector('[data-preview-error]');
+            if (fallback) fallback.hidden = false;
+        }
     }, true);
 
-    // Escape key closes mobile menu
+    // Keep keyboard focus inside the open mobile navigation. The menu button
+    // remains in the cycle so there is always an obvious close control.
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && slideMenu.classList.contains('open')) {
+        if (!mobileMenuQuery.matches || !slideMenu.classList.contains('open')) return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
             toggleMenu(false);
+            return;
+        }
+        if (e.key === 'Tab') {
+            const focusable = [
+                menuButton,
+                ...slideMenu.querySelectorAll('a[href], button:not([disabled])'),
+            ].filter(Boolean);
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            } else if (!focusable.includes(document.activeElement)) {
+                e.preventDefault();
+                (e.shiftKey ? last : first).focus();
+            }
         }
     });
 
@@ -248,7 +418,7 @@
             doSearch();
         } else {
             currentHash = location.hash.slice(1) || 'home';
-            handleHash();
+            handleHash(true);
         }
 
         searchInput.addEventListener('keydown', e => {
@@ -296,55 +466,106 @@
         });
     }
 
-    function handleHash() {
+    function decodeHashPart(value) {
+        try {
+            return decodeURIComponent(value);
+        } catch {
+            return null;
+        }
+    }
+
+    function parseHashInteger(value, { defaultValue = null, min = 0, max = 1_000_000 } = {}) {
+        if ((value === undefined || value === '') && defaultValue !== null) return defaultValue;
+        if (!/^\d+$/.test(value || '')) return null;
+        const parsed = Number(value);
+        return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
+    }
+
+    function showRouteNotFound() {
+        setView('not-found');
+        resultsView.innerHTML = `
+            <div class="error-state">
+                <h1 class="page-title">Page not found</h1>
+                <p>This archive link is incomplete or malformed.</p>
+                <button class="btn" data-action="home">Return to the archive</button>
+            </div>
+        `;
+        announceView('Page not found', 'The requested archive page was not found.');
+    }
+
+    function showViewError(title, message, retryHtml = '') {
+        resultsView.innerHTML = `
+            <div class="error-state">
+                <h1 class="page-title">${esc(title)}</h1>
+                <p>${esc(message)}</p>
+                ${retryHtml}
+            </div>
+        `;
+        announceView(title, message);
+    }
+
+    function handleHash(initialLoad = false) {
         const hash = location.hash.slice(1);
-        if (!hash || hash === 'home') { goHome(true); return; }
+        if (!hash || hash === 'home') { goHome(true, !initialLoad); return; }
 
         const [type, ...rest] = hash.split('/');
-        const param = rest.join('/');
 
-        if (type === 'search' && rest[0]) {
-            searchInput.value = decodeURIComponent(rest[0]);
-            searchFilters.source = SOURCE_OPTIONS.some(o => o.value === rest[1]) ? rest[1] : '';
+        if (type === 'search' && rest[0] && rest.length <= 3) {
+            const query = decodeHashPart(rest[0]);
+            const validSource = !rest[1] || rest[1] === '-' || SOURCE_OPTIONS.some(o => o.value === rest[1]);
             // rest[2] is the offset; '-' is the placeholder for "no source
             // filter". Older links without either segment still work.
-            const searchOffset = /^\d+$/.test(rest[2] || '') ? parseInt(rest[2], 10) : 0;
+            const searchOffset = parseHashInteger(rest[2], { defaultValue: 0 });
+            if (query === null || !validSource || searchOffset === null) { showRouteNotFound(); return; }
+            searchInput.value = query;
+            searchFilters.source = SOURCE_OPTIONS.some(o => o.value === rest[1]) ? rest[1] : '';
             doSearch(true, searchOffset); // true = don't pushState, we're already at this hash
-        } else if (type === 'images') {
-            const parsedOffset = rest[0] ? parseInt(rest[0]) : 0;
-            const parsedIndex = rest[1] !== undefined ? parseInt(rest[1]) : null;
-            showImages(
-                Number.isFinite(parsedOffset) ? parsedOffset : 0,
-                true,
-                Number.isFinite(parsedIndex) ? parsedIndex : null,
-            );
-        } else if (type === 'videos') {
-            const parsedOffset = rest[0] ? parseInt(rest[0]) : 0;
-            showVideos(Number.isFinite(parsedOffset) ? parsedOffset : 0, true);
-        } else if (type === 'maxwell') {
+        } else if (type === 'images' && rest.length <= 2) {
+            const offset = parseHashInteger(rest[0], { defaultValue: 0 });
+            const index = rest[1] === undefined ? null : parseHashInteger(rest[1]);
+            if (offset === null || (rest[1] !== undefined && index === null)) { showRouteNotFound(); return; }
+            showImages(offset, true, index);
+        } else if (type === 'videos' && rest.length <= 1) {
+            const offset = parseHashInteger(rest[0], { defaultValue: 0 });
+            if (offset === null) { showRouteNotFound(); return; }
+            showVideos(offset, true);
+        } else if (type === 'maxwell' && rest.length === 0) {
             showMaxwellTapes(true);
-        } else if (type === 'documents') {
-            const parsedOffset = rest[0] ? parseInt(rest[0]) : 0;
-            documentFilters.dataSet = rest[1] ? decodeURIComponent(rest[1]) : '';
-            documentFilters.hasText = ['0', '1'].includes(rest[2]) ? rest[2] : '';
-            showDocuments(Number.isFinite(parsedOffset) ? parsedOffset : 0, true);
+        } else if (type === 'documents' && rest.length <= 3) {
+            const offset = parseHashInteger(rest[0], { defaultValue: 0 });
+            const dataSet = rest[1] ? decodeHashPart(rest[1]) : '';
+            const hasText = rest[2] || '';
+            if (offset === null || dataSet === null || !['', '0', '1'].includes(hasText)) { showRouteNotFound(); return; }
+            documentFilters.dataSet = dataSet;
+            documentFilters.hasText = hasText;
+            showDocuments(offset, true);
         } else if (type === 'house-oversight') {
-            if (rest[0] === 'page') {
-                const parsedOffset = rest[1] ? parseInt(rest[1]) : 0;
-                showHouseOversight(Number.isFinite(parsedOffset) ? parsedOffset : 0, true);
-            } else if (param) {
-                viewHouseOversightDoc(decodeURIComponent(param), true);
-            } else {
+            if (rest.length === 0) {
                 showHouseOversight(0, true);
+            } else if (rest[0] === 'page' && rest.length <= 2) {
+                const offset = parseHashInteger(rest[1], { defaultValue: 0 });
+                if (offset === null) { showRouteNotFound(); return; }
+                showHouseOversight(offset, true);
+            } else if (rest.length === 1) {
+                const bates = decodeHashPart(rest[0]);
+                if (!bates || !/^HOUSE_OVERSIGHT_\d+$/.test(bates)) { showRouteNotFound(); return; }
+                viewHouseOversightDoc(bates, true);
+            } else {
+                showRouteNotFound();
             }
-        } else if (type === 'doc' && param) {
-            viewDoc(parseInt(param), true);
-        } else if (type === 'entity' && param) {
-            const id = parseInt(rest[0]);
-            const offset = rest[1] ? parseInt(rest[1]) : 0;
-            viewEntity(id, Number.isFinite(offset) ? offset : 0, true);
-        } else if (type === 'about') {
+        } else if (type === 'doc' && rest.length === 1) {
+            const id = parseHashInteger(rest[0], { min: 1, max: Number.MAX_SAFE_INTEGER });
+            if (id === null) { showRouteNotFound(); return; }
+            viewDoc(id, true);
+        } else if (type === 'entity' && rest.length >= 1 && rest.length <= 2) {
+            const id = parseHashInteger(rest[0], { min: 1, max: Number.MAX_SAFE_INTEGER });
+            const offset = parseHashInteger(rest[1], { defaultValue: 0 });
+            if (id === null || offset === null) { showRouteNotFound(); return; }
+            viewEntity(id, offset, true);
+        } else if (type === 'about' && rest.length === 0) {
             showAbout(true);
+        } else {
+            showRouteNotFound();
         }
     }
 
@@ -362,7 +583,7 @@
     function announceView(pageTitle, message) {
         document.title = pageTitle
             ? `${pageTitle} | Epstein Project`
-            : 'Epstein Project — Public Archive of Jeffrey Epstein Case Records';
+            : BASE_TITLE;
         const region = document.getElementById('sr-announce');
         if (region) region.textContent = message || pageTitle || '';
         // Move focus to the new heading so the next Tab continues from the
@@ -375,13 +596,23 @@
     }
 
     function setView(view) {
+        navigationAbortController?.abort();
+        navigationAbortController = new AbortController();
+        navigationSeq += 1;
+        if (view !== 'images') {
+            dismissImageModal?.({ syncUrl: false, restoreFocus: false });
+        }
+        // A search may finish after the reader has already selected another
+        // collection. Invalidate it here so the stale response cannot replace
+        // the newer view, and so a later search is not blocked as "loading".
+        if (view !== 'search' && isLoading) {
+            searchSeq += 1;
+            isLoading = false;
+        }
         currentView = view;
         homeView.style.display = view === 'home' ? 'block' : 'none';
         resultsView.style.display = view === 'home' ? 'none' : 'block';
         resultsView.classList.toggle('active', view !== 'home');
-        if (view !== 'doc') {
-            revokePdfBlobUrl();
-        }
 
         // Update nav active state
         document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
@@ -391,24 +622,33 @@
         else if (view === 'documents') document.getElementById('nav-docs').classList.add('active');
         else if (view === 'house-oversight') document.getElementById('nav-oversight').classList.add('active');
         else if (view === 'about') document.getElementById('nav-about').classList.add('active');
+
+        return navigationSeq;
     }
 
-    function goHome(skipPush = false) {
+    function isCurrentView(view, navigationId) {
+        return currentView === view && navigationSeq === navigationId;
+    }
+
+    function goHome(skipPush = false, moveFocus = true) {
         saveScrollPosition();
         setView('home');
         searchInput.value = '';
         currentHash = 'home';
+        document.title = BASE_TITLE;
+        const region = document.getElementById('sr-announce');
+        if (region) region.textContent = 'Archive home.';
+        if (moveFocus) {
+            const heading = homeView.querySelector('h1');
+            if (heading) {
+                heading.setAttribute('tabindex', '-1');
+                heading.focus({ preventScroll: true });
+            }
+        }
         if (!skipPush && location.hash) {
             history.pushState(null, '', location.pathname);
         }
         window.scrollTo(0, 0);
-    }
-
-    function revokePdfBlobUrl() {
-        if (currentPdfBlobUrl) {
-            URL.revokeObjectURL(currentPdfBlobUrl);
-            currentPdfBlobUrl = null;
-        }
     }
 
     // Search was the only paged view with no pagination: a hard limit=50 with
@@ -416,13 +656,26 @@
     // accepted offset, so ~92% of matches were simply unreachable.
     const SEARCH_PAGE = 50;
 
+    function renderSearchForm(query) {
+        return `
+            <form class="search-container results-search" data-search-form>
+                <label class="sr-only" for="results-q">Search the archive</label>
+                <div class="search-box">
+                    <input type="search" id="results-q" data-results-search value="${esc(query)}"
+                        placeholder="Search names, places, case files" maxlength="200">
+                    <button class="search-btn" type="submit">Search</button>
+                </div>
+            </form>
+        `;
+    }
+
     function doSearch(skipPush = false, offset = 0) {
         const q = searchInput.value.trim();
         if (!q) return;
         if (isLoading) return; // Prevent double-fetch
         saveScrollPosition();
 
-        setView('search');
+        const navigationId = setView('search');
         isLoading = true;
 
         // Swapping in the loading state tears down the previous result set (up
@@ -447,30 +700,14 @@
             history.pushState(null, '', `#${newHash}`);
         }
 
-        // An error body is still valid JSON, so .json() resolved and .catch()
-        // never fired: a 400 (bad query syntax) or a 429 (rate limited) left
-        // docs.results undefined and the view rendered "No results found."
-        // On an archive of primary sources that is a factual claim the
-        // documents do not exist -- the worst thing this UI can say when it
-        // never actually looked. Fail loudly instead.
-        const readJson = async (response) => {
-            const data = await response.json().catch(() => null);
-            if (!response.ok) {
-                const err = new Error(data?.error || `Request failed (${response.status})`);
-                err.status = response.status;
-                throw err;
-            }
-            return data;
-        };
-
         const sourceParam = searchFilters.source ? `&source=${encodeURIComponent(searchFilters.source)}` : '';
         Promise.all([
-            fetch(`${API}/search?q=${encodeURIComponent(q)}&limit=${SEARCH_PAGE}&offset=${offset}${sourceParam}`).then(readJson),
-            fetch(`${API}/entities/search`, {
+            fetchForView(navigationId, `${API}/search?q=${encodeURIComponent(q)}&limit=${SEARCH_PAGE}&offset=${offset}${sourceParam}`).then(readApiJson),
+            fetchForView(navigationId, `${API}/entities/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query: q, limit: 5 })
-            }).then(readJson)
+            }).then(readApiJson)
         ]).then(([docs, ents]) => {
             if (seq !== searchSeq) return; // superseded by a newer search
             renderSearchResults(q, docs, ents, offset);
@@ -479,22 +716,16 @@
             // Say what actually happened. A rejected query and a rate limit
             // need different actions from the reader, and neither is "no
             // results".
-            const rateLimited = err?.status === 429;
-            const detail = rateLimited
-                ? 'Too many searches from your network. Wait a minute and try again.'
-                : err?.status >= 400 && err?.status < 500 && err?.message
-                    ? esc(err.message)
-                    : 'Unable to reach the server. Check your connection and try again.';
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>${rateLimited ? 'Search paused' : 'Search failed'}</h3>
-                    <p>${detail}</p>
-                    <p class="result-meta">Your search terms are still in the box above.</p>
-                    <button class="btn" data-action="search">Try again</button>
-                </div>
-            `;
+            const failure = describeApiError(err, 'Search failed', { rateLimitTitle: 'Search paused' });
+            showViewError(
+                failure.title,
+                failure.message,
+                `<p class="result-meta">Edit the query below or try it again.</p>
+                ${renderSearchForm(q)}
+                <button class="btn" data-action="search">Try again</button>`,
+            );
         }).finally(() => {
-            isLoading = false;
+            if (seq === searchSeq) isLoading = false;
         });
     }
 
@@ -504,6 +735,7 @@
             <div class="section-kicker">Search Results</div>
             <h1 class="page-title">Search Results</h1>
             <div class="results-intro">Results for “${esc(query)}”.</div>
+            ${renderSearchForm(query)}
             <div class="filter-bar" aria-label="Search filters">
                 <label>Source
                     <select id="search-source">
@@ -568,7 +800,15 @@
             });
         }
 
-        if (!ents.results?.length && !docs.results?.length) {
+        if (!docs.results?.length && offset > 0) {
+            html += `
+                <div class="empty">
+                    <h2>No documents on this results page</h2>
+                    <p>This page is beyond the available document matches.</p>
+                    <button class="btn" data-action="search-page" data-offset="0">Return to the first results page</button>
+                </div>
+            `;
+        } else if (!ents.results?.length && !docs.results?.length) {
             html += '<div class="empty">No results found.</div>';
         }
 
@@ -602,13 +842,14 @@
 
     // === VIDEOS ===
     async function showVideos(offset = 0, skipPush = false) {
-        setView('videos');
+        const navigationId = setView('videos');
         resultsView.innerHTML = '<div class="loading">Loading videos</div>';
         currentHash = `videos/${offset}`;
         if (!skipPush) history.pushState(null, '', `#${currentHash}`);
 
         try {
-            const r = await fetch(`${API}/videos?limit=48&offset=${offset}`).then(r => r.json());
+            const r = await fetchForView(navigationId, `${API}/videos?limit=48&offset=${offset}`).then(readApiJson);
+            if (!isCurrentView('videos', navigationId)) return;
 
             let html = `
                 <button class="back-btn" data-action="home">← Back</button>
@@ -622,6 +863,7 @@
                     ${r.videos.map(v => `
                         <div class="video-card" data-action="doc" data-id="${Number(v.id)}" role="button" tabindex="0">
                             <img src="${API}/videos/${v.id}/thumb" loading="lazy" alt="${esc(v.title)}">
+                            <span class="preview-error" data-preview-error hidden>Preview unavailable</span>
                             <div class="info">
                                 <h2>${esc(v.filename)}</h2>
                                 ${v.data_set ? `<span class="meta-pill">${esc(setLabel(v.data_set))}</span>` : ''}
@@ -629,33 +871,41 @@
                         </div>
                     `).join('')}
                 </div>
+                ${!r.videos.length ? offset > 0 ? `
+                    <div class="empty">
+                        <h2>No videos on this page</h2>
+                        <p>This page is beyond the available videos.</p>
+                        <button class="btn" data-action="videos" data-offset="0">Return to the first page</button>
+                    </div>
+                ` : '<div class="empty"><h2>No videos available</h2></div>' : ''}
                 <div class="pagination">
                     ${offset > 0 ? `<button class="btn" data-action="videos" data-offset="${offset - 48}">← Previous</button>` : ''}
                     ${r.videos.length === 48 ? `<button class="btn" data-action="videos" data-offset="${offset + 48}">Next →</button>` : ''}
                 </div>
             `;
             resultsView.innerHTML = html;
-            announceView('Video evidence', `${Number(r.total || 0).toLocaleString()} videos in this collection.`);
+            announceView('Video Evidence', `${Number(r.total || 0).toLocaleString()} videos in this collection.`);
         } catch (e) {
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>Failed to load videos</h3>
-                    <p>Check your connection and try again.</p>
-                    <button class="btn" data-action="videos" data-offset="${offset}">Retry</button>
-                </div>
-            `;
+            if (!isCurrentView('videos', navigationId)) return;
+            const failure = describeApiError(e, 'Failed to load videos');
+            showViewError(
+                failure.title,
+                failure.message,
+                `<button class="btn" data-action="videos" data-offset="${offset}">Retry</button>`,
+            );
         }
     }
 
     // === MAXWELL TAPES ===
     async function showMaxwellTapes(skipPush = false) {
-        setView('maxwell');
+        const navigationId = setView('maxwell');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
         currentHash = 'maxwell';
         if (!skipPush && location.hash !== '#maxwell') history.pushState(null, '', '#maxwell');
 
         try {
-            const r = await fetch(`${API}/maxwell-tapes`).then(r => r.json());
+            const r = await fetchForView(navigationId, `${API}/maxwell-tapes`).then(readApiJson);
+            if (!isCurrentView('maxwell', navigationId)) return;
             const day1 = r.tapes.filter(t => t.day === 'Day 1');
             const day2 = r.tapes.filter(t => t.day === 'Day 2');
 
@@ -691,20 +941,21 @@
                 </div>
             `;
             resultsView.innerHTML = html;
+            announceView('Maxwell Interview Recordings', `${Number(r.total || 0).toLocaleString()} recordings in this collection.`);
         } catch (e) {
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>Failed to load Maxwell tapes</h3>
-                    <p>Check your connection and try again.</p>
-                    <button class="btn" data-action="maxwell">Retry</button>
-                </div>
-            `;
+            if (!isCurrentView('maxwell', navigationId)) return;
+            const failure = describeApiError(e, 'Failed to load Maxwell recordings');
+            showViewError(
+                failure.title,
+                failure.message,
+                '<button class="btn" data-action="maxwell">Retry</button>',
+            );
         }
     }
 
     // === DOCUMENTS ===
     async function showDocuments(offset = 0, skipPush = false) {
-        setView('documents');
+        const navigationId = setView('documents');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
         const filterPath = [
             `documents/${offset}`,
@@ -721,13 +972,27 @@
             else if (documentFilters.dataSet) query.set('data_set', documentFilters.dataSet);
             if (documentFilters.hasText) query.set('has_text', documentFilters.hasText);
             const [r, stats] = await Promise.all([
-                fetch(`${API}/browse?${query}`).then(r => r.json()),
-                archiveStats ? Promise.resolve(archiveStats) : fetch(`${API}/stats`).then(r => r.json()),
+                fetchForView(navigationId, `${API}/browse?${query}`).then(readApiJson),
+                archiveStats ? Promise.resolve(archiveStats) : fetchForView(navigationId, `${API}/stats`).then(readApiJson),
             ]);
+            if (!isCurrentView('documents', navigationId)) return;
             archiveStats = stats;
             const setCounts = new Map((stats.data_sets || [])
                 .filter(item => item.name && item.name !== 'house-oversight-estate')
                 .map(item => [item.name, Number(item.count)]));
+            const validDataSet = !documentFilters.dataSet
+                || documentFilters.dataSet === 'source:doj-release'
+                || setCounts.has(documentFilters.dataSet);
+            if (!validDataSet) {
+                documentFilters.dataSet = '';
+                documentFilters.hasText = '';
+                showViewError(
+                    'Dataset not found',
+                    'The selected document source set does not exist or is no longer available.',
+                    '<button class="btn" data-action="documents" data-offset="0">Browse all document sets</button>',
+                );
+                return;
+            }
             const dojSets = DOJ_RELEASE_SETS.filter(name => setCounts.has(name));
             const dojTotal = dojSets.reduce((sum, name) => sum + setCounts.get(name), 0);
             const otherSets = [...setCounts.keys()]
@@ -738,7 +1003,7 @@
             let html = `
                 <button class="back-btn" data-action="home">← Back</button>
                 <div class="section-kicker">Archive</div>
-                <div class="results-intro">DOJ document set.</div>
+                <div class="results-intro">Public records from all archive sources.</div>
                 <div class="filter-bar" aria-label="Document filters">
                     <label>Source set
                         <select id="documents-data-set">
@@ -781,6 +1046,21 @@
                 `;
             });
 
+            if (!r.results.length) {
+                html += offset > 0 ? `
+                    <div class="empty">
+                        <h2>No documents on this page</h2>
+                        <p>This page is beyond the available results for the selected filters.</p>
+                        <button class="btn" data-action="documents" data-offset="0">Return to the first page</button>
+                    </div>
+                ` : `
+                    <div class="empty">
+                        <h2>No matching documents</h2>
+                        <p>No documents match the selected filters.</p>
+                    </div>
+                `;
+            }
+
             html += `
                 <div class="pagination">
                     ${offset > 0 ? `<button class="btn" data-action="documents" data-offset="${offset - 50}">← Previous</button>` : ''}
@@ -791,34 +1071,33 @@
             resultsView.innerHTML = html;
             announceView('Documents', `${Number(r.total || 0).toLocaleString()} documents in this collection.`);
         } catch (e) {
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>Failed to load documents</h3>
-                    <p>Check your connection and try again.</p>
-                    <button class="btn" data-action="documents" data-offset="${offset}">Retry</button>
-                </div>
-            `;
+            if (!isCurrentView('documents', navigationId)) return;
+            const failure = describeApiError(e, 'Failed to load documents');
+            showViewError(
+                failure.title,
+                failure.message,
+                `<button class="btn" data-action="documents" data-offset="${offset}">Retry</button>`,
+            );
         }
     }
 
     // === HOUSE OVERSIGHT ===
     async function showHouseOversight(offset = 0, skipPush = false) {
-        setView('house-oversight');
+        const navigationId = setView('house-oversight');
         resultsView.innerHTML = '<div class="loading">Loading House Oversight documents</div>';
         currentHash = `house-oversight/page/${offset}`;
         if (!skipPush) history.pushState(null, '', `#${currentHash}`);
 
         try {
-            const statsPromise = fetch(`${API}/house-oversight/stats`)
-                .then(r => r.ok ? r.json() : null)
+            const statsPromise = fetchForView(navigationId, `${API}/house-oversight/stats`)
+                .then(readApiJson)
                 .catch(() => null);
-            const docsResponse = await fetch(`${API}/house-oversight/documents?limit=36&offset=${offset}`);
-            if (!docsResponse.ok) throw new Error('House Oversight documents request failed');
-            const docs = await docsResponse.json();
+            const docs = await fetchForView(navigationId, `${API}/house-oversight/documents?limit=36&offset=${offset}`).then(readApiJson);
             const stats = await Promise.race([
                 statsPromise,
                 new Promise(resolve => setTimeout(() => resolve(null), 750)),
             ]);
+            if (!isCurrentView('house-oversight', navigationId)) return;
             const totalDocs = docs.total || 0;
             const totalPages = stats?.pages || null;
             const pageSize = docs.documents?.length || 36;
@@ -838,6 +1117,7 @@
                     ${docs.documents.map(d => `
                         <a class="oversight-card" href="/house-oversight/${encodeURIComponent(d.bates)}" data-action="house-oversight" data-bates="${esc(d.bates)}">
                             <img src="${API_BASE}${d.thumbnail}" alt="${esc(d.title || d.bates)} thumbnail" loading="lazy">
+                            <span class="preview-error" data-preview-error hidden>Preview unavailable</span>
                             <div class="info">
                                 <span class="meta-pill">${pageLabel(d.page_count)}</span>
                                 <h2>${esc(d.title || d.bates)}</h2>
@@ -846,6 +1126,13 @@
                         </a>
                     `).join('')}
                 </div>
+                ${!docs.documents.length ? offset > 0 ? `
+                    <div class="empty">
+                        <h2>No estate records on this page</h2>
+                        <p>This page is beyond the available House Oversight records.</p>
+                        <button class="btn" data-action="house-oversight" data-offset="0">Return to the first page</button>
+                    </div>
+                ` : '<div class="empty"><h2>No estate records available</h2></div>' : ''}
             `;
 
             html += `
@@ -859,6 +1146,7 @@
             announceView('House Oversight estate records', `${totalDocs.toLocaleString()} records in this collection.`);
             if (!totalPages) {
                 statsPromise.then(lateStats => {
+                    if (!isCurrentView('house-oversight', navigationId)) return;
                     const pageTotal = resultsView.querySelector('[data-oversight-page-total]');
                     if (pageTotal && lateStats?.pages) {
                         pageTotal.textContent = `, ${Number(lateStats.pages).toLocaleString()} page scans`;
@@ -866,25 +1154,26 @@
                 });
             }
         } catch (e) {
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>Failed to load House Oversight documents</h3>
-                    <p>Check your connection and try again.</p>
-                    <button class="btn" data-action="house-oversight" data-offset="${offset}">Retry</button>
-                </div>
-            `;
+            if (!isCurrentView('house-oversight', navigationId)) return;
+            const failure = describeApiError(e, 'Failed to load House Oversight documents');
+            showViewError(
+                failure.title,
+                failure.message,
+                `<button class="btn" data-action="house-oversight" data-offset="${offset}">Retry</button>`,
+            );
         }
     }
 
     async function viewHouseOversightDoc(bates, skipPush = false) {
-        setView('house-oversight');
+        const navigationId = setView('house-oversight');
         resultsView.innerHTML = '<div class="loading">Loading document</div>';
         const encodedBates = encodeURIComponent(bates);
         currentHash = `house-oversight/${encodedBates}`;
         if (!skipPush) history.pushState(null, '', `#house-oversight/${encodedBates}`);
 
         try {
-            const doc = await fetch(`${API}/house-oversight/documents/${bates}`).then(r => r.json());
+            const doc = await fetchForView(navigationId, `${API}/house-oversight/documents/${encodedBates}`).then(readApiJson);
+            if (!isCurrentView('house-oversight', navigationId)) return;
 
             let html = `
                 <button class="back-btn" data-action="house-oversight">← Back to House Oversight</button>
@@ -904,8 +1193,9 @@
             doc.pages.forEach((p, i) => {
                 const pageUrl = `${API_BASE}${p.url}`;
                 html += `
-                    <a href="${pageUrl}" target="_blank" aria-label="Open page ${i + 1}">
+                    <a class="oversight-page" href="${pageUrl}" target="_blank" aria-label="Open page ${i + 1}">
                         <img src="${pageUrl}" alt="Page ${i + 1}" loading="lazy">
+                        <span class="preview-error" data-preview-error hidden>Page image unavailable</span>
                     </a>
                 `;
             });
@@ -932,31 +1222,38 @@
             const pages = pageLabel(doc.page_count);
             announceView(docName, pages ? `${docName}. ${pages}.` : `${docName}.`);
         } catch (e) {
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>Failed to load document</h3>
-                    <p>Check your connection and try again.</p>
-                    <button class="btn" data-action="house-oversight" data-bates="${esc(bates)}">Retry</button>
-                </div>
-            `;
+            if (!isCurrentView('house-oversight', navigationId)) return;
+            const notFound = e?.status === 404;
+            const failure = describeApiError(e, 'Failed to load House Oversight document');
+            showViewError(
+                notFound ? 'House Oversight document not found' : failure.title,
+                notFound ? 'There is no House Oversight record at this address.' : failure.message,
+                notFound
+                    ? '<button class="btn" data-action="house-oversight">Browse House Oversight records</button>'
+                    : `<button class="btn" data-action="house-oversight" data-bates="${esc(bates)}">Retry</button>`,
+            );
         }
     }
 
     // === IMAGES ===
     async function showImages(offset = 0, skipPush = false, openIndex = null) {
-        setView('images');
+        dismissImageModal?.({ syncUrl: false, restoreFocus: false });
+        const navigationId = setView('images');
         resultsView.innerHTML = '<div class="loading">Loading images</div>';
         currentHash = `images/${offset}`;
         if (!skipPush) history.pushState(null, '', `#${currentHash}`);
 
         try {
-            const r = await fetch(`${API}/images?limit=60&offset=${offset}`).then(r => r.json());
+            const r = await fetchForView(navigationId, `${API}/images?limit=60&offset=${offset}`).then(readApiJson);
+            if (!isCurrentView('images', navigationId)) return;
 
             if (r.status === 'extraction in progress') {
                 resultsView.innerHTML = `
                     <button class="back-btn" data-action="home">← Back</button>
+                    <h1 class="page-title">Images</h1>
                     <div class="empty">Image extraction in progress. Check back soon!</div>
                 `;
+                announceView('Images', 'Image extraction is in progress.');
                 return;
             }
 
@@ -979,25 +1276,33 @@
                 <div id="images-grid" class="image-grid">
                     ${imagesState.items.map((img, idx) => renderImageCard(img, idx)).join('')}
                 </div>
+                ${!imagesState.items.length ? offset > 0 ? `
+                    <div class="empty">
+                        <h2>No images on this page</h2>
+                        <p>This page is beyond the available extracted images.</p>
+                        <button class="btn" data-action="images" data-offset="0">Return to the first page</button>
+                    </div>
+                ` : '<div class="empty"><h2>No extracted images available</h2></div>' : ''}
                 <div class="pagination">
                     ${offset > 0 ? `<button class="btn" data-action="images" data-offset="${offset - 60}">← Previous</button>` : ''}
-                    <span style="color: var(--text-dim); padding: 0.5rem 1rem;">${Math.floor(offset / 60) + 1} / ${Math.ceil(r.total / 60)}</span>
+                    <span style="color: var(--text-dim); padding: 0.5rem 1rem;">${Math.floor(offset / 60) + 1} / ${Math.max(1, Math.ceil(r.total / 60))}</span>
                     ${r.images.length === 60 ? `<button class="btn" data-action="images" data-offset="${offset + 60}">Next →</button>` : ''}
                 </div>
             `;
             resultsView.innerHTML = html;
             initLazyImages();
+            announceView('Images', `${Number(r.total || 0).toLocaleString()} images in this collection.`);
             if (openIndex !== null && openIndex >= 0 && openIndex < imagesState.items.length) {
                 openImageModal(openIndex, true);
             }
         } catch (e) {
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>Failed to load images</h3>
-                    <p>Check your connection and try again.</p>
-                    <button class="btn" data-action="images" data-offset="${offset}">Retry</button>
-                </div>
-            `;
+            if (!isCurrentView('images', navigationId)) return;
+            const failure = describeApiError(e, 'Failed to load images');
+            showViewError(
+                failure.title,
+                failure.message,
+                `<button class="btn" data-action="images" data-offset="${offset}">Retry</button>`,
+            );
         }
     }
 
@@ -1006,6 +1311,7 @@
         return `
             <div class="image-card" data-action="image" data-index="${idx}" role="button" tabindex="0">
                 <img data-src="${esc(url)}" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="Page ${Number(img.page) + 1} from document ${Number(img.docId)}" class="lazy-img">
+                <span class="preview-error" data-preview-error hidden>Preview unavailable</span>
                 <div class="image-overlay">
                     <span>Doc #${Number(img.docId)} · Page ${Number(img.page) + 1}</span>
                 </div>
@@ -1014,12 +1320,13 @@
     }
 
     function openImageModal(index, skipPush = false) {
-        document.querySelector('.image-modal')?.remove();
+        dismissImageModal?.({ syncUrl: false, restoreFocus: false });
         imagesState.index = index;
         const initialItem = imagesState.items[index];
         if (!initialItem) return;
         const initialImageUrl = imageApiUrl(initialItem.filename);
         const previousFocus = document.activeElement;
+        const previousBodyOverflow = document.body.style.overflow;
         const modalHash = `images/${imagesState.offset}/${index}`;
         currentHash = modalHash;
         if (!skipPush) history.pushState(null, '', `#${modalHash}`);
@@ -1032,6 +1339,9 @@
             <div class="image-modal-content">
                 <button class="image-modal-close" aria-label="Close">×</button>
                 <img src="${esc(initialImageUrl)}" decoding="async" fetchpriority="high" alt="Page ${Number(initialItem.page) + 1} from document ${Number(initialItem.docId)}">
+                <p class="media-error" data-modal-image-error role="alert" hidden>
+                    This image could not be loaded. Try Download Image or open its source document.
+                </p>
                 <div class="image-modal-meta" aria-live="polite"></div>
                 <div class="image-modal-actions">
                     <button class="btn" data-modal-action="prev">← Prev</button>
@@ -1041,19 +1351,30 @@
                 </div>
             </div>
         `;
-        const close = () => {
+        modalBackgroundElements.forEach(element => element.toggleAttribute('inert', true));
+        document.body.style.overflow = 'hidden';
+        const close = ({ syncUrl = true, restoreFocus = true } = {}) => {
             document.removeEventListener('keydown', onKey);
             modal.remove();
-            currentHash = `images/${imagesState.offset}`;
-            history.replaceState(null, '', `#${currentHash}`);
-            if (previousFocus instanceof HTMLElement) previousFocus.focus();
+            modalBackgroundElements.forEach(element => element.toggleAttribute('inert', false));
+            document.body.style.overflow = previousBodyOverflow;
+            if (dismissImageModal === close) dismissImageModal = null;
+            if (syncUrl) {
+                currentHash = `images/${imagesState.offset}`;
+                history.replaceState(null, '', `#${currentHash}`);
+            }
+            if (restoreFocus && previousFocus instanceof HTMLElement) previousFocus.focus();
         };
+        dismissImageModal = close;
         const renderModalImage = () => {
             const item = imagesState.items[imagesState.index];
             const imgEl = modal.querySelector('img');
             const dl = modal.querySelector('a[download]');
             const meta = modal.querySelector('.image-modal-meta');
+            const errorState = modal.querySelector('[data-modal-image-error]');
             const itemUrl = imageApiUrl(item.filename);
+            imgEl.hidden = false;
+            errorState.hidden = true;
             imgEl.src = itemUrl;
             imgEl.alt = `Page ${Number(item.page) + 1} from document ${Number(item.docId)}`;
             dl.href = itemUrl;
@@ -1092,14 +1413,16 @@
             renderModalImage();
         };
         modal.addEventListener('click', e => { if (e.target === modal) close(); });
-        modal.querySelector('.image-modal-close').addEventListener('click', close);
+        modal.querySelector('.image-modal-close').addEventListener('click', () => close());
+        modal.querySelector('img').addEventListener('error', event => {
+            event.currentTarget.hidden = true;
+            modal.querySelector('[data-modal-image-error]').hidden = false;
+        });
         modal.querySelector('[data-modal-action="prev"]').addEventListener('click', () => move(-1));
         modal.querySelector('[data-modal-action="next"]').addEventListener('click', () => move(1));
         modal.querySelector('[data-modal-action="doc"]').addEventListener('click', () => {
             const item = imagesState.items[imagesState.index];
             viewDoc(item.docId);
-            document.removeEventListener('keydown', onKey);
-            modal.remove();
         });
         document.addEventListener('keydown', onKey);
         document.body.appendChild(modal);
@@ -1134,13 +1457,19 @@
         if (currentHash === newHash && !skipPush) return;
 
         saveScrollPosition();
-        setView('doc');
+        const navigationId = setView('doc');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
         currentHash = newHash;
         if (!skipPush) history.pushState(null, '', `#${newHash}`);
 
         try {
-            const doc = await fetch(`${API}/documents/${id}`).then(r => r.json());
+            if (!Number.isSafeInteger(id) || id < 1) {
+                const err = new Error('Document not found');
+                err.status = 404;
+                throw err;
+            }
+            const doc = await fetchForView(navigationId, `${API}/documents/${id}`).then(readApiJson);
+            if (!isCurrentView('doc', navigationId)) return;
             const docNamed = docLabel(doc);
             const docTitle = esc(docNamed.label);
             const docTitleClass = docNamed.cls;
@@ -1154,6 +1483,10 @@
             const sourceUrl = safeHttpUrl(doc.source_url);
             const sourceButton = sourceUrl ? `<a href="${esc(sourceUrl)}" target="_blank" rel="noopener" class="btn">Source</a>` : '';
             const shareButton = `<button class="btn" data-action="share" data-url="/documents/${Number(id)}" type="button">Share</button>`;
+            const announceDocument = () => announceView(
+                docNamed.label,
+                `${docNamed.label}. ${doc.document_type || 'Document'}.`,
+            );
 
             // Audio
             if (doc.document_type === 'audio' || doc.content_type?.startsWith('audio/') || doc.filename?.match(/\.(wav|mp3|m4a)$/i)) {
@@ -1173,12 +1506,17 @@
                             </div>
                         </div>
                         <div class="media-player">
-                            <audio controls preload="metadata">
+                            <audio controls preload="metadata" data-media-file>
                                 <source src="${API}/documents/${id}/file" type="${doc.content_type || 'audio/wav'}">
                             </audio>
+                            <p class="media-error" data-media-error role="alert" hidden>
+                                This audio file could not be loaded. Try Download or report the broken file.
+                            </p>
                         </div>
                     </div>
                 `;
+                initMediaFailureState();
+                announceDocument();
                 return;
             }
 
@@ -1204,7 +1542,7 @@
                         </div>
                         <div class="media-player">
                             <div class="video-shell is-buffering" aria-busy="true">
-                            <video controls preload="metadata" poster="${API}/videos/${id}/thumb" data-buffering-video>
+                            <video controls preload="metadata" poster="${API}/videos/${id}/thumb" data-buffering-video data-media-file>
                                 <source src="${API}/documents/${id}/file" type="${doc.content_type || 'video/mp4'}">
                             </video>
                             <div class="video-buffering" role="status" aria-live="polite" aria-hidden="false">
@@ -1212,15 +1550,26 @@
                                 <span data-buffering-label>Loading video…</span>
                             </div>
                             </div>
+                            <p class="media-error" data-media-error role="alert" hidden>
+                                This video file could not be loaded. Try Download or report the broken file.
+                            </p>
                         </div>
                     </div>
                 `;
                 initVideoBuffering();
+                initMediaFailureState();
+                announceDocument();
                 return;
             }
 
             // PDF/Text
-            const text = await fetch(`${API}/documents/${id}/text`).then(r => r.json()).catch(() => null);
+            const text = await fetchForView(navigationId, `${API}/documents/${id}/text`)
+                .then(r => r.json())
+                .catch(error => {
+                    if (error?.name === 'AbortError') throw error;
+                    return null;
+                });
+            if (!isCurrentView('doc', navigationId)) return;
             const pdfUrl = `${API}/documents/${id}/file`;
             resultsView.innerHTML = `
                 <button class="back-btn" data-action="back">← Back</button>
@@ -1234,38 +1583,42 @@
                         <div class="doc-toolbar">
                             ${shareButton}
                             ${sourceButton}
-                            <button class="btn" data-action="pdf-text">Toggle Text</button>
+                            <button class="btn" data-action="pdf-text" type="button"
+                                aria-controls="text-view" aria-expanded="false">Show text</button>
                             <a href="${pdfUrl}" target="_blank" class="btn">New Tab</a>
                             <a href="${pdfUrl}" download class="btn">Download</a>
                         </div>
                     </div>
                     <div id="pdf-view" style="height:80vh;">
-                        <iframe id="pdf-iframe" title="${docTitle} PDF viewer" style="width:100%;height:100%;border:none;border-radius:8px;background:var(--pdf-bg);"></iframe>
+                        <iframe id="pdf-iframe" src="${pdfUrl}" title="${docTitle} PDF viewer" loading="eager"
+                            style="width:100%;height:100%;border:none;border-radius:8px;background:var(--pdf-bg);"></iframe>
+                        <p class="archive-note">If the embedded preview does not load, use New Tab or Download above.</p>
                     </div>
                     <div id="text-view" class="doc-content" style="display:none;">${esc(text?.full_text || 'No text available.')}</div>
                 </div>
             `;
-            // Load PDF as blob to bypass Chrome cross-origin restrictions
-            try {
-                const pdfResponse = await fetch(pdfUrl);
-                if (!pdfResponse.ok) {
-                    throw new Error('PDF fetch failed');
-                }
-                const pdfBlob = await pdfResponse.blob();
-                revokePdfBlobUrl();
-                currentPdfBlobUrl = URL.createObjectURL(pdfBlob);
-                document.getElementById('pdf-iframe').src = currentPdfBlobUrl;
-            } catch (e) {
-                document.getElementById('pdf-view').innerHTML = '<div style="padding:20px;color:var(--text-dim);">Failed to load PDF. <a href="' + pdfUrl + '" target="_blank" style="color:var(--accent);">Open in new tab</a></div>';
-            }
+            announceDocument();
         } catch (e) {
-            resultsView.innerHTML = `
+            if (!isCurrentView('doc', navigationId)) return;
+            const notFound = e?.status === 404;
+            const failure = describeApiError(e, 'Failed to load document');
+            resultsView.innerHTML = notFound ? `
                 <div class="error-state">
-                    <h3>Failed to load document</h3>
-                    <p>Check your connection and try again.</p>
+                    <h1 class="page-title">Document not found</h1>
+                    <p>There is no record at this address. It may have been renumbered, or the link may be mistyped.</p>
+                    <button class="btn" data-action="documents">Browse the document index</button>
+                </div>
+            ` : `
+                <div class="error-state">
+                    <h1 class="page-title">${esc(failure.title)}</h1>
+                    <p>${esc(failure.message)}</p>
                     <button class="btn" data-action="doc" data-id="${Number(id)}">Retry</button>
                 </div>
             `;
+            announceView(
+                notFound ? 'Document not found' : failure.title,
+                notFound ? 'Document not found.' : failure.message,
+            );
         }
     }
 
@@ -1280,30 +1633,34 @@
     function togglePdfText() {
         const pdf = document.getElementById('pdf-view');
         const txt = document.getElementById('text-view');
-        if (pdf.style.display === 'none') {
-            pdf.style.display = 'block';
-            txt.style.display = 'none';
-        } else {
-            pdf.style.display = 'none';
-            txt.style.display = 'block';
-        }
+        const button = resultsView.querySelector('[data-action="pdf-text"]');
+        if (!pdf || !txt || !button) return;
+        const showText = pdf.style.display !== 'none';
+        pdf.style.display = showText ? 'none' : 'block';
+        txt.style.display = showText ? 'block' : 'none';
+        button.setAttribute('aria-expanded', String(showText));
+        button.textContent = showText ? 'Show PDF' : 'Show text';
     }
 
     // === ENTITY ===
     async function viewEntity(id, offset = 0, skipPush = false) {
         const newHash = `entity/${id}/${offset}`;
         saveScrollPosition();
-        setView('entity');
+        const navigationId = setView('entity');
         resultsView.innerHTML = '<div class="loading">Loading</div>';
         currentHash = newHash;
         if (!skipPush) history.pushState(null, '', `#${newHash}`);
 
         try {
             const [entity, mentions, cooc] = await Promise.all([
-                fetch(`${API}/entities/${id}`).then(r => r.json()),
-                fetch(`${API}/entities/${id}/mentions?limit=50&offset=${offset}`).then(r => r.json()),
-                fetch(`${API}/entities/${id}/co-occurrences?limit=16`).then(r => r.json()).catch(() => ({ results: [] })),
+                fetchForView(navigationId, `${API}/entities/${id}`).then(readApiJson),
+                fetchForView(navigationId, `${API}/entities/${id}/mentions?limit=50&offset=${offset}`).then(readApiJson),
+                fetchForView(navigationId, `${API}/entities/${id}/co-occurrences?limit=16`).then(readApiJson).catch(error => {
+                    if (error?.name === 'AbortError') throw error;
+                    return { results: [] };
+                }),
             ]);
+            if (!isCurrentView('entity', navigationId)) return;
 
             let html = `
                 <button class="back-btn" data-action="back">← Back</button>
@@ -1358,12 +1715,18 @@
             });
 
             if (!mentions.mentions.length) {
-                html += '<div class="empty">No mentions found.</div>';
+                html += offset > 0 ? `
+                    <div class="empty">
+                        <h2>No mentions on this page</h2>
+                        <p>This page is beyond the available mentions for this entity.</p>
+                        <button class="btn" data-action="entity" data-id="${Number(id)}" data-offset="0">Return to the first page</button>
+                    </div>
+                ` : '<div class="empty">No mentions found.</div>';
             }
 
             // Pagination
             const totalMentions = entity.mention_count || 0;
-            if (totalMentions > 50 || offset > 0) {
+            if (mentions.mentions.length && (totalMentions > 50 || offset > 0)) {
                 html += `
                     <div class="pagination">
                         ${offset > 0 ? `<button class="btn" data-action="entity" data-id="${Number(id)}" data-offset="${offset - 50}">← Previous</button>` : ''}
@@ -1376,14 +1739,21 @@
             }
 
             resultsView.innerHTML = html;
+            announceView(
+                entity.canonical_name,
+                `${Number(entity.mention_count || mentions.total_mentions || 0).toLocaleString()} total mentions for ${entity.canonical_name}.`,
+            );
         } catch (e) {
-            resultsView.innerHTML = `
-                <div class="error-state">
-                    <h3>Failed to load entity</h3>
-                    <p>Check your connection and try again.</p>
-                    <button class="btn" data-action="entity" data-id="${Number(id)}" data-offset="${offset}">Retry</button>
-                </div>
-            `;
+            if (!isCurrentView('entity', navigationId)) return;
+            const notFound = e?.status === 404;
+            const failure = describeApiError(e, 'Failed to load entity');
+            showViewError(
+                notFound ? 'Entity not found' : failure.title,
+                notFound ? 'There is no entity record at this address.' : failure.message,
+                notFound
+                    ? '<button class="btn" data-action="home">Return to the archive</button>'
+                    : `<button class="btn" data-action="entity" data-id="${Number(id)}" data-offset="${offset}">Retry</button>`,
+            );
         }
     }
 
@@ -1414,6 +1784,7 @@
 
             </div>
         `;
+        announceView('About', 'About this archive and its methodology.');
     }
 
     // Utilities

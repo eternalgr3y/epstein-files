@@ -15,6 +15,9 @@ const MEDIA_URL = 'https://media.epsteinproject.org';
 const RATE_LIMIT = 100;
 const RATE_WINDOW_SECONDS = 60;
 const MAX_QUERY_LENGTH = 200;
+// Cloudflare D1 rejects LIKE patterns longer than 50 bytes. Reserve two bytes
+// for the surrounding wildcards and truncate at a complete escaped character.
+const MAX_LIKE_PATTERN_BYTES = 50;
 
 class HttpError extends Error {
   constructor(message, status = 400) {
@@ -221,6 +224,18 @@ function buildFtsQuery(query) {
 
 function escapeLikePattern(value) {
   return String(value).replace(/[\\%_]/g, '\\$&');
+}
+
+function containsLikePattern(value) {
+  const encoder = new TextEncoder();
+  const maxBodyBytes = MAX_LIKE_PATTERN_BYTES - 2;
+  let escaped = '';
+  for (const char of String(value)) {
+    const next = escapeLikePattern(char);
+    if (encoder.encode(escaped + next).byteLength > maxBodyBytes) break;
+    escaped += next;
+  }
+  return `%${escaped}%`;
 }
 
 async function checkRateLimit(ip, env) {
@@ -672,12 +687,9 @@ async function searchDocuments(url, db) {
       const terms = cleanQ.split(/\s+/).filter(t => t.length > 2 && !/^(OR|AND|THE|FOR|WITH)$/i.test(t));
       if (terms.length === 0) return { results: [] };
 
-      // Limit query length to prevent SQLite LIKE pattern complexity errors
-      const searchTerm = terms.slice(0, 3).join(' ').substring(0, 100);
-
       // Search for entities matching any significant term
       const conditions = terms.slice(0, 3).map(() => "canonical_name LIKE ? ESCAPE '\\'").join(' OR ');
-      const params = terms.slice(0, 3).map(t => `%${escapeLikePattern(t.substring(0, 50))}%`);
+      const params = terms.slice(0, 3).map(containsLikePattern);
 
       return db.prepare(`
         SELECT id, canonical_name, entity_type, mention_count
@@ -903,6 +915,9 @@ function documentMediaType(doc, object) {
 }
 
 function documentFileResponse(doc, object, rangeRequested) {
+  if (object?.size === 0) {
+    return error('File is empty', 502);
+  }
   const headers = new Headers({
     'Content-Type': documentMediaType(doc, object),
     'Cache-Control': 'public, max-age=86400',
@@ -985,7 +1000,11 @@ async function getDocumentFile(id, request, db, r2) {
       // the <a download> attribute works.
       if (doc.document_type === 'video') {
         const wantsDownload = new URL(request.url).searchParams.get('download') === '1';
-        if (!wantsDownload) {
+        // The R2 custom domain currently answers Range requests for very large
+        // raw videos with 200/full Content-Length. Keep ranged playback on the
+        // Worker so R2 receives and returns the exact slice; only whole-file
+        // playback requests are redirected off-worker.
+        if (!wantsDownload && !rangeRequested) {
           const streamHead = await r2.head(`streaming/${r2Key}`);
           const key = streamHead ? `streaming/${r2Key}` : r2Key;
           return new Response(null, {
@@ -1313,7 +1332,8 @@ async function searchEntities(request, db) {
     FROM entities
     WHERE canonical_name LIKE ? ESCAPE '\\'
   `;
-  const params = [`%${escapeLikePattern(cleanQuery)}%`];
+  const likePattern = containsLikePattern(cleanQuery);
+  const params = [likePattern];
 
   if (entity_type) {
     if (typeof entity_type !== 'string' || entity_type.length > 50) {
@@ -1365,7 +1385,7 @@ async function searchEntities(request, db) {
       ${entity_type ? `AND ${ENTITY_TYPE_NORM_SQL} = LOWER(?)` : ''}
       GROUP BY LOWER(canonical_name), ${ENTITY_TYPE_NORM_SQL}
     )
-  `).bind(`%${escapeLikePattern(cleanQuery)}%`, ...(entity_type ? [entity_type] : [])).first();
+  `).bind(likePattern, ...(entity_type ? [entity_type] : [])).first();
 
   return json({
     query,
@@ -1452,7 +1472,7 @@ async function listHouseOversightDocs(url, db) {
 
   if (search) {
     sql += " WHERE (bates_number LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')";
-    const pattern = `%${escapeLikePattern(search)}%`;
+    const pattern = containsLikePattern(search);
     params.push(pattern, pattern);
   }
 

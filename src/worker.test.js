@@ -36,6 +36,63 @@ describe('Worker request validation', () => {
     expect(body.error).toBe('OR must appear between two search terms');
   });
 
+  test('bounds long entity LIKE patterns without failing document search', async () => {
+    const captured = [];
+    const env = {
+      DB: {
+        prepare(sql) {
+          return {
+            bind(...params) {
+              captured.push({ sql, params });
+              return {
+                async all() { return { results: [] }; },
+                async first() { return { total: 0 }; },
+              };
+            },
+          };
+        },
+      },
+    };
+    const query = 'x'.repeat(100);
+    const { response } = await responseJson(`/api/search?q=${query}`, env);
+    expect(response.status).toBe(200);
+    const likeParams = captured.flatMap(item => item.params)
+      .filter(param => typeof param === 'string' && param.startsWith('%'));
+    expect(likeParams.length).toBeGreaterThan(0);
+    expect(likeParams.every(pattern => new TextEncoder().encode(pattern).byteLength <= 50)).toBe(true);
+  });
+
+  test('bounds escaped entity search patterns to the D1 limit', async () => {
+    const captured = [];
+    const env = {
+      DB: {
+        prepare(sql) {
+          return {
+            bind(...params) {
+              captured.push({ sql, params });
+              return {
+                async all() { return { results: [] }; },
+                async first() { return { total: 0 }; },
+              };
+            },
+          };
+        },
+      },
+    };
+    const query = '_'.repeat(100);
+    const { response } = await responseJson('/api/entities/search', env, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    expect(response.status).toBe(200);
+    const likeParams = captured.flatMap(item => item.params)
+      .filter(param => typeof param === 'string' && param.startsWith('%'));
+    expect(likeParams).toHaveLength(2);
+    expect(likeParams.every(pattern => new TextEncoder().encode(pattern).byteLength <= 50)).toBe(true);
+    expect(likeParams.every(pattern => !pattern.endsWith('\\%'))).toBe(true);
+  });
+
   test('rejects malformed JSON entity searches', async () => {
     const { response, body } = await responseJson('/api/entities/search', {}, {
       method: 'POST',
@@ -286,6 +343,42 @@ describe('Worker security behavior', () => {
     expect(response.headers.get('content-type')).toBe('application/pdf');
   });
 
+  test('returns explicit non-cacheable errors for missing and zero-byte document files', async () => {
+    let storedObject = null;
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/missing.pdf',
+                    filename: 'missing.pdf',
+                    document_type: 'pdf',
+                    content_type: 'application/pdf',
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: { async get() { return storedObject; } },
+    };
+
+    const missing = await worker.fetch(request('/api/documents/88/file'), env, {});
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'File not available' });
+    expect(missing.headers.get('cache-control')).toBeNull();
+
+    storedObject = { body: new Uint8Array(), size: 0 };
+    const empty = await worker.fetch(request('/api/documents/88/file'), env, {});
+    expect(empty.status).toBe(502);
+    expect(await empty.json()).toEqual({ error: 'File is empty' });
+    expect(empty.headers.get('cache-control')).toBeNull();
+  });
+
   test('streams document byte ranges instead of returning the entire object', async () => {
     let getOptions;
     const env = {
@@ -332,6 +425,95 @@ describe('Worker security behavior', () => {
     expect(response.headers.get('content-range')).toBe('bytes 0-1023/20955328421');
     expect(response.headers.get('content-length')).toBe('1024');
     expect(response.headers.get('etag')).toBe('"video-etag"');
+  });
+
+  test('keeps ranged video playback on the Worker instead of redirecting to a full file', async () => {
+    const gets = [];
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/house-oversight-doj/DOJ-OGR-00022168.mp4',
+                    filename: 'DOJ-OGR-00022168',
+                    title: 'video1.mp4',
+                    data_set: 'house-oversight-doj',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async get(key, options) {
+          gets.push({ key, range: options?.range?.get('range') });
+          if (key.startsWith('streaming/')) return null;
+          return {
+            body: new Uint8Array(1024),
+            size: 20_955_328_421,
+            range: { offset: 1_048_576, length: 1024 },
+            httpEtag: '"huge-video"',
+          };
+        },
+      },
+    };
+
+    const response = await worker.fetch(request('/api/documents/22425/file', {
+      headers: { Range: 'bytes=1048576-1049599' },
+    }), env, {});
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('content-range')).toBe('bytes 1048576-1049599/20955328421');
+    expect(response.headers.get('content-length')).toBe('1024');
+    expect(gets).toEqual([
+      { key: 'streaming/raw/house-oversight-doj/DOJ-OGR-00022168.mp4', range: 'bytes=1048576-1049599' },
+      { key: 'raw/house-oversight-doj/DOJ-OGR-00022168.mp4', range: 'bytes=1048576-1049599' },
+    ]);
+  });
+
+  test('still redirects an ordinary whole-video playback request', async () => {
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/video.mp4',
+                    filename: 'video.mp4',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async head(key) {
+          expect(key).toBe('streaming/raw/video.mp4');
+          return { size: 1234 };
+        },
+        async get() {
+          throw new Error('whole playback should redirect before R2.get');
+        },
+      },
+    };
+
+    const response = await worker.fetch(request('/api/documents/7/file'), env, {});
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(
+      'https://media.epsteinproject.org/streaming/raw/video.mp4'
+    );
   });
 
   test('scopes House Oversight stats from documents into the mentions index', async () => {

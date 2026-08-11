@@ -123,7 +123,9 @@ export async function onRequestGet(context) {
   // presence of extracted text is the honest signal.
   const textStatus = preview
     ? 'Searchable'
-    : `Not extracted${doc.processing_status ? ` — ${doc.processing_status}` : ''}`;
+    : (isVideo || isAudio)
+      ? 'No transcript available'
+      : `Not extracted${doc.processing_status ? ` — ${doc.processing_status}` : ''}`;
 
   // ocr_confidence is a 0-1 float and was rendered raw, so most documents read
   // "OCR confidence 1", which tells a reader nothing. Show it as a percentage,
@@ -150,7 +152,9 @@ ${confidencePct ? `<dt>Text confidence</dt><dd>${esc(confidencePct)}</dd>` : ''}
 ${/^https?:\/\//i.test(doc.source_url || '') ? `<p class="onward"><a href="${esc(doc.source_url)}" rel="noopener" target="_blank">View at the original source</a></p>` : ''}
 ${preview
   ? `<h2>Text as released</h2><p class="ocr-note">Machine-read from the scan. Names, dates and numbers can be misread &mdash; check anything you rely on against the <a href="/about">original page</a>.</p><pre>${esc(preview)}${text?.full_text?.length > 2000 ? '\n\n[…]' : ''}</pre>`
-  : '<h2>Text as released</h2><p>This scan produced no machine-readable text. The original file is still available above.</p>'}
+  : (isVideo || isAudio)
+    ? '<h2>Transcript</h2><p>No transcript has been extracted for this media file.</p>'
+    : '<h2>Text as released</h2><p>This scan produced no machine-readable text. The original file is still available above.</p>'}
 ${prevDoc || nextDoc ? `<nav class="siblings" aria-label="Adjacent records in this release">
 ${prevDoc ? `<a href="/documents/${prevDoc.id}" rel="prev">&larr; ${esc(String(prevDoc.filename).replace(/\.[a-z0-9]+$/i, ''))}</a>` : '<span></span>'}
 ${nextDoc ? `<a href="/documents/${nextDoc.id}" rel="next">${esc(String(nextDoc.filename).replace(/\.[a-z0-9]+$/i, ''))} &rarr;</a>` : '<span></span>'}
