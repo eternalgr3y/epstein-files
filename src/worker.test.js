@@ -478,6 +478,56 @@ describe('Worker security behavior', () => {
     ]);
   });
 
+  test('returns 416 with the object size for an unsatisfiable video range', async () => {
+    const heads = [];
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/house-oversight-doj/DOJ-OGR-00022168.mp4',
+                    filename: 'DOJ-OGR-00022168',
+                    title: 'video1.mp4',
+                    data_set: 'house-oversight-doj',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async get() {
+          return null;
+        },
+        async head(key) {
+          heads.push(key);
+          if (key.startsWith('streaming/')) return null;
+          return { size: 20_955_328_421 };
+        },
+      },
+    };
+
+    const response = await worker.fetch(request('/api/documents/22425/file', {
+      headers: { Range: 'bytes=20955328421-' },
+    }), env, {});
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get('content-range')).toBe('bytes */20955328421');
+    expect(response.headers.get('accept-ranges')).toBe('bytes');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({ error: 'Requested range is not satisfiable' });
+    expect(heads).toEqual([
+      'streaming/raw/house-oversight-doj/DOJ-OGR-00022168.mp4',
+      'raw/house-oversight-doj/DOJ-OGR-00022168.mp4',
+    ]);
+  });
+
   test('still redirects an ordinary whole-video playback request', async () => {
     const env = {
       DB: {

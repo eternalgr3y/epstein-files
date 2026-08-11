@@ -951,6 +951,15 @@ function documentFileResponse(doc, object, rangeRequested) {
   return new Response(object.body, { status, headers });
 }
 
+function rangeNotSatisfiableResponse(size) {
+  return json({ error: 'Requested range is not satisfiable' }, 416, {
+    'Accept-Ranges': 'bytes',
+    'Content-Range': `bytes */${size}`,
+    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Range',
+    'Cache-Control': 'no-store',
+  });
+}
+
 async function getDocumentFile(id, request, db, r2) {
   const doc = await db.prepare(
     'SELECT local_path, filename, title, data_set, content_type, document_type FROM documents WHERE id = ?'
@@ -993,6 +1002,7 @@ async function getDocumentFile(id, request, db, r2) {
     try {
       const rangeRequested = request.headers.has('Range');
       const rangeOpts = rangeRequested ? { range: request.headers } : undefined;
+      let rangeTargetSize = null;
       // Videos: prefer the faststart remux under streaming/ (originals stay
       // byte-identical to the DOJ release for hash verification). Playback
       // redirects to the R2 custom domain so multi-GB streams don't flow
@@ -1016,14 +1026,24 @@ async function getDocumentFile(id, request, db, r2) {
             },
           });
         }
-        const streamObject = await r2.get(`streaming/${r2Key}`, rangeOpts);
+        const streamKey = `streaming/${r2Key}`;
+        const streamObject = await r2.get(streamKey, rangeOpts);
         if (streamObject) {
           return documentFileResponse(doc, streamObject, rangeRequested);
+        }
+        if (rangeRequested && typeof r2.head === 'function') {
+          const streamHead = await r2.head(streamKey);
+          if (streamHead && Number.isFinite(streamHead.size)) rangeTargetSize = streamHead.size;
         }
       }
       const object = await r2.get(r2Key, rangeOpts);
       if (object) {
         return documentFileResponse(doc, object, rangeRequested);
+      }
+      if (rangeRequested && typeof r2.head === 'function') {
+        const objectHead = await r2.head(r2Key);
+        if (objectHead && Number.isFinite(objectHead.size)) rangeTargetSize = objectHead.size;
+        if (rangeTargetSize !== null) return rangeNotSatisfiableResponse(rangeTargetSize);
       }
     } catch (e) {
       console.error('R2 fetch error:', e);
