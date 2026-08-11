@@ -68,9 +68,10 @@ export async function onRequestGet(context) {
     ? parsedDate.toISOString()
     : null;
   const mediaUrl = `https://epsteinproject.org/api/documents/${id}/file`;
+  const playbackUrl = isVideo ? `${mediaUrl}?stream=1` : mediaUrl;
   const thumbnailUrl = `https://epsteinproject.org/api/videos/${id}/thumb`;
   const mediaHtml = isVideo
-    ? `<video controls preload="metadata" poster="${thumbnailUrl}" style="display:block;width:100%;background:#0b0d0e"><source src="${mediaUrl}" type="video/mp4"></video>`
+    ? `<video controls preload="metadata" poster="${thumbnailUrl}" style="display:block;width:100%;background:#0b0d0e"><source src="${playbackUrl}" type="video/mp4"></video>`
     : isAudio
       ? `<audio controls preload="metadata" style="display:block;width:100%"><source src="${mediaUrl}"></audio>`
       : '';

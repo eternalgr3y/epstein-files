@@ -133,6 +133,7 @@ describe('canonical Pages routes', () => {
       expect(html).toContain('<link rel="canonical" href="https://epsteinproject.org/documents/22425">');
       expect(html).toContain('"@type":"VideoObject"');
       expect(html).toContain('<video controls preload="metadata"');
+      expect(html).toContain('/file?stream=1');
       expect(html).toContain('<h2>Transcript</h2>');
       expect(html).toContain('No transcript has been extracted for this media file.');
       expect(cache.writes).toHaveLength(1);

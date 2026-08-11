@@ -561,6 +561,52 @@ describe('Worker security behavior', () => {
     );
   });
 
+  test('keeps an initial browser metadata request on the Worker in streaming mode', async () => {
+    const gets = [];
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/video.mp4',
+                    filename: 'video.mp4',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                    file_size: 1234,
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async get(key, options) {
+          gets.push({ key, options });
+          if (key.startsWith('streaming/')) return null;
+          return { body: new Uint8Array(1234), size: 1234 };
+        },
+        async head() {
+          throw new Error('streaming mode should use R2.get');
+        },
+      },
+    };
+
+    const response = await worker.fetch(request('/api/documents/7/file?stream=1'), env, {});
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('content-length')).toBe('1234');
+    expect(gets.map(item => item.key)).toEqual([
+      'streaming/raw/video.mp4',
+      'raw/video.mp4',
+    ]);
+    expect(gets.every(item => item.options === undefined)).toBe(true);
+  });
+
   test('scopes House Oversight stats from documents into the mentions index', async () => {
     const queries = [];
     const env = {

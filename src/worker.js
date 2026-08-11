@@ -1023,12 +1023,14 @@ async function getDocumentFile(id, request, db, r2) {
       // through the Worker; ?download=1 keeps the response same-origin so
       // the <a download> attribute works.
       if (doc.document_type === 'video') {
-        const wantsDownload = new URL(request.url).searchParams.get('download') === '1';
+        const searchParams = new URL(request.url).searchParams;
+        const wantsDownload = searchParams.get('download') === '1';
+        const wantsStream = searchParams.get('stream') === '1';
         // The R2 custom domain currently answers Range requests for very large
         // raw videos with 200/full Content-Length. Keep ranged playback on the
         // Worker so R2 receives and returns the exact slice; only whole-file
         // playback requests are redirected off-worker.
-        if (!wantsDownload && !rangeRequested) {
+        if (!wantsDownload && !wantsStream && !rangeRequested) {
           const streamHead = await r2.head(`streaming/${r2Key}`);
           const key = streamHead ? `streaming/${r2Key}` : r2Key;
           return new Response(null, {

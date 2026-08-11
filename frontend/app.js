@@ -1543,7 +1543,7 @@
                         <div class="media-player">
                             <div class="video-shell is-buffering" aria-busy="true">
                             <video controls preload="metadata" poster="${API}/videos/${id}/thumb" data-buffering-video data-media-file>
-                                <source src="${API}/documents/${id}/file" type="${doc.content_type || 'video/mp4'}">
+                                <source src="${API}/documents/${id}/file?stream=1" type="${doc.content_type || 'video/mp4'}">
                             </video>
                             <div class="video-buffering" role="status" aria-live="polite" aria-hidden="false">
                                 <span class="video-buffering-spinner" aria-hidden="true"></span>

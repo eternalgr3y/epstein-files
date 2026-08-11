@@ -45,6 +45,7 @@ describe('frontend navigation and heading semantics', () => {
     const html = await Bun.file(new URL('index.html', frontendUrl)).text();
     expect(app).toContain('preload="metadata"');
     expect(app).toContain('data-buffering-video');
+    expect(app).toContain('/file?stream=1');
     expect(app).toContain("video.addEventListener('waiting', () => show('Buffering…'))");
     expect(app).toContain("video.addEventListener('seeking', () => show('Seeking…'))");
     expect(app).toContain("poster=\"${API}/videos/${id}/thumb\"");
