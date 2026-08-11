@@ -587,7 +587,11 @@ describe('Worker security behavior', () => {
         async get(key, options) {
           gets.push({ key, options });
           if (key.startsWith('streaming/')) return null;
-          return { body: new Uint8Array(1234), size: 1234 };
+          return {
+            body: new Uint8Array(1024 * 1024),
+            size: 20_955_328_421,
+            range: { offset: 0, length: 1024 * 1024 },
+          };
         },
         async head() {
           throw new Error('streaming mode should use R2.get');
@@ -597,14 +601,16 @@ describe('Worker security behavior', () => {
 
     const response = await worker.fetch(request('/api/documents/7/file?stream=1'), env, {});
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(206);
     expect(response.headers.get('location')).toBeNull();
-    expect(response.headers.get('content-length')).toBe('1234');
+    expect(response.headers.get('content-length')).toBe('1048576');
+    expect(response.headers.get('content-range')).toBe('bytes 0-1048575/20955328421');
     expect(gets.map(item => item.key)).toEqual([
       'streaming/raw/video.mp4',
       'raw/video.mp4',
     ]);
-    expect(gets.every(item => item.options === undefined)).toBe(true);
+    expect(gets.every(item => item.options?.range?.offset === 0)).toBe(true);
+    expect(gets.every(item => item.options?.range?.length === 1024 * 1024)).toBe(true);
   });
 
   test('scopes House Oversight stats from documents into the mentions index', async () => {

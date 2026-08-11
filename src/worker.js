@@ -1013,6 +1013,8 @@ async function getDocumentFile(id, request, db, r2) {
     try {
       const rangeRequested = request.headers.has('Range');
       const rangeOpts = rangeRequested ? { range: request.headers } : undefined;
+      let effectiveRangeOpts = rangeOpts;
+      let bootstrapsStream = false;
       let rangeTargetSize = null;
       if (rangeRequested && requestRangeIsUnsatisfiable(request.headers.get('Range'), doc.file_size)) {
         return rangeNotSatisfiableResponse(Number(doc.file_size));
@@ -1026,6 +1028,10 @@ async function getDocumentFile(id, request, db, r2) {
         const searchParams = new URL(request.url).searchParams;
         const wantsDownload = searchParams.get('download') === '1';
         const wantsStream = searchParams.get('stream') === '1';
+        bootstrapsStream = wantsStream && !rangeRequested;
+        effectiveRangeOpts = bootstrapsStream
+          ? { range: { offset: 0, length: 1024 * 1024 } }
+          : rangeOpts;
         // The R2 custom domain currently answers Range requests for very large
         // raw videos with 200/full Content-Length. Keep ranged playback on the
         // Worker so R2 receives and returns the exact slice; only whole-file
@@ -1043,18 +1049,18 @@ async function getDocumentFile(id, request, db, r2) {
           });
         }
         const streamKey = `streaming/${r2Key}`;
-        const streamObject = await r2.get(streamKey, rangeOpts);
+        const streamObject = await r2.get(streamKey, effectiveRangeOpts);
         if (streamObject) {
-          return documentFileResponse(doc, streamObject, rangeRequested);
+          return documentFileResponse(doc, streamObject, rangeRequested || bootstrapsStream);
         }
         if (rangeRequested && typeof r2.head === 'function') {
           const streamHead = await r2.head(streamKey);
           if (streamHead && Number.isFinite(streamHead.size)) rangeTargetSize = streamHead.size;
         }
       }
-      const object = await r2.get(r2Key, rangeOpts);
+      const object = await r2.get(r2Key, effectiveRangeOpts);
       if (object) {
-        return documentFileResponse(doc, object, rangeRequested);
+        return documentFileResponse(doc, object, rangeRequested || bootstrapsStream);
       }
       if (rangeRequested && typeof r2.head === 'function') {
         const objectHead = await r2.head(r2Key);
