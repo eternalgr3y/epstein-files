@@ -960,9 +960,20 @@ function rangeNotSatisfiableResponse(size) {
   });
 }
 
+function requestRangeIsUnsatisfiable(value, objectSize) {
+  const size = Number(objectSize);
+  if (!Number.isFinite(size) || size < 0) return false;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(String(value || '').trim());
+  if (!match || (!match[1] && !match[2])) return false;
+  if (!match[1]) return Number(match[2]) === 0;
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  return !Number.isFinite(start) || start >= size || (end !== null && end < start);
+}
+
 async function getDocumentFile(id, request, db, r2) {
   const doc = await db.prepare(
-    'SELECT local_path, filename, title, data_set, content_type, document_type FROM documents WHERE id = ?'
+    'SELECT local_path, filename, title, data_set, content_type, document_type, file_size FROM documents WHERE id = ?'
   ).bind(id).first();
 
   if (!doc) {
@@ -1003,6 +1014,9 @@ async function getDocumentFile(id, request, db, r2) {
       const rangeRequested = request.headers.has('Range');
       const rangeOpts = rangeRequested ? { range: request.headers } : undefined;
       let rangeTargetSize = null;
+      if (rangeRequested && requestRangeIsUnsatisfiable(request.headers.get('Range'), doc.file_size)) {
+        return rangeNotSatisfiableResponse(Number(doc.file_size));
+      }
       // Videos: prefer the faststart remux under streaming/ (originals stay
       // byte-identical to the DOJ release for hash verification). Playback
       // redirects to the R2 custom domain so multi-GB streams don't flow

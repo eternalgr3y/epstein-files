@@ -443,6 +443,7 @@ describe('Worker security behavior', () => {
                     data_set: 'house-oversight-doj',
                     document_type: 'video',
                     content_type: 'video/mp4',
+                    file_size: 20_955_328_421,
                   };
                 },
               };
@@ -479,7 +480,6 @@ describe('Worker security behavior', () => {
   });
 
   test('returns 416 with the object size for an unsatisfiable video range', async () => {
-    const heads = [];
     const env = {
       DB: {
         prepare() {
@@ -494,6 +494,7 @@ describe('Worker security behavior', () => {
                     data_set: 'house-oversight-doj',
                     document_type: 'video',
                     content_type: 'video/mp4',
+                    file_size: 20_955_328_421,
                   };
                 },
               };
@@ -503,12 +504,10 @@ describe('Worker security behavior', () => {
       },
       R2: {
         async get() {
-          return null;
+          throw new Error('an unsatisfiable range should be rejected before R2.get');
         },
-        async head(key) {
-          heads.push(key);
-          if (key.startsWith('streaming/')) return null;
-          return { size: 20_955_328_421 };
+        async head() {
+          throw new Error('an unsatisfiable range should be rejected before R2.head');
         },
       },
     };
@@ -522,10 +521,6 @@ describe('Worker security behavior', () => {
     expect(response.headers.get('accept-ranges')).toBe('bytes');
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toEqual({ error: 'Requested range is not satisfiable' });
-    expect(heads).toEqual([
-      'streaming/raw/house-oversight-doj/DOJ-OGR-00022168.mp4',
-      'raw/house-oversight-doj/DOJ-OGR-00022168.mp4',
-    ]);
   });
 
   test('still redirects an ordinary whole-video playback request', async () => {
