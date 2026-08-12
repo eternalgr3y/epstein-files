@@ -67,6 +67,9 @@
     const THEME_KEY = 'epstein-project-theme';
     const BASE_TITLE = 'Epstein Project — Public Archive of Jeffrey Epstein Case Records';
     const API_TIMEOUT_MS = 20_000;
+    const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdu5whC_64CsbCUP-6wjtwGx28y0oFOVMv290bREt45O0CWJg/viewform';
+    const FEEDBACK_LOOKUP_ENTRY = 'entry.962036122';
+    const FEEDBACK_ISSUE_ENTRY = 'entry.1729274358';
 
     function storedTheme() {
         try {
@@ -245,12 +248,41 @@
         else show('Loading video…');
     }
 
+    function brokenFileReportUrl(media) {
+        const kind = media.dataset.mediaKind || media.tagName?.toLowerCase() || 'media';
+        const documentId = media.dataset.documentId || 'unknown';
+        const title = media.dataset.documentTitle || 'Untitled record';
+        const source = media.currentSrc || media.querySelector('source')?.src || 'unknown';
+        const errorCode = media.error?.code ? String(media.error.code) : 'source-error';
+        const page = new URL(
+            `${location.pathname}${location.search}${location.hash}`,
+            location.origin,
+        ).href;
+        const reportUrl = new URL(FEEDBACK_FORM_URL);
+        reportUrl.searchParams.set('usp', 'pp_url');
+        reportUrl.searchParams.set(
+            FEEDBACK_LOOKUP_ENTRY,
+            `${kind} document ${documentId}`,
+        );
+        reportUrl.searchParams.set(FEEDBACK_ISSUE_ENTRY, [
+            `Broken ${kind} file`,
+            `Document ID: ${documentId}`,
+            `Title: ${title}`,
+            `Page: ${page}`,
+            `Media source: ${source}`,
+            `Browser media error code: ${errorCode}`,
+        ].join('\n'));
+        return reportUrl.href;
+    }
+
     function initMediaFailureState() {
         const media = resultsView.querySelector('[data-media-file]');
         const errorState = resultsView.querySelector('[data-media-error]');
         if (!media || !errorState) return;
 
         const showFailure = () => {
+            const reportLink = errorState.querySelector('[data-broken-file-report]');
+            if (reportLink) reportLink.href = brokenFileReportUrl(media);
             errorState.hidden = false;
             const shell = media.closest('.video-shell');
             const buffering = shell?.querySelector('.video-buffering');
@@ -1195,7 +1227,7 @@
                 ${hasNativeVideo ? `
                     <div class="media-player">
                         <div class="video-shell is-buffering" aria-busy="true">
-                            <video controls preload="metadata" poster="${API}/videos/${mediaDocumentId}/thumb" data-buffering-video data-media-file>
+                            <video controls preload="metadata" poster="${API}/videos/${mediaDocumentId}/thumb" data-buffering-video data-media-file data-media-kind="video" data-document-id="${mediaDocumentId}" data-document-title="${esc(doc.title || doc.bates)}">
                                 <source src="${API}/documents/${mediaDocumentId}/file?stream=1" type="${esc(videoContentType)}">
                             </video>
                             <div class="video-buffering" role="status" aria-live="polite" aria-hidden="false">
@@ -1204,7 +1236,7 @@
                             </div>
                         </div>
                         <p class="media-error" data-media-error role="alert" hidden>
-                            This video file could not be loaded. Try again or report the broken file.
+                            This video file could not be loaded. Try again or <a href="${FEEDBACK_FORM_URL}" target="_blank" rel="noopener" data-broken-file-report>report the broken file</a>.
                         </p>
                     </div>
                 ` : ''}
@@ -1537,11 +1569,11 @@
                             </div>
                         </div>
                         <div class="media-player">
-                            <audio controls preload="metadata" data-media-file>
+                            <audio controls preload="metadata" data-media-file data-media-kind="audio" data-document-id="${Number(id)}" data-document-title="${esc(docNamed.label)}">
                                 <source src="${API}/documents/${id}/file" type="${doc.content_type || 'audio/wav'}">
                             </audio>
                             <p class="media-error" data-media-error role="alert" hidden>
-                                This audio file could not be loaded. Try Download or report the broken file.
+                                This audio file could not be loaded. Try Download or <a href="${FEEDBACK_FORM_URL}" target="_blank" rel="noopener" data-broken-file-report>report the broken file</a>.
                             </p>
                         </div>
                     </div>
@@ -1573,7 +1605,7 @@
                         </div>
                         <div class="media-player">
                             <div class="video-shell is-buffering" aria-busy="true">
-                            <video controls preload="metadata" poster="${API}/videos/${id}/thumb" data-buffering-video data-media-file>
+                            <video controls preload="metadata" poster="${API}/videos/${id}/thumb" data-buffering-video data-media-file data-media-kind="video" data-document-id="${Number(id)}" data-document-title="${esc(docNamed.label)}">
                                 <source src="${API}/documents/${id}/file?stream=1" type="${doc.content_type || 'video/mp4'}">
                             </video>
                             <div class="video-buffering" role="status" aria-live="polite" aria-hidden="false">
@@ -1582,7 +1614,7 @@
                             </div>
                             </div>
                             <p class="media-error" data-media-error role="alert" hidden>
-                                This video file could not be loaded. Try Download or report the broken file.
+                                This video file could not be loaded. Try Download or <a href="${FEEDBACK_FORM_URL}" target="_blank" rel="noopener" data-broken-file-report>report the broken file</a>.
                             </p>
                         </div>
                     </div>

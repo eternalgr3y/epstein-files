@@ -19,8 +19,11 @@ from pathlib import Path
 
 import httpx
 
+from qa_request_budget import RequestBudget, RequestBudgetExceeded
+
 
 DEFAULT_BASE = "https://epsteinproject.org"
+DEFAULT_REQUEST_BUDGET = 25
 MAX_HTML_BYTES = 1_000_000
 MAX_SITEMAP_BYTES = 10_000_000
 USER_AGENT = "epstein-canonical-audit/1"
@@ -145,10 +148,12 @@ def fetch_page(
     url: str,
     timeout: float,
     retries: int,
+    budget: RequestBudget,
     max_bytes: int = MAX_HTML_BYTES,
 ) -> tuple[int | None, dict[str, str], bytes, str | None, str | None]:
     last_error: Exception | None = None
     for attempt in range(retries + 1):
+        budget.consume(f"GET {url}")
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -171,9 +176,11 @@ async def check_url_async(
     url: str,
     client: httpx.AsyncClient,
     retries: int,
+    budget: RequestBudget,
 ) -> list[dict]:
     last_error: Exception | None = None
     for attempt in range(retries + 1):
+        budget.consume(f"GET {url}")
         try:
             response = await client.get(url)
             if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
@@ -200,6 +207,7 @@ async def crawl_urls_async(
     workers: int,
     timeout: float,
     retries: int,
+    budget: RequestBudget,
 ) -> list[dict]:
     findings: list[dict] = []
     queue: asyncio.Queue[str] = asyncio.Queue()
@@ -224,7 +232,7 @@ async def crawl_urls_async(
                     url = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     return
-                findings.extend(await check_url_async(url, client, retries))
+                findings.extend(await check_url_async(url, client, retries, budget))
                 completed += 1
                 if completed % 250 == 0 or completed == len(urls):
                     print(
@@ -236,8 +244,14 @@ async def crawl_urls_async(
     return findings
 
 
-def crawl_urls(urls: list[str], workers: int, timeout: float, retries: int) -> list[dict]:
-    return asyncio.run(crawl_urls_async(urls, workers, timeout, retries))
+def crawl_urls(
+    urls: list[str],
+    workers: int,
+    timeout: float,
+    retries: int,
+    budget: RequestBudget,
+) -> list[dict]:
+    return asyncio.run(crawl_urls_async(urls, workers, timeout, retries, budget))
 
 
 def parse_sitemap(xml: bytes, base_url: str) -> list[str]:
@@ -262,10 +276,15 @@ def parse_sitemap(xml: bytes, base_url: str) -> list[str]:
     return urls
 
 
-def load_sitemap(base_url: str, timeout: float, retries: int) -> list[str]:
+def load_sitemap(
+    base_url: str,
+    timeout: float,
+    retries: int,
+    budget: RequestBudget,
+) -> list[str]:
     sitemap_url = f"{base_url.rstrip('/')}/sitemap.xml"
     status, headers, body, _, error = fetch_page(
-        sitemap_url, timeout, retries, MAX_SITEMAP_BYTES
+        sitemap_url, timeout, retries, budget, MAX_SITEMAP_BYTES
     )
     if error:
         raise RuntimeError(error)
@@ -283,17 +302,37 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--retries", type=int, default=2)
     parser.add_argument("--limit", type=int, default=0, help="Crawl only the first N sitemap URLs")
+    parser.add_argument(
+        "--max-requests",
+        type=int,
+        default=DEFAULT_REQUEST_BUDGET,
+        help=f"Hard ceiling including sitemap and retries (default: {DEFAULT_REQUEST_BUDGET})",
+    )
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 
-    urls = load_sitemap(args.base_url, args.timeout, max(0, args.retries))
-    selected = urls[: args.limit or None]
-    findings = crawl_urls(
-        selected,
-        max(1, args.workers),
-        args.timeout,
-        max(0, args.retries),
-    )
+    budget = RequestBudget(args.max_requests)
+    print(f"request budget: {budget.limit} maximum", flush=True)
+    try:
+        urls = load_sitemap(
+            args.base_url,
+            args.timeout,
+            max(0, args.retries),
+            budget,
+        )
+        selected = urls[: args.limit or None]
+        budget.ensure_available(len(selected), "canonical page crawl")
+        findings = crawl_urls(
+            selected,
+            max(1, args.workers),
+            args.timeout,
+            max(0, args.retries),
+            budget,
+        )
+    except RequestBudgetExceeded as exc:
+        print(f"stopped: {exc}", file=sys.stderr)
+        print(f"requests used: {budget.used}/{budget.limit}", file=sys.stderr)
+        return 2
 
     findings.sort(key=lambda item: (item["problem"], item["url"]))
     summary = dict(sorted(Counter(item["problem"] for item in findings).items()))
@@ -301,6 +340,8 @@ def main() -> int:
         "base_url": args.base_url,
         "sitemap_urls": len(urls),
         "urls_checked": len(selected),
+        "request_budget": budget.limit,
+        "requests_used": budget.used,
         "summary": summary,
         "findings": findings,
     }
@@ -309,6 +350,7 @@ def main() -> int:
         args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"report: {args.report}")
     print(json.dumps(summary, sort_keys=True))
+    print(f"requests used: {budget.used}/{budget.limit}")
     for finding in findings[:20]:
         print(f"{finding['problem']}: {finding['url']} ({finding['detail']})")
     return 1 if findings else 0

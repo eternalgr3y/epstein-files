@@ -166,14 +166,22 @@ Read-only production checks are also available. Each command exits nonzero on
 a finding and can write a JSON report with `--report path/to/report.json`.
 
 ```bash
-python production_smoke.py            # Canonical page, app asset, API, and media-range journey
-python crawl_canonical_pages.py        # Every URL published in sitemap.xml
-python audit_archive_integrity.py      # D1 metadata against public R2 object headers
+python production_smoke.py                 # 15-check journey, capped at 25 requests including retries
+python crawl_canonical_pages.py --limit 20 # Small canonical sample, capped at 25 requests including sitemap
+python audit_archive_integrity.py           # D1 references against one authenticated R2 inventory
 ```
 
-The integrity audit uses HEAD requests and never downloads media bodies or
-mutates D1/R2. The canonical crawler uses HTTP/2 and bounded concurrency; use
-`--limit` for a sample before a full production crawl.
+All three commands enforce a hard `--max-requests` ceiling and stop before an
+extra request can be sent. The canonical crawler refuses a full sitemap crawl
+under its safe 25-request default; use `--limit` for routine checks and raise
+the ceiling explicitly only after reviewing the sitemap count.
+
+The integrity audit sends zero requests to public media URLs. It pages object
+metadata through Cloudflare's authenticated R2 management API (up to 1,000
+objects per request), fetches only the small image manifest, and compares that
+inventory with D1 references. Its default 120-request ceiling covers the
+current archive with room for a retry while preventing an unbounded scan.
+None of these tools mutate D1, R2, Pages, or Worker configuration.
 
 ### Roadmap
 
