@@ -962,6 +962,10 @@ function rangeNotSatisfiableResponse(size) {
 }
 
 function requestRangeIsUnsatisfiable(value, objectSize) {
+  // A NULL D1 file_size means "unknown", not a zero-byte object. Number(null)
+  // is 0, which previously rejected every valid browser range for legacy
+  // data-set-8 videos before R2 could return the authoritative object size.
+  if (objectSize === null || objectSize === undefined || objectSize === '') return false;
   const size = Number(objectSize);
   if (!Number.isFinite(size) || size < 0) return false;
   const match = /^bytes=(\d*)-(\d*)$/i.exec(String(value || '').trim());
