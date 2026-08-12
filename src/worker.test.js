@@ -643,6 +643,53 @@ describe('Worker security behavior', () => {
     ]);
   });
 
+  test('does not treat an unknown legacy video size as a zero-byte object', async () => {
+    let requestedRange;
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/extracted/data-set-8/EFTA00028842.mp4',
+                    filename: 'EFTA00028842.mp4',
+                    title: 'EFTA00028842',
+                    data_set: 'data-set-8',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                    file_size: null,
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async get(key, options) {
+          expect(key).toBe('streaming/extracted/data-set-8/EFTA00028842.mp4');
+          requestedRange = options.range.get('range');
+          return {
+            body: new Uint8Array(1024),
+            size: 8_388_608,
+            range: { offset: 0, length: 1024 },
+            httpMetadata: { contentType: 'video/mp4' },
+          };
+        },
+      },
+    };
+
+    const response = await worker.fetch(request('/api/documents/14685/file?stream=1', {
+      headers: { Range: 'bytes=0-1023' },
+    }), env, {});
+
+    expect(requestedRange).toBe('bytes=0-1023');
+    expect(response.status).toBe(206);
+    expect(response.headers.get('content-range')).toBe('bytes 0-1023/8388608');
+  });
+
   test('returns 416 with the object size for an unsatisfiable video range', async () => {
     const env = {
       DB: {

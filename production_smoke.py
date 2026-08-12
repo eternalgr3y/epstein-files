@@ -23,6 +23,7 @@ DEFAULT_SITE = "https://epsteinproject.org"
 DEFAULT_API = "https://epstein-files-api.protonuser597.workers.dev"
 USER_AGENT = "epstein-production-smoke/1"
 VIDEO_DOCUMENT_ID = 22425
+LEGACY_VIDEO_DOCUMENT_ID = 14685
 ESTATE_VIDEO_DOCUMENT_ID = 15999
 ESTATE_VIDEO_BATES = "HOUSE_OVERSIGHT_026678"
 MISSING_ESTATE_THUMB_BATES = "HOUSE_OVERSIGHT_014359"
@@ -188,6 +189,27 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
                 )
         except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
             add("video-collection", "invalid-json", str(exc))
+
+    # Legacy data-set-8 rows have a NULL D1 file_size. Keep one of those in
+    # the smoke path so NULL cannot regress into a zero-byte 416 response.
+    legacy_video = request_url(
+        f"{api.rstrip('/')}/api/documents/{LEGACY_VIDEO_DOCUMENT_ID}/file?stream=1",
+        headers={"Range": "bytes=0-1023"},
+        read_limit=2048,
+        timeout=timeout,
+        retries=retries,
+    )
+    legacy_range = content_range(legacy_video.headers.get("content-range"))
+    if legacy_video.status != 206:
+        add("legacy-video-range", "http-status", str(legacy_video.status))
+    elif legacy_video.headers.get("content-type", "").split(";", 1)[0] != "video/mp4":
+        add("legacy-video-range", "content-type", legacy_video.headers.get("content-type", "missing"))
+    elif legacy_range is None or legacy_range[:2] != (0, 1023) or len(legacy_video.body) != 1024:
+        add(
+            "legacy-video-range",
+            "range-response",
+            f"content-range={legacy_video.headers.get('content-range')} bytes={len(legacy_video.body)}",
+        )
 
     estate_document = request_url(
         f"{site.rstrip('/')}/documents/{ESTATE_VIDEO_DOCUMENT_ID}",
