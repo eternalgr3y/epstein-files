@@ -19,9 +19,13 @@ export async function onRequestGet(context) {
   // returned the same documents WITH their text. 2,895 of 2,897 resolve
   // through the join.
   const doc = await env.DB.prepare(`
-    SELECT h.*, t.full_text
+    SELECT h.*, t.full_text,
+      d.id AS archive_document_id,
+      d.document_type AS archive_document_type,
+      d.content_type AS archive_content_type
     FROM house_oversight_documents h
     LEFT JOIN document_texts t ON t.document_id = h.legacy_document_id
+    LEFT JOIN documents d ON d.id = h.legacy_document_id
     WHERE h.bates_number = ?
   `).bind(bates).first();
   if (!doc) {
@@ -53,6 +57,17 @@ export async function onRequestGet(context) {
   const confidencePct = preview && Number(doc.ocr_confidence) > 0
     ? `${Math.round(Number(doc.ocr_confidence) * 100)}%`
     : '';
+  const archiveDocumentId = Number(doc.archive_document_id);
+  const isVideo = doc.archive_document_type === 'video'
+    && Number.isSafeInteger(archiveDocumentId)
+    && archiveDocumentId > 0;
+  const mediaUrl = `https://epsteinproject.org/api/documents/${archiveDocumentId}/file`;
+  const playbackUrl = `${mediaUrl}?stream=1`;
+  const thumbnailUrl = `https://epsteinproject.org/api/videos/${archiveDocumentId}/thumb`;
+  const videoType = 'video/mp4';
+  const mediaHtml = isVideo
+    ? `<h2>Original video</h2><video controls preload="metadata" poster="${thumbnailUrl}" style="display:block;width:100%;background:#0b0d0e"><source src="${playbackUrl}" type="${esc(videoType)}"></video>`
+    : '';
 
   const bodyHtml = `
 <article class="record">
@@ -65,6 +80,7 @@ ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
 <dt>Text</dt><dd>${preview ? 'Searchable' : 'Not extracted'}</dd>
 ${confidencePct ? `<dt>Text confidence</dt><dd>${esc(confidencePct)}</dd>` : ''}
 </dl>
+${mediaHtml}
 ${preview
   ? `<h2>Text as released</h2><p class="ocr-note">Machine-read from the scan. Names, dates and numbers can be misread &mdash; check anything you rely on against the <a href="/about">original page</a>.</p><pre>${esc(preview)}${fullText.length > 2000 ? '\n\n[…]' : ''}</pre>`
   : '<h2>Text as released</h2><p>This scan produced no machine-readable text.</p>'}
@@ -80,6 +96,16 @@ ${nextDoc ? `<a href="/house-oversight/${encodeURIComponent(nextDoc.bates_number
     description,
     bodyHtml,
     spaHash: `house-oversight/${encodeURIComponent(bates)}`,
+    ogType: isVideo ? 'video.other' : 'article',
+    imageUrl: isVideo ? thumbnailUrl : 'https://epsteinproject.org/og-image.png',
+    structuredData: isVideo ? {
+      '@context': 'https://schema.org',
+      '@type': 'VideoObject',
+      name: title,
+      description,
+      thumbnailUrl: [thumbnailUrl],
+      contentUrl: mediaUrl,
+    } : null,
   });
 
   const response = new Response(html, {

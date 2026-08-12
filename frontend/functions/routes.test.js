@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { onRequestGet as documentPage } from './documents/[id].js';
+import { onRequestGet as houseDocumentPage } from './house-oversight/[bates].js';
 import { onRequestGet as setPage } from './documents/set/[slug].js';
 import { onRequestGet as videosPage } from './videos.js';
 
@@ -139,6 +140,53 @@ describe('canonical Pages routes', () => {
       expect(cache.writes).toHaveLength(1);
       expect(cache.writes[0].request.url).toContain('v=');
       expect(cache.writes[0].request.url).not.toContain('tracking=ignored');
+    } finally {
+      cache.restore();
+    }
+  });
+
+  test('renders an estate native video on its canonical House page', async () => {
+    const cache = cacheHarness();
+    const pending = [];
+    const DB = {
+      prepare(sql) {
+        const statement = {
+          bind() { return statement; },
+          async first() {
+            if (sql.includes('FROM house_oversight_documents h')) {
+              return {
+                bates_number: 'HOUSE_OVERSIGHT_026678',
+                title: 'IMG_0642.MP4.mov',
+                page_count: 1,
+                archive_document_id: 15999,
+                archive_document_type: 'video',
+                archive_content_type: 'video/quicktime',
+              };
+            }
+            if (sql.includes('bates_number <') || sql.includes('bates_number >')) return null;
+            throw new Error(`Unexpected House query: ${sql}`);
+          },
+        };
+        return statement;
+      },
+    };
+
+    try {
+      const response = await houseDocumentPage({
+        params: { bates: 'HOUSE_OVERSIGHT_026678' },
+        request: new Request('https://epsteinproject.org/house-oversight/HOUSE_OVERSIGHT_026678'),
+        env: { DB },
+        waitUntil(promise) { pending.push(promise); },
+      });
+      const html = await response.text();
+      await Promise.all(pending);
+
+      expect(response.status).toBe(200);
+      expect(html).toContain('<link rel="canonical" href="https://epsteinproject.org/house-oversight/HOUSE_OVERSIGHT_026678">');
+      expect(html).toContain('"@type":"VideoObject"');
+      expect(html).toContain('<video controls preload="metadata"');
+      expect(html).toContain('/api/documents/15999/file?stream=1');
+      expect(html).toContain('type="video/mp4"');
     } finally {
       cache.restore();
     }

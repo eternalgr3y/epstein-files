@@ -162,6 +162,19 @@ python stress_test.py                 # In-process API tests
 python full_system_test.py            # Local-server integration tests
 ```
 
+Read-only production checks are also available. Each command exits nonzero on
+a finding and can write a JSON report with `--report path/to/report.json`.
+
+```bash
+python production_smoke.py            # Canonical page, app asset, API, and media-range journey
+python crawl_canonical_pages.py        # Every URL published in sitemap.xml
+python audit_archive_integrity.py      # D1 metadata against public R2 object headers
+```
+
+The integrity audit uses HEAD requests and never downloads media bodies or
+mutates D1/R2. The canonical crawler uses HTTP/2 and bounded concurrency; use
+`--limit` for a sample before a full production crawl.
+
 ### Roadmap
 
 - [ ] Chapter/source filtering UI

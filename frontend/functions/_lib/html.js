@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = 'sha256-1493618fddd3';
+export const PAGE_CACHE_VERSION = 'sha256-16b25ae9cdb2';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {

@@ -1174,6 +1174,11 @@
         try {
             const doc = await fetchForView(navigationId, `${API}/house-oversight/documents/${encodedBates}`).then(readApiJson);
             if (!isCurrentView('house-oversight', navigationId)) return;
+            const mediaDocumentId = Number(doc.document_id);
+            const hasNativeVideo = doc.document_type === 'video'
+                && Number.isSafeInteger(mediaDocumentId)
+                && mediaDocumentId > 0;
+            const videoContentType = doc.playback_content_type || 'video/mp4';
 
             let html = `
                 <button class="back-btn" data-action="house-oversight">← Back to House Oversight</button>
@@ -1187,6 +1192,22 @@
                     <span class="meta-pill">${pageLabel(doc.page_count)}</span>
                     <button class="btn" data-action="share" data-url="/house-oversight/${encodedBates}" type="button">Share</button>
                 </div>
+                ${hasNativeVideo ? `
+                    <div class="media-player">
+                        <div class="video-shell is-buffering" aria-busy="true">
+                            <video controls preload="metadata" poster="${API}/videos/${mediaDocumentId}/thumb" data-buffering-video data-media-file>
+                                <source src="${API}/documents/${mediaDocumentId}/file?stream=1" type="${esc(videoContentType)}">
+                            </video>
+                            <div class="video-buffering" role="status" aria-live="polite" aria-hidden="false">
+                                <span class="video-buffering-spinner" aria-hidden="true"></span>
+                                <span data-buffering-label>Loading video…</span>
+                            </div>
+                        </div>
+                        <p class="media-error" data-media-error role="alert" hidden>
+                            This video file could not be loaded. Try again or report the broken file.
+                        </p>
+                    </div>
+                ` : ''}
             `;
 
             html += `<div class="page-grid">`;
@@ -1218,6 +1239,10 @@
             }
 
             resultsView.innerHTML = html;
+            if (hasNativeVideo) {
+                initVideoBuffering();
+                initMediaFailureState();
+            }
             const docName = doc.title || doc.bates;
             const pages = pageLabel(doc.page_count);
             announceView(docName, pages ? `${docName}. ${pages}.` : `${docName}.`);
@@ -1470,6 +1495,12 @@
             }
             const doc = await fetchForView(navigationId, `${API}/documents/${id}`).then(readApiJson);
             if (!isCurrentView('doc', navigationId)) return;
+            if (doc.data_set === 'house-oversight-estate' && /^HOUSE_OVERSIGHT_\d+$/.test(doc.filename || '')) {
+                const estateHash = `house-oversight/${encodeURIComponent(doc.filename)}`;
+                history.replaceState(null, '', `#${estateHash}`);
+                await viewHouseOversightDoc(doc.filename, true);
+                return;
+            }
             const docNamed = docLabel(doc);
             const docTitle = esc(docNamed.label);
             const docTitleClass = docNamed.cls;

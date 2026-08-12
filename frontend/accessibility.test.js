@@ -23,6 +23,11 @@ describe('frontend navigation and heading semantics', () => {
     expect(app).toContain("else if (!focusable.includes(document.activeElement))");
   });
 
+  test('stacks long result headings above counts on narrow screens', async () => {
+    const html = await Bun.file(new URL('index.html', frontendUrl)).text();
+    expect(html).toMatch(/@media \(max-width: 600px\)[\s\S]*?\.results-header\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*flex-start;/);
+  });
+
   test('uses one primary heading for collection and detail views', async () => {
     const app = await Bun.file(new URL('app.js', frontendUrl)).text();
     for (const title of ['Video Evidence', 'Maxwell Interview Recordings', 'All Documents', 'Estate Documents', 'Images']) {

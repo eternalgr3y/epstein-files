@@ -412,4 +412,52 @@ describe('frontend navigation request lifecycle', () => {
       unknown.restore();
     }
   });
+
+  test('canonicalizes a stale estate document hash into the House viewer', async () => {
+    const fetchImpl = (input) => {
+      const url = String(input);
+      if (url === '/api/stats') {
+        return Promise.resolve(Response.json({ data_sets: [] }));
+      }
+      if (url === '/api/documents/15999') {
+        return Promise.resolve(Response.json({
+          id: 15999,
+          filename: 'HOUSE_OVERSIGHT_026678',
+          title: 'IMG_0642.MP4.mov',
+          document_type: 'video',
+          data_set: 'house-oversight-estate',
+          content_type: 'video/quicktime',
+        }));
+      }
+      if (url === '/api/house-oversight/documents/HOUSE_OVERSIGHT_026678') {
+        return Promise.resolve(Response.json({
+          bates: 'HOUSE_OVERSIGHT_026678',
+          title: 'IMG_0642.MP4.mov',
+          document_id: 15999,
+          document_type: 'video',
+          content_type: 'video/quicktime',
+          playback_content_type: 'video/mp4',
+          page_count: 1,
+          pages: [{ url: '/api/house-oversight/page/HOUSE_OVERSIGHT_026678/0' }],
+          entities: [],
+        }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    };
+
+    const harness = await runApp('#doc/15999', fetchImpl);
+    try {
+      await Bun.sleep(0);
+      await Bun.sleep(0);
+      const html = harness.elements.get('results-view').innerHTML;
+      expect(harness.location.hash).toBe('#house-oversight/HOUSE_OVERSIGHT_026678');
+      expect(html).toContain('House Oversight Document');
+      expect(html).toContain('HOUSE_OVERSIGHT_026678');
+      expect(html).toContain('<video controls preload="metadata"');
+      expect(html).toContain('/api/documents/15999/file?stream=1');
+      expect(html).toContain('type="video/mp4"');
+    } finally {
+      harness.restore();
+    }
+  });
 });

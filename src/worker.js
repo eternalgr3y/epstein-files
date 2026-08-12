@@ -9,6 +9,7 @@ const R2_PUBLIC_URL = 'https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev';
 // R2 custom domain on the epstein-files bucket — unlike the rate-limited
 // r2.dev URL above, this one is production-grade and safe to redirect to.
 const MEDIA_URL = 'https://media.epsteinproject.org';
+const MISSING_THUMBNAIL_URL = 'https://epsteinproject.org/og-image.png';
 
 // Rate limiting: 100 requests per minute per IP, enforced by Cloudflare's
 // Rate Limiting binding in production (see wrangler.toml).
@@ -971,6 +972,72 @@ function requestRangeIsUnsatisfiable(value, objectSize) {
   return !Number.isFinite(start) || start >= size || (end !== null && end < start);
 }
 
+function houseOversightNative(doc) {
+  if (doc.data_set !== 'house-oversight-estate' || doc.document_type !== 'video') return null;
+  if (!/^HOUSE_OVERSIGHT_\d+$/.test(String(doc.filename || ''))) return null;
+  const match = String(doc.title || '').match(/\.(mp4|mov|avi|wmv)$/i);
+  if (!match) return null;
+  const extension = match[1].toLowerCase();
+  const contentTypes = {
+    avi: 'video/x-msvideo',
+    mov: 'video/quicktime',
+    mp4: 'video/mp4',
+    wmv: 'video/x-ms-wmv',
+  };
+  return {
+    key: `house-oversight/NATIVES/001/${doc.filename}.${extension}`,
+    contentType: contentTypes[extension],
+    playbackKey: `streaming/house-oversight/NATIVES/001/${doc.filename}.mp4`,
+    playbackContentType: 'video/mp4',
+  };
+}
+
+async function getHouseOversightNativeFile(doc, request, r2, native) {
+  const rangeRequested = request.headers.has('Range');
+  const searchParams = new URL(request.url).searchParams;
+  const wantsDownload = searchParams.get('download') === '1';
+  const wantsStream = searchParams.get('stream') === '1';
+  const target = wantsDownload
+    ? { key: native.key, contentType: native.contentType }
+    : { key: native.playbackKey, contentType: native.playbackContentType };
+  if (rangeRequested) {
+    const targetSize = wantsDownload
+      ? Number(doc.file_size)
+      : Number((await r2.head(target.key))?.size);
+    if (!Number.isFinite(targetSize) || targetSize <= 0) return error('File not available', 404);
+    if (requestRangeIsUnsatisfiable(request.headers.get('Range'), targetSize)) {
+      return rangeNotSatisfiableResponse(targetSize);
+    }
+  }
+  const bootstrapsStream = wantsStream && !rangeRequested;
+  const rangeOpts = rangeRequested
+    ? { range: request.headers }
+    : bootstrapsStream
+      ? { range: { offset: 0, length: 1024 * 1024 } }
+      : undefined;
+
+  if (!wantsDownload && !wantsStream && !rangeRequested) {
+    const object = await r2.head(target.key);
+    if (!object) return error('File not available', 404);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        'Location': `${MEDIA_URL}/${encodeURI(target.key)}`,
+        'Cache-Control': 'public, max-age=3600',
+        ...corsHeaders,
+      },
+    });
+  }
+
+  const object = await r2.get(target.key, rangeOpts);
+  if (!object) return error('File not available', 404);
+  return documentFileResponse(
+    { ...doc, content_type: target.contentType },
+    object,
+    rangeRequested || bootstrapsStream,
+  );
+}
+
 async function getDocumentFile(id, request, db, r2) {
   const doc = await db.prepare(
     'SELECT local_path, filename, title, data_set, content_type, document_type, file_size FROM documents WHERE id = ?'
@@ -980,7 +1047,17 @@ async function getDocumentFile(id, request, db, r2) {
     return error('Document not found', 404);
   }
 
-  // House Oversight docs - serve first page image from R2
+  const estateNative = houseOversightNative(doc);
+  if (estateNative) {
+    try {
+      return await getHouseOversightNativeFile(doc, request, r2, estateNative);
+    } catch (e) {
+      console.error('R2 fetch error for House Oversight native:', e);
+      return error('File not available', 404);
+    }
+  }
+
+  // House Oversight scan-only docs - serve first page image from R2
   if (doc.data_set === 'house-oversight-estate') {
     const bates = doc.filename; // e.g., HOUSE_OVERSIGHT_010477
     const batesNum = parseInt(bates.replace('HOUSE_OVERSIGHT_', ''));
@@ -1134,12 +1211,24 @@ async function listVideos(url, db) {
 async function getVideoThumbnail(id, r2) {
   const object = await r2.get(`thumbnails/${id}.jpg`);
   if (!object) {
-    return error('Thumbnail not found', 404);
+    return missingThumbnailResponse();
   }
   return new Response(object.body, {
     headers: {
       'Content-Type': 'image/jpeg',
       'Cache-Control': 'public, max-age=31536000, immutable',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      ...corsHeaders,
+    },
+  });
+}
+
+function missingThumbnailResponse() {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      'Location': MISSING_THUMBNAIL_URL,
+      'Cache-Control': 'public, max-age=3600',
       'Cross-Origin-Resource-Policy': 'cross-origin',
       ...corsHeaders,
     },
@@ -1547,9 +1636,13 @@ async function getHouseOversightDoc(bates, db, r2) {
   // made this endpoint report no text for documents whose text /api/search was
   // already returning.
   const doc = await db.prepare(`
-    SELECT h.*, t.full_text
+    SELECT h.*, t.full_text,
+      d.id AS archive_document_id,
+      d.document_type AS archive_document_type,
+      d.content_type AS archive_content_type
     FROM house_oversight_documents h
     LEFT JOIN document_texts t ON t.document_id = h.legacy_document_id
+    LEFT JOIN documents d ON d.id = h.legacy_document_id
     WHERE h.bates_number = ?
   `).bind(bates).first();
 
@@ -1596,6 +1689,10 @@ async function getHouseOversightDoc(bates, db, r2) {
     id: doc.id,
     bates: doc.bates_number,
     title: doc.title,
+    document_id: doc.archive_document_id,
+    document_type: doc.archive_document_type,
+    content_type: doc.archive_content_type,
+    playback_content_type: doc.archive_document_type === 'video' ? 'video/mp4' : null,
     page_count: pageCount,
     pages,
     text_preview: doc.full_text?.substring(0, 2000) || null,
@@ -1658,7 +1755,8 @@ async function getHouseOversightThumbnail(bates, r2) {
       },
     });
   }
-  return await getHouseOversightPage(bates, 0, r2);
+  const firstPage = await getHouseOversightPage(bates, 0, r2);
+  return firstPage.status === 404 ? missingThumbnailResponse() : firstPage;
 }
 
 async function getHouseOversightStats(db) {

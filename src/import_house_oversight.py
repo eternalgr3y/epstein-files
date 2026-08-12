@@ -171,6 +171,30 @@ def get_document_type(extension: str, filename: str) -> str:
     return DocumentType.OTHER.value
 
 
+def get_content_type(extension: str, document_type: str) -> str:
+    """Return the native media type instead of labelling every non-PDF as JPEG."""
+    extension = (extension or '').lower()
+    content_types = {
+        'avi': 'video/x-msvideo',
+        'bmp': 'image/bmp',
+        'gif': 'image/gif',
+        'jpeg': 'image/jpeg',
+        'jpg': 'image/jpeg',
+        'mov': 'video/quicktime',
+        'mp4': 'video/mp4',
+        'pdf': 'application/pdf',
+        'png': 'image/png',
+        'tif': 'image/tiff',
+        'tiff': 'image/tiff',
+        'wmv': 'video/x-ms-wmv',
+    }
+    if extension in content_types:
+        return content_types[extension]
+    if document_type == DocumentType.EMAIL.value:
+        return 'message/rfc822'
+    return 'application/octet-stream'
+
+
 def import_documents(session, documents: List[Dict], doc_images: Dict[str, List[str]]):
     """Import documents into the database."""
     imported = 0
@@ -195,8 +219,13 @@ def import_documents(session, documents: List[Dict], doc_images: Dict[str, List[
         images = doc_images.get(bates_begin, [])
         first_image = images[0] if images else None
 
-        # Determine local path
-        if first_image:
+        # Native files are the released originals. Keep the scan as the viewer
+        # page, but point document downloads and media playback at the native.
+        native_link = doc.get('_native_link')
+        if native_link:
+            native_path = native_link.replace('\\HOUSE_OVERSIGHT_009\\', '').replace('\\', '/')
+            local_path = str(HOUSE_OVERSIGHT_DIR / native_path)
+        elif first_image:
             # Convert to local path
             img_path = first_image.replace('\\HOUSE_OVERSIGHT_009\\', '').replace('\\', '/')
             local_path = str(HOUSE_OVERSIGHT_DIR / img_path)
@@ -224,7 +253,7 @@ def import_documents(session, documents: List[Dict], doc_images: Dict[str, List[
             local_path=local_path,
             file_hash=doc['_md5_hash'],
             file_size=doc['_file_size'],
-            content_type='application/pdf' if doc_type == DocumentType.PDF.value else 'image/jpeg',
+            content_type=get_content_type(doc['_extension'], doc_type),
             document_type=doc_type,
             title=doc['_title'] or doc['_filename'] or bates_begin,
             document_date=doc_date,

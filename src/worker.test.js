@@ -263,6 +263,41 @@ describe('Document text availability', () => {
   });
 });
 
+describe('Video collection', () => {
+  test('keeps verified House Oversight native videos in the collection', async () => {
+    const queries = [];
+    const estateVideo = {
+      id: 15999,
+      filename: 'HOUSE_OVERSIGHT_026678',
+      title: 'IMG_0642.MP4.mov',
+      data_set: 'house-oversight-estate',
+    };
+    const env = {
+      DB: {
+        prepare(sql) {
+          queries.push(sql);
+          return {
+            async first() { return { count: 1 }; },
+            bind() {
+              return { async all() { return { results: [estateVideo] }; } };
+            },
+          };
+        },
+      },
+    };
+
+    const { response, body } = await responseJson('/api/videos?limit=48&offset=0', env);
+    expect(response.status).toBe(200);
+    expect(body.total).toBe(1);
+    expect(body.videos[0]).toMatchObject(estateVideo);
+    expect(queries).toHaveLength(2);
+    for (const sql of queries) {
+      expect(sql).toContain("document_type = 'video'");
+      expect(sql).not.toContain("data_set != 'house-oversight-estate'");
+    }
+  });
+});
+
 describe('Worker security behavior', () => {
   test('uses the Cloudflare rate-limit binding and returns 429', async () => {
     let key;
@@ -309,6 +344,23 @@ describe('Worker security behavior', () => {
     expect(response.headers.get('cache-control')).toContain('immutable');
   });
 
+  test('redirects missing video and estate thumbnails to a stable placeholder', async () => {
+    const env = { R2: { async get() { return null; } } };
+
+    const video = await worker.fetch(request('/api/videos/15999/thumb'), env, {});
+    expect(video.status).toBe(302);
+    expect(video.headers.get('location')).toBe('https://epsteinproject.org/og-image.png');
+    expect(video.headers.get('cache-control')).toBe('public, max-age=3600');
+
+    const estate = await worker.fetch(
+      request('/api/house-oversight/thumbnail/HOUSE_OVERSIGHT_013489'),
+      env,
+      {},
+    );
+    expect(estate.status).toBe(302);
+    expect(estate.headers.get('location')).toBe('https://epsteinproject.org/og-image.png');
+  });
+
   test('serves extensionless Bates PDFs with their stored media type', async () => {
     const env = {
       DB: {
@@ -341,6 +393,118 @@ describe('Worker security behavior', () => {
     const response = await worker.fetch(request('/api/documents/20913/file'), env, {});
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/pdf');
+  });
+
+  test('streams a verified House Oversight native video instead of its page scan', async () => {
+    const requestedKeys = [];
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/house-oversight-estate/NATIVES/001/HOUSE_OVERSIGHT_026678.mov',
+                    filename: 'HOUSE_OVERSIGHT_026678',
+                    title: 'IMG_0642.MP4.mov',
+                    data_set: 'house-oversight-estate',
+                    document_type: 'video',
+                    content_type: 'video/quicktime',
+                    file_size: 2_504_613,
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async head(key) {
+          expect(key).toBe('streaming/house-oversight/NATIVES/001/HOUSE_OVERSIGHT_026678.mp4');
+          return { size: 2_513_782 };
+        },
+        async get(key, options) {
+          requestedKeys.push(key);
+          if (key.endsWith('.mov')) {
+            expect(options).toBeUndefined();
+            return {
+              body: new Uint8Array(2_504_613),
+              size: 2_504_613,
+              httpMetadata: { contentType: 'video/quicktime' },
+            };
+          }
+          expect(options.range.get('range')).toBe('bytes=1024-2047');
+          return {
+            body: new Uint8Array(1024),
+            size: 2_513_782,
+            range: { offset: 1024, length: 1024 },
+            httpMetadata: { contentType: 'video/mp4' },
+          };
+        },
+      },
+    };
+
+    const response = await worker.fetch(request('/api/documents/15999/file', {
+      headers: { Range: 'bytes=1024-2047' },
+    }), env, {});
+
+    expect(requestedKeys[0]).toBe('streaming/house-oversight/NATIVES/001/HOUSE_OVERSIGHT_026678.mp4');
+    expect(response.status).toBe(206);
+    expect(response.headers.get('content-type')).toBe('video/mp4');
+    expect(response.headers.get('content-range')).toBe('bytes 1024-2047/2513782');
+
+    const download = await worker.fetch(request('/api/documents/15999/file?download=1'), env, {});
+    expect(requestedKeys[1]).toBe('house-oversight/NATIVES/001/HOUSE_OVERSIGHT_026678.mov');
+    expect(download.status).toBe(200);
+    expect(download.headers.get('content-type')).toBe('video/quicktime');
+  });
+
+  test('validates estate playback ranges against the MP4 derivative size', async () => {
+    let getCalled = false;
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    filename: 'HOUSE_OVERSIGHT_026678',
+                    title: 'IMG_0642.MP4.mov',
+                    data_set: 'house-oversight-estate',
+                    document_type: 'video',
+                    content_type: 'video/quicktime',
+                    file_size: 2_504_613,
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async head() { return { size: 2_513_782 }; },
+        async get(_key, options) {
+          getCalled = true;
+          expect(options.range.get('range')).toBe('bytes=2505000-2506000');
+          return {
+            body: new Uint8Array(1001),
+            size: 2_513_782,
+            range: { offset: 2_505_000, length: 1001 },
+            httpMetadata: { contentType: 'video/mp4' },
+          };
+        },
+      },
+    };
+
+    const response = await worker.fetch(request('/api/documents/15999/file?stream=1', {
+      headers: { Range: 'bytes=2505000-2506000' },
+    }), env, {});
+
+    expect(getCalled).toBe(true);
+    expect(response.status).toBe(206);
+    expect(response.headers.get('content-range')).toBe('bytes 2505000-2506000/2513782');
   });
 
   test('returns explicit non-cacheable errors for missing and zero-byte document files', async () => {

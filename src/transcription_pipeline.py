@@ -55,20 +55,23 @@ class MediaProbe:
 
 def probe_media(media_path: Path) -> MediaProbe:
     """Read duration/audio-stream metadata without decoding the full file."""
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration:stream=codec_type",
-            "-of",
-            "json",
-            str(media_path),
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration:stream=codec_type",
+                "-of",
+                "json",
+                str(media_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        return MediaProbe(0.0, False, f"ffprobe unavailable: {exc}")
     if result.returncode != 0:
         return MediaProbe(0.0, False, result.stderr.strip() or "ffprobe failed")
     try:
