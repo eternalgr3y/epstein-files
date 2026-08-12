@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
-from crawl_canonical_pages import parse_signals, parse_sitemap, validate_page
+from crawl_canonical_pages import fetch_page, parse_signals, parse_sitemap, validate_page
+from qa_request_budget import RequestBudget, RequestBudgetExceeded
 
 
 class CanonicalCrawlerTests(unittest.TestCase):
@@ -62,6 +64,18 @@ class CanonicalCrawlerTests(unittest.TestCase):
                 f"{prefix}<url><loc>https://example.com/</loc></url>{suffix}".encode(),
                 "https://epsteinproject.org",
             )
+
+    def test_request_budget_stops_crawler_before_network_io(self):
+        with patch("crawl_canonical_pages.urllib.request.urlopen") as urlopen:
+            with self.assertRaises(RequestBudgetExceeded):
+                fetch_page(
+                    "https://example.test",
+                    timeout=1,
+                    retries=0,
+                    budget=RequestBudget(0),
+                )
+
+        urlopen.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,10 +1,16 @@
 import unittest
+from unittest.mock import patch
 
 from audit_archive_integrity import (
+    InventoryObject,
+    Target,
+    cloudflare_get,
+    compare_targets,
     document_r2_key,
     house_native_target,
     house_page_targets,
     normalize_media_type,
+    parse_r2_list_page,
     parse_wrangler_json,
 )
 
@@ -54,6 +60,61 @@ class ArchiveIntegrityAuditTests(unittest.TestCase):
         )
         self.assertEqual(target.expected_type, "video/quicktime")
         self.assertEqual(target.expected_size, 2_504_613)
+
+    def test_r2_inventory_page_preserves_size_type_and_cursor(self):
+        objects, cursor = parse_r2_list_page({
+            "success": True,
+            "result": [{
+                "key": "video.mp4",
+                "size": 2048,
+                "http_metadata": {"contentType": "video/mp4"},
+            }],
+            "result_info": {"is_truncated": True, "cursor": "next-page"},
+        })
+
+        self.assertEqual(
+            objects,
+            [InventoryObject("video.mp4", 2048, "video/mp4")],
+        )
+        self.assertEqual(cursor, "next-page")
+
+    def test_inventory_comparison_reports_missing_zero_and_size_mismatch(self):
+        targets = {
+            "missing.pdf": Target("missing.pdf", "document", "1", 10, "application/pdf"),
+            "empty.mp4": Target("empty.mp4", "document", "2", None, "video/mp4"),
+            "wrong.wav": Target("wrong.wav", "document", "3", 20, "audio/wav"),
+        }
+        inventory = {
+            "empty.mp4": InventoryObject("empty.mp4", 0, "video/mp4"),
+            "wrong.wav": InventoryObject("wrong.wav", 19, "audio/x-wav"),
+        }
+
+        findings = compare_targets(targets, inventory)
+
+        self.assertEqual(
+            [(item["key"], item["problem"]) for item in findings],
+            [
+                ("missing.pdf", "missing"),
+                ("wrong.wav", "size-mismatch"),
+                ("empty.mp4", "zero-byte"),
+            ],
+        )
+
+    def test_request_budget_stops_inventory_before_network_io(self):
+        from qa_request_budget import RequestBudget, RequestBudgetExceeded
+
+        with patch("audit_archive_integrity.urllib.request.urlopen") as urlopen:
+            with self.assertRaises(RequestBudgetExceeded):
+                cloudflare_get(
+                    "https://api.cloudflare.com/client/v4/example",
+                    "secret-token",
+                    RequestBudget(0),
+                    timeout=1,
+                    retries=0,
+                    label="R2 inventory page",
+                )
+
+        urlopen.assert_not_called()
 
 
 if __name__ == "__main__":

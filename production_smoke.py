@@ -17,10 +17,12 @@ from collections import Counter
 from pathlib import Path
 
 from crawl_canonical_pages import parse_signals, validate_page
+from qa_request_budget import RequestBudget, RequestBudgetExceeded
 
 
 DEFAULT_SITE = "https://epsteinproject.org"
 DEFAULT_API = "https://epstein-files-api.protonuser597.workers.dev"
+DEFAULT_REQUEST_BUDGET = 25
 USER_AGENT = "epstein-production-smoke/1"
 VIDEO_DOCUMENT_ID = 22425
 LEGACY_VIDEO_DOCUMENT_ID = 14685
@@ -46,6 +48,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def request_url(
     url: str,
     *,
+    budget: RequestBudget,
     headers: dict[str, str] | None = None,
     follow_redirects: bool = True,
     read_limit: int = 2_000_000,
@@ -56,6 +59,7 @@ def request_url(
     request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
     last_error: Exception | None = None
     for attempt in range(retries + 1):
+        budget.consume(f"GET {url}")
         try:
             request = urllib.request.Request(url, headers=request_headers)
             with opener.open(request, timeout=timeout) as response:
@@ -100,14 +104,20 @@ def content_range(value: str | None) -> tuple[int, int, int] | None:
     return tuple(map(int, match.groups())) if match else None
 
 
-def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
+def run_smoke(
+    site: str,
+    api: str,
+    timeout: float,
+    retries: int,
+    budget: RequestBudget,
+) -> list[dict]:
     findings: list[dict] = []
 
     def add(check: str, problem: str, detail: str) -> None:
         findings.append({"check": check, "problem": problem, "detail": detail})
 
     home_url = f"{site.rstrip('/')}/"
-    home = request_url(home_url, timeout=timeout, retries=retries)
+    home = request_url(home_url, budget=budget, timeout=timeout, retries=retries)
     if home.status != 200:
         add("home", "http-status", str(home.status))
     elif "text/html" not in home.headers.get("content-type", ""):
@@ -121,6 +131,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
             path, expected_hash = asset
             script = request_url(
                 urllib.parse.urljoin(home_url, path),
+                budget=budget,
                 timeout=timeout,
                 retries=retries,
             )
@@ -135,7 +146,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
                     add("app-asset", "cache-policy", cache_control or "missing")
 
     document_url = f"{site.rstrip('/')}/documents/14389"
-    document = request_url(document_url, timeout=timeout, retries=retries)
+    document = request_url(document_url, budget=budget, timeout=timeout, retries=retries)
     for finding in validate_page(
         document_url,
         document.status,
@@ -146,7 +157,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
         add("canonical-document", finding["problem"], finding["detail"])
 
     missing_url = f"{site.rstrip('/')}/documents/999999999"
-    missing = request_url(missing_url, timeout=timeout, retries=retries)
+    missing = request_url(missing_url, budget=budget, timeout=timeout, retries=retries)
     if missing.status != 404:
         add("missing-document", "http-status", str(missing.status))
     else:
@@ -156,7 +167,12 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
         if signals.canonical != home_url:
             add("missing-document", "canonical-mismatch", str(signals.canonical))
 
-    stats = request_url(f"{api.rstrip('/')}/api/stats", timeout=timeout, retries=retries)
+    stats = request_url(
+        f"{api.rstrip('/')}/api/stats",
+        budget=budget,
+        timeout=timeout,
+        retries=retries,
+    )
     if stats.status != 200:
         add("api-stats", "http-status", str(stats.status))
     else:
@@ -169,6 +185,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     videos = request_url(
         f"{api.rstrip('/')}/api/videos?limit=500&offset=0",
+        budget=budget,
         timeout=timeout,
         retries=retries,
     )
@@ -194,6 +211,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
     # the smoke path so NULL cannot regress into a zero-byte 416 response.
     legacy_video = request_url(
         f"{api.rstrip('/')}/api/documents/{LEGACY_VIDEO_DOCUMENT_ID}/file?stream=1",
+        budget=budget,
         headers={"Range": "bytes=0-1023"},
         read_limit=2048,
         timeout=timeout,
@@ -213,6 +231,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     estate_document = request_url(
         f"{site.rstrip('/')}/documents/{ESTATE_VIDEO_DOCUMENT_ID}",
+        budget=budget,
         follow_redirects=False,
         timeout=timeout,
         retries=retries,
@@ -225,6 +244,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     estate_stream = request_url(
         f"{api.rstrip('/')}/api/documents/{ESTATE_VIDEO_DOCUMENT_ID}/file?stream=1",
+        budget=budget,
         read_limit=64,
         timeout=timeout,
         retries=retries,
@@ -239,6 +259,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     missing_estate_thumb = request_url(
         f"{api.rstrip('/')}/api/house-oversight/thumbnail/{MISSING_ESTATE_THUMB_BATES}",
+        budget=budget,
         follow_redirects=False,
         timeout=timeout,
         retries=retries,
@@ -255,6 +276,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
     media_url = f"{api.rstrip('/')}/api/documents/{VIDEO_DOCUMENT_ID}/file"
     ordinary = request_url(
         media_url,
+        budget=budget,
         follow_redirects=False,
         read_limit=1024,
         timeout=timeout,
@@ -267,6 +289,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     stream = request_url(
         f"{media_url}?stream=1",
+        budget=budget,
         read_limit=64,
         timeout=timeout,
         retries=retries,
@@ -279,6 +302,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     partial = request_url(
         media_url,
+        budget=budget,
         headers={"Range": "bytes=0-1023"},
         read_limit=2048,
         timeout=timeout,
@@ -296,6 +320,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     seek = request_url(
         media_url,
+        budget=budget,
         headers={"Range": "bytes=10485760-10486783"},
         read_limit=2048,
         timeout=timeout,
@@ -313,6 +338,7 @@ def run_smoke(site: str, api: str, timeout: float, retries: int) -> list[dict]:
 
     invalid = request_url(
         media_url,
+        budget=budget,
         headers={"Range": "bytes=999999999999-1000000000000"},
         read_limit=1024,
         timeout=timeout,
@@ -339,16 +365,43 @@ def main() -> int:
     parser.add_argument("--api", default=DEFAULT_API)
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--retries", type=int, default=2)
+    parser.add_argument(
+        "--max-requests",
+        type=int,
+        default=DEFAULT_REQUEST_BUDGET,
+        help=f"Hard ceiling across retries (default: {DEFAULT_REQUEST_BUDGET})",
+    )
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
-    findings = run_smoke(args.site, args.api, args.timeout, max(0, args.retries))
+    budget = RequestBudget(args.max_requests)
+    print(f"request budget: {budget.limit} maximum", flush=True)
+    try:
+        findings = run_smoke(
+            args.site,
+            args.api,
+            args.timeout,
+            max(0, args.retries),
+            budget,
+        )
+    except RequestBudgetExceeded as exc:
+        print(f"stopped: {exc}", file=sys.stderr)
+        print(f"requests used: {budget.used}/{budget.limit}", file=sys.stderr)
+        return 2
     summary = dict(sorted(Counter(item["problem"] for item in findings).items()))
-    report = {"site": args.site, "api": args.api, "summary": summary, "findings": findings}
+    report = {
+        "site": args.site,
+        "api": args.api,
+        "request_budget": budget.limit,
+        "requests_used": budget.used,
+        "summary": summary,
+        "findings": findings,
+    }
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"report: {args.report}")
     print(json.dumps(summary, sort_keys=True))
+    print(f"requests used: {budget.used}/{budget.limit}")
     for finding in findings:
         print(f"{finding['check']}: {finding['problem']} ({finding['detail']})")
     return 1 if findings else 0

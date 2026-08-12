@@ -147,7 +147,7 @@ async function runApp(initialHash, fetchImpl, { mobile = false, online = true } 
   }
 
   try {
-    new Function(app)();
+    const appExports = new Function(`${app}\nreturn { brokenFileReportUrl };`)();
     for (const handler of documentEvents.get('DOMContentLoaded') || []) handler();
     await Promise.resolve();
     return {
@@ -159,6 +159,7 @@ async function runApp(initialHash, fetchImpl, { mobile = false, online = true } 
       menuButton,
       navLinks,
       slideMenu,
+      brokenFileReportUrl: appExports.brokenFileReportUrl,
       click(control) {
         const event = { target: control, preventDefault() {} };
         for (const handler of documentEvents.get('click') || []) handler(event);
@@ -199,6 +200,39 @@ async function runApp(initialHash, fetchImpl, { mobile = false, online = true } 
 }
 
 describe('frontend navigation request lifecycle', () => {
+  test('prefills a broken-file report with the record and browser error details', async () => {
+    const harness = await runApp('#about', () => Promise.resolve(new Response(JSON.stringify({
+      total_documents: 1,
+      total_entities: 1,
+      total_mentions: 1,
+      documents_with_text: 1,
+    }))));
+    harness.location.hash = '#doc/22425';
+    const report = new URL(harness.brokenFileReportUrl({
+      currentSrc: '/api/documents/22425/file?stream=1',
+      dataset: {
+        documentId: '22425',
+        documentTitle: 'Released video',
+        mediaKind: 'video',
+      },
+      error: { code: 4 },
+      querySelector() { return null; },
+      tagName: 'VIDEO',
+    }));
+
+    expect(report.origin).toBe('https://docs.google.com');
+    expect(report.searchParams.get('usp')).toBe('pp_url');
+    expect(report.searchParams.get('entry.962036122')).toBe('video document 22425');
+    const details = report.searchParams.get('entry.1729274358');
+    expect(details).toContain('Broken video file');
+    expect(details).toContain('Document ID: 22425');
+    expect(details).toContain('Title: Released video');
+    expect(details).toContain('Page: https://example.test/#doc/22425');
+    expect(details).toContain('Media source: /api/documents/22425/file?stream=1');
+    expect(details).toContain('Browser media error code: 4');
+    harness.restore();
+  });
+
   test('aborts a delayed collection request when a newer route wins', async () => {
     let videoRequestAborted = false;
     const fetchImpl = (input, init = {}) => {

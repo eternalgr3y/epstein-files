@@ -201,9 +201,14 @@ describe('frontend navigation and heading semantics', () => {
   test('announces missing audio and video files after media source errors', async () => {
     const app = await Bun.file(new URL('app.js', frontendUrl)).text();
     expect(app).toContain('function initMediaFailureState()');
+    expect(app).toContain('function brokenFileReportUrl(media)');
     expect(app).toContain("media.querySelector('source')?.addEventListener('error', showFailure)");
-    expect(app).toContain('This audio file could not be loaded. Try Download or report the broken file.');
-    expect(app).toContain('This video file could not be loaded. Try Download or report the broken file.');
+    expect(app).toContain("if (reportLink) reportLink.href = brokenFileReportUrl(media)");
+    expect(app).toContain("const FEEDBACK_LOOKUP_ENTRY = 'entry.962036122'");
+    expect(app).toContain("const FEEDBACK_ISSUE_ENTRY = 'entry.1729274358'");
+    expect(app).toContain('data-broken-file-report>report the broken file</a>.');
+    expect(app).toContain('data-media-kind="audio" data-document-id="${Number(id)}"');
+    expect(app).toContain('data-media-kind="video" data-document-id="${Number(id)}"');
     expect(app).toContain('data-media-error role="alert" hidden');
     expect(app).toContain('data-preview-error hidden>Preview unavailable</span>');
     expect(app).toContain("const fallback = preview.querySelector('[data-preview-error]')");

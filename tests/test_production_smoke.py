@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
-from production_smoke import NoRedirect, content_range, hashed_app_asset
+from production_smoke import NoRedirect, content_range, hashed_app_asset, request_url
+from qa_request_budget import RequestBudget, RequestBudgetExceeded
 
 
 class ProductionSmokeTests(unittest.TestCase):
@@ -19,6 +21,13 @@ class ProductionSmokeTests(unittest.TestCase):
     def test_no_redirect_handler_keeps_canonical_checks_observable(self):
         handler = NoRedirect()
         self.assertIsNone(handler.redirect_request(None, None, 301, "Moved", {}, "https://example.test/next"))
+
+    def test_request_budget_stops_smoke_before_network_io(self):
+        with patch("production_smoke.urllib.request.build_opener") as build_opener:
+            with self.assertRaises(RequestBudgetExceeded):
+                request_url("https://example.test", budget=RequestBudget(0))
+
+        build_opener.return_value.open.assert_not_called()
 
 
 if __name__ == "__main__":
