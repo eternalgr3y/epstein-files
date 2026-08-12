@@ -1,5 +1,6 @@
 import io
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -23,9 +24,15 @@ class OcrPipelineTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory(prefix="epstein-ocr-tests-")
         self.root = Path(self.temp_dir.name)
-        self.font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 42
+        font_candidates = (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "arial.ttf",
+            Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
         )
+        font_path = next((path for path in font_candidates if path.is_file()), None)
+        if font_path is None:
+            self.skipTest("No TrueType test font is available")
+        self.font = ImageFont.truetype(str(font_path), 42)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -136,6 +143,10 @@ class OcrPipelineTests(unittest.TestCase):
         self.assertAlmostEqual(confidence, 0.4)
         image_to_data.assert_called_once()
 
+    @unittest.skipUnless(
+        shutil.which("tesseract"),
+        "Tesseract is required for the OCR integration test",
+    )
     def test_mixed_pdf_uses_native_text_and_ocrs_scanned_pages(self):
         scanned_phrase = "UNIQUE SCANNED PAGE PHRASE 90210"
         image_bytes = self._text_image(scanned_phrase)

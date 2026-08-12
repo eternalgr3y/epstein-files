@@ -1,4 +1,5 @@
 import math
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,6 +69,10 @@ class TranscriptionPipelineTests(unittest.TestCase):
             doc = SimpleNamespace(local_path="/missing/DOJ-OGR-00000001.wav")
             self.assertEqual(resolve_media_path(doc, source), expected)
 
+    @unittest.skipUnless(
+        shutil.which("ffmpeg") and shutil.which("ffprobe"),
+        "ffmpeg and ffprobe are required for the media integration test",
+    )
     def test_probe_media_identifies_an_audio_stream(self):
         with tempfile.TemporaryDirectory(prefix="epstein-media-probe-") as temp_dir:
             path = Path(temp_dir) / "tone.wav"
@@ -88,6 +93,13 @@ class TranscriptionPipelineTests(unittest.TestCase):
             self.assertTrue(probe.has_audio)
             self.assertGreater(probe.duration_seconds, 0)
             self.assertIsNone(probe.error)
+
+    def test_probe_media_reports_missing_ffprobe(self):
+        with patch("transcription_pipeline.subprocess.run", side_effect=FileNotFoundError("ffprobe")):
+            probe = probe_media(Path("missing.wav"))
+        self.assertFalse(probe.has_audio)
+        self.assertEqual(probe.duration_seconds, 0)
+        self.assertIn("ffprobe unavailable", probe.error)
 
     def test_failed_reprocess_preserves_the_last_good_transcript(self):
         with tempfile.TemporaryDirectory(prefix="epstein-transcript-save-") as temp_dir:
@@ -131,6 +143,7 @@ class TranscriptionPipelineTests(unittest.TestCase):
             self.assertEqual(doc.ocr_confidence, 0.8)
             self.assertEqual(text_record.full_text, "last good transcript")
             session.close()
+            engine.dispose()
 
     def test_stats_do_not_count_recovered_failures_as_current_failures(self):
         with tempfile.TemporaryDirectory(prefix="epstein-transcript-stats-") as temp_dir:
@@ -176,6 +189,7 @@ class TranscriptionPipelineTests(unittest.TestCase):
             self.assertEqual(stats["completed"], 1)
             self.assertEqual(stats["failed"], 1)
             self.assertEqual(stats["remaining"], 1)
+            engine.dispose()
 
     def test_stats_treat_a_later_reprocess_failure_as_current(self):
         with tempfile.TemporaryDirectory(prefix="epstein-transcript-latest-") as temp_dir:
@@ -211,6 +225,7 @@ class TranscriptionPipelineTests(unittest.TestCase):
             self.assertEqual(stats["completed"], 0)
             self.assertEqual(stats["failed"], 1)
             self.assertEqual(stats["remaining"], 1)
+            engine.dispose()
 
     def test_empty_and_no_audio_batches_do_not_load_whisper(self):
         session = MagicMock()
@@ -297,6 +312,7 @@ class TranscriptionPipelineTests(unittest.TestCase):
             self.assertFalse(first_ids & second_ids)
             self.assertEqual(len(first_ids | second_ids), 6)
             session.close()
+            engine.dispose()
 
     def test_inference_does_not_hold_the_selection_transaction_open(self):
         document = SimpleNamespace(id=7, filename="recording.wav")

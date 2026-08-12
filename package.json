@@ -11,8 +11,11 @@
     "test:python": "python3 -m unittest discover -s tests -v",
     "test:api": "python3 stress_test.py",
     "test:all": "bun test && python3 -m unittest discover -s tests -v && python3 stress_test.py",
+    "qa:production": "python production_smoke.py",
+    "qa:canonicals": "python crawl_canonical_pages.py",
+    "qa:integrity": "python audit_archive_integrity.py",
     "deploy:worker": "bunx wrangler deploy",
-    "deploy:pages": "wrangler --cwd frontend pages deploy . --project-name=epstein"
+    "deploy:pages": "wrangler --cwd frontend pages deploy . --project-name=epstein --branch=main"
   },
   "repository": {
     "type": "git",

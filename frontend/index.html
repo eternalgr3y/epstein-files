@@ -621,6 +621,15 @@
             margin: 0;
         }
 
+        .results-search {
+            margin: -1rem 0 2.25rem;
+        }
+
+        .error-state .results-search {
+            margin: 1.5rem auto;
+            text-align: left;
+        }
+
         .search-box {
             position: relative;
             display: flex;
@@ -1207,6 +1216,15 @@
             visibility: visible;
         }
 
+        .media-error {
+            margin: 1rem 0 0;
+            padding: 0.9rem 1rem;
+            border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+            border-radius: 8px;
+            background: var(--bg-elevated);
+            color: var(--text);
+        }
+
         .video-buffering-spinner {
             width: 1.25rem;
             height: 1.25rem;
@@ -1325,10 +1343,7 @@
             transform: scale(1.02);
         }
 
-        .image-card.is-broken::after,
-        .video-card.is-broken::after,
-        .oversight-card.is-broken::after {
-            content: "Preview unavailable";
+        .preview-error {
             position: absolute;
             inset: 0;
             display: grid;
@@ -1338,6 +1353,15 @@
             color: var(--text-dim);
             font: 500 0.72rem/1.4 var(--font-mono);
             text-align: center;
+            z-index: 1;
+        }
+
+        .preview-error[hidden] {
+            display: none;
+        }
+
+        .oversight-page {
+            position: relative;
         }
 
         img.image-load-failed {
@@ -1692,6 +1716,12 @@
 
         /* Mobile responsive */
         @media (max-width: 600px) {
+            .results-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+
             /* .doc-toolbar is a flex item with no flex-wrap inside
                .doc-viewer{overflow:hidden}, so its automatic minimum size
                floored it at its children's combined min-content width (508px)
@@ -1972,7 +2002,7 @@
                         <div class="search-container reveal" data-delay="4">
                             <label class="sr-only" for="q">Search the archive</label>
                             <div class="search-box">
-                                <input type="search" id="q" placeholder="Search names, places, case files" autofocus>
+                                <input type="search" id="q" placeholder="Search names, places, case files" maxlength="200" autofocus>
                                 <button class="search-btn" data-action="search" type="button">Search</button>
                             </div>
                         </div>
@@ -2058,7 +2088,7 @@
 
     <div id="sr-announce" class="sr-only" aria-live="polite"></div>
 
-    <script src="/app.js?v=20260809-about-identity" defer></script>
+    <script src="/app-cd5bf69f3c40.js" defer></script>
     <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "deeb9a9acadd4b9e88871189785a062e"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>

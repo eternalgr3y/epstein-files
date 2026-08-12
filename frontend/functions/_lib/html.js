@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = '2026-08-09f';
+export const PAGE_CACHE_VERSION = 'sha256-16b25ae9cdb2';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -72,7 +72,7 @@ export function esc(s) {
 }
 
 export const SECURITY_HEADERS = Object.freeze({
-  'content-security-policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'sha256-bYsn7nsGP7uuXfrf/dG7upexhfvmAGHpMI8+IRI8cEs=' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self'; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; upgrade-insecure-requests",
+  'content-security-policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'sha256-bYsn7nsGP7uuXfrf/dG7upexhfvmAGHpMI8+IRI8cEs=' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https://media.epsteinproject.org; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; upgrade-insecure-requests",
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'SAMEORIGIN',
   'referrer-policy': 'strict-origin-when-cross-origin',

@@ -1,22 +1,16 @@
 /*
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'sha256-B5pF6y67keMfSXqgeFBIw+hHISjQb5XR9xp1Yh/w37U=' 'sha256-n18cxpXRbJJY006hN0n5936FoDJwk6ABq6ZWuwrsus0=' 'sha256-bYsn7nsGP7uuXfrf/dG7upexhfvmAGHpMI8+IRI8cEs=' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev; media-src 'self' blob: https://media.epsteinproject.org; frame-src 'self' blob:; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; manifest-src 'self'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'sha256-B5pF6y67keMfSXqgeFBIw+hHISjQb5XR9xp1Yh/w37U=' 'sha256-n18cxpXRbJJY006hN0n5936FoDJwk6ABq6ZWuwrsus0=' 'sha256-bYsn7nsGP7uuXfrf/dG7upexhfvmAGHpMI8+IRI8cEs=' 'sha256-hQm/thnclJoGqpzyRb+mweyo37iOoTX5+Z67MMzMbP0=' 'sha256-7TOTOP/I/8XZiJUD3Q12UN1+NRtf2c8FWTcTD8iZwYU=' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev; media-src 'self' blob: https://media.epsteinproject.org; frame-src 'self' blob:; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; manifest-src 'self'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
   X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
 
-# app.js is cache-busted by query string (index.html references
-# /app.js?v=<date>-<slug>), so a new build is a new URL and can safely be
-# immutable. Pages' default was max-age=14400, which made every visitor
-# revalidate it six times a day for nothing.
-#
-# !! THIS MAKES BUMPING THE ?v= STRING MANDATORY !!
-# Editing app.js without changing the ?v= in index.html leaves returning
-# visitors on the old file for up to a year, with no way to force a refresh
-# short of a URL change. index.html itself stays max-age=0, so a version bump
-# always reaches everyone immediately.
-/app.js
+# The executable asset uses its content hash in the URL. _redirects maps that
+# unique public path to the maintained app.js source file. Pages does not
+# reliably vary its static-asset cache by query string, so a physical URL path
+# change is required for every build.
+/app-*.js
   Cache-Control: public, max-age=31536000, immutable
 
 # Icons and the social card change essentially never, and are referenced by
