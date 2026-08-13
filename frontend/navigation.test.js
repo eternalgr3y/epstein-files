@@ -200,6 +200,39 @@ async function runApp(initialHash, fetchImpl, { mobile = false, online = true } 
 }
 
 describe('frontend navigation request lifecycle', () => {
+  test('applies a homepage collection filter while retaining its canonical href fallback', async () => {
+    const requested = [];
+    const fetchImpl = (input) => {
+      const url = String(input);
+      requested.push(url);
+      if (url === '/api/stats') {
+        return Promise.resolve(Response.json({
+          data_sets: [{ name: 'court-records', count: 1 }],
+          total_documents: 1,
+          total_entities: 1,
+          total_mentions: 1,
+        }));
+      }
+      if (url.startsWith('/api/browse?')) {
+        return Promise.resolve(Response.json({ total: 0, results: [] }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    };
+    const harness = await runApp('#home', fetchImpl);
+    try {
+      const control = fakeElement();
+      control.dataset.action = 'documents';
+      control.dataset.set = 'court-records';
+      harness.click(control);
+      await Bun.sleep(0);
+
+      expect(harness.location.hash).toBe('#documents/0/court-records');
+      expect(requested.some((url) => url.includes('data_set=court-records'))).toBe(true);
+    } finally {
+      harness.restore();
+    }
+  });
+
   test('prefills a broken-file report with the record and browser error details', async () => {
     const harness = await runApp('#about', () => Promise.resolve(new Response(JSON.stringify({
       total_documents: 1,

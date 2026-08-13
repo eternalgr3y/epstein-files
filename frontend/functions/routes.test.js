@@ -169,6 +169,39 @@ describe('canonical Pages routes', () => {
     }
   });
 
+  test('keeps a textless PDF indexable and links directly to its released file and set', async () => {
+    const cache = cacheHarness();
+    try {
+      const response = await documentPage({
+        params: { id: '8784' },
+        request: new Request('https://epsteinproject.org/documents/8784'),
+        env: {
+          DB: documentDb({
+            id: 8784,
+            filename: 'EFTA00012345.pdf',
+            title: 'EFTA00012345.pdf',
+            document_type: 'pdf',
+            data_set: 'data-set-8',
+            file_size: 123456,
+            processing_status: 'completed',
+          }),
+        },
+        waitUntil() {},
+      });
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain('<meta name="robots" content="index, follow, max-snippet:-1">');
+      expect(html).toContain('<link rel="canonical" href="https://epsteinproject.org/documents/8784">');
+      expect(html).toContain('This scan produced no machine-readable text.');
+      expect(html).toContain('<dt>Released file size</dt><dd>123,456 bytes</dd>');
+      expect(html).toContain('<a href="/api/documents/8784/file">View the released file</a>');
+      expect(html).toContain('<a href="/documents/set/data-set-8">DOJ Data Set 8</a>');
+    } finally {
+      cache.restore();
+    }
+  });
+
   test('renders an estate native video on its canonical House page', async () => {
     const cache = cacheHarness();
     const pending = [];

@@ -77,7 +77,7 @@
         navOverlay,
     ].filter(Boolean);
     const THEME_KEY = 'epstein-project-theme';
-    const BASE_TITLE = 'Epstein Project — Public Archive of Jeffrey Epstein Case Records';
+    const BASE_TITLE = document.title;
     const API_TIMEOUT_MS = 20_000;
     const FEEDBACK_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdu5whC_64CsbCUP-6wjtwGx28y0oFOVMv290bREt45O0CWJg/viewform';
     const FEEDBACK_LOOKUP_ENTRY = 'entry.962036122';
@@ -329,7 +329,13 @@
         search: () => doSearch(),
         images: control => showImages(parseDataNumber(control, 'offset')),
         videos: control => showVideos(parseDataNumber(control, 'offset')),
-        documents: control => showDocuments(parseDataNumber(control, 'offset')),
+        documents: control => {
+            if (control.dataset.set !== undefined) {
+                documentFilters.dataSet = control.dataset.set;
+                documentFilters.hasText = '';
+            }
+            showDocuments(parseDataNumber(control, 'offset'));
+        },
         'document-filter': () => {
             documentFilters.dataSet = document.getElementById('documents-data-set')?.value || '';
             documentFilters.hasText = document.getElementById('documents-has-text')?.value || '';

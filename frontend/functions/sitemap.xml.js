@@ -6,6 +6,13 @@ import {
 } from './_lib/publication.js';
 
 const CACHE_SECONDS = 3600;
+// The 2026-08-13 release materially changed the rendered record pages: it
+// added crawlable collection/sibling links, richer record metadata and media
+// schema. Google treats main-content, structured-data and link changes as
+// significant for sitemap lastmod. Keep these family floors fixed until a
+// later release materially changes that family's rendered content again.
+const DOCUMENT_TEMPLATE_LASTMOD = '2026-08-13';
+const HOUSE_TEMPLATE_LASTMOD = '2026-08-13';
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -72,24 +79,25 @@ export async function onRequestGet(context) {
   ]);
 
   const urls = [
-    url('https://epsteinproject.org/', 'daily', '1.0'),
-    url('https://epsteinproject.org/documents', 'daily', '0.9'),
-    url('https://epsteinproject.org/images', 'weekly', '0.8'),
-    url('https://epsteinproject.org/videos', 'weekly', '0.8'),
-    url('https://epsteinproject.org/recordings', 'weekly', '0.8'),
-    url('https://epsteinproject.org/house-oversight', 'weekly', '0.9'),
+    url('https://epsteinproject.org/', 'daily', '1.0', '2026-08-13'),
+    url('https://epsteinproject.org/documents', 'daily', '0.9', '2026-08-13'),
+    url('https://epsteinproject.org/images', 'weekly', '0.8', '2026-08-13'),
+    url('https://epsteinproject.org/videos', 'weekly', '0.8', '2026-08-13'),
+    url('https://epsteinproject.org/recordings', 'weekly', '0.8', '2026-08-13'),
+    url('https://epsteinproject.org/house-oversight', 'weekly', '0.9', '2026-08-13'),
     // The methodology and OCR-accuracy disclosure now has a real URL.
     url('https://epsteinproject.org/about', 'monthly', '0.5'),
     // Per-release indexes: topic-clustered entry points into the corpus.
     ...['data-set', 'data-set-2', 'data-set-3', 'data-set-4', 'data-set-5',
         'data-set-6', 'data-set-7', 'data-set-8', 'court-records',
         'doj-disclosures', 'house-oversight-doj', 'maxwell-interview']
-      .map((slug) => url(`https://epsteinproject.org/documents/set/${slug}`, 'weekly', '0.7')),
+      .map((slug) => url(`https://epsteinproject.org/documents/set/${slug}`, 'weekly', '0.7', '2026-08-13')),
     ...docs.results.map((d) =>
-      url(`https://epsteinproject.org/documents/${d.id}`, 'monthly', '0.6', d.lastmod)),
+      url(`https://epsteinproject.org/documents/${d.id}`, 'monthly', '0.6',
+          maxDate(d.lastmod, DOCUMENT_TEMPLATE_LASTMOD))),
     ...houseOversight.results.map((d) =>
       url(`https://epsteinproject.org/house-oversight/${encodeURIComponent(d.bates_number)}`,
-          'monthly', '0.6', d.lastmod)
+          'monthly', '0.6', maxDate(d.lastmod, HOUSE_TEMPLATE_LASTMOD))
     ),
   ];
 
@@ -119,4 +127,11 @@ function url(loc, changefreq, priority, lastmod) {
     ? `\n    <lastmod>${lastmod}</lastmod>`
     : '';
   return `  <url>\n    <loc>${loc}</loc>${stamp}\n    <changefreq>${changefreq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
+}
+
+function maxDate(contentDate, templateDate) {
+  const valid = /^\d{4}-\d{2}-\d{2}$/;
+  const content = valid.test(contentDate || '') ? contentDate : '';
+  const template = valid.test(templateDate || '') ? templateDate : '';
+  return content > template ? content : template;
 }
