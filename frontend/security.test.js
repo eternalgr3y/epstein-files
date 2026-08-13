@@ -180,8 +180,11 @@ describe('frontend browser hardening', () => {
       Bun.file(new URL('src/api.py', rootUrl)).text(),
       Bun.file(new URL('src/config.py', rootUrl)).text(),
       Bun.file(new URL('nginx/nginx.conf', rootUrl)).text(),
-      Bun.file(new URL('fly.toml', rootUrl)).text(),
     ]);
+    const retiredFlyConfig = Bun.file(new URL('fly.toml', rootUrl));
+    if (await retiredFlyConfig.exists()) {
+      runtimeFiles.push(await retiredFlyConfig.text());
+    }
     for (const runtime of runtimeFiles) {
       expect(runtime).not.toMatch(/media\.epsteinproject\.org|\.r2\.dev|R2_PUBLIC_URL/);
     }
