@@ -7,7 +7,9 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = 'sha256-3687a08c14da';
+export const PAGE_CACHE_VERSION = 'sha256-bdd94d3efad7';
+export const DEFAULT_SOCIAL_IMAGE_URL = 'https://epsteinproject.org/static/og-image-cfb5f4496123.jpg';
+export const DEFAULT_SOCIAL_IMAGE_ALT = 'EpsteinProject.org social card: Search 22,000+ Jeffrey Epstein case records from DOJ, court, and House Oversight releases.';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -123,7 +125,8 @@ export function renderDocPage({
   bodyHtml,
   spaHash,
   ogType = 'article',
-  imageUrl = 'https://epsteinproject.org/og-image.png',
+  imageUrl = DEFAULT_SOCIAL_IMAGE_URL,
+  imageAlt = null,
   structuredData = null,
   robots = 'index, follow, max-snippet:-1',
 }) {
@@ -136,6 +139,14 @@ export function renderDocPage({
     : '';
   const structuredDataHtml = structuredData
     ? `<script type="application/ld+json">${JSON.stringify(structuredData).replace(/</g, '\\u003c')}</script>`
+    : '';
+  const resolvedImageAlt = imageAlt || (
+    imageUrl === DEFAULT_SOCIAL_IMAGE_URL ? DEFAULT_SOCIAL_IMAGE_ALT : `${title} preview image`
+  );
+  const defaultImageMetadataHtml = imageUrl === DEFAULT_SOCIAL_IMAGE_URL
+    ? `<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">`
     : '';
   return `<!DOCTYPE html>
 <html lang="en">
@@ -153,8 +164,12 @@ ${openGraphUrlHtml}
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:image" content="${esc(imageUrl)}">
-<meta property="og:site_name" content="Epstein Project">
+${defaultImageMetadataHtml}
+<meta property="og:image:alt" content="${esc(resolvedImageAlt)}">
+<meta property="og:site_name" content="EpsteinProject.org">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${esc(imageUrl)}">
+<meta name="twitter:image:alt" content="${esc(resolvedImageAlt)}">
 ${structuredDataHtml}
 <link rel="stylesheet" href="/static/ssr.css?v=20260813-csp-hardening">
 </head>

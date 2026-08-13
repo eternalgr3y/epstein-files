@@ -16,6 +16,7 @@ from typing import Any
 
 APP_ASSET_RE = re.compile(r"/app-([0-9a-f]{12})\.js")
 CSS_ASSET_RE = re.compile(r"/static/app-([0-9a-f]{12})\.css")
+OG_IMAGE_RE = re.compile(r"/static/og-image-([0-9a-f]{12})\.jpg")
 IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
@@ -35,9 +36,17 @@ class FrontendAssetParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.scripts: list[str] = []
         self.stylesheets: list[str] = []
+        self.social_images: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = {name.lower(): value for name, value in attrs}
+        if (
+            tag.lower() == "meta"
+            and (attributes.get("property") or "").lower() == "og:image"
+            and attributes.get("content")
+        ):
+            parsed = urllib.parse.urlsplit(attributes["content"] or "")
+            self.social_images.append(parsed.path)
         if tag.lower() == "script" and attributes.get("src"):
             self.scripts.append(attributes["src"] or "")
         if tag.lower() != "link" or not attributes.get("href"):
@@ -143,6 +152,9 @@ def run_smoke(origin: str, opener: Any | None = None) -> None:
     parser.feed(homepage)
     app_path, app_hash = _extract_one(parser.scripts, APP_ASSET_RE, "JavaScript")
     css_path, css_hash = _extract_one(parser.stylesheets, CSS_ASSET_RE, "stylesheet")
+    og_image_path, og_image_hash = _extract_one(
+        parser.social_images, OG_IMAGE_RE, "Open Graph image"
+    )
 
     _verify_asset(
         opener,
@@ -152,6 +164,7 @@ def run_smoke(origin: str, opener: Any | None = None) -> None:
         {"application/javascript", "text/javascript"},
     )
     _verify_asset(opener, origin, css_path, css_hash, {"text/css"})
+    _verify_asset(opener, origin, og_image_path, og_image_hash, {"image/jpeg"})
 
 
 def main() -> int:

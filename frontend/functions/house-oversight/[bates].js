@@ -1,4 +1,4 @@
-import { cleanDocTitle, esc, htmlResponseHeaders, notFoundResponse, pageCacheKey, renderDocPage } from '../_lib/html.js';
+import { DEFAULT_SOCIAL_IMAGE_URL, cleanDocTitle, esc, htmlResponseHeaders, notFoundResponse, pageCacheKey, renderDocPage } from '../_lib/html.js';
 import {
   hasPublicationExclusions,
   isDocumentExcluded,
@@ -132,7 +132,7 @@ ${nextDoc ? `<a href="/house-oversight/${encodeURIComponent(nextDoc.bates_number
     bodyHtml,
     spaHash: `house-oversight/${encodeURIComponent(bates)}`,
     ogType: isVideo ? 'video.other' : 'article',
-    imageUrl: isVideo ? thumbnailUrl : 'https://epsteinproject.org/og-image.png',
+    imageUrl: isVideo ? thumbnailUrl : DEFAULT_SOCIAL_IMAGE_URL,
     structuredData: isVideo ? {
       '@context': 'https://schema.org',
       '@type': 'VideoObject',

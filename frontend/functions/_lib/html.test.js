@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { PAGE_CACHE_VERSION, esc, htmlResponseHeaders, notFoundResponse, renderDocPage } from './html.js';
+import { DEFAULT_SOCIAL_IMAGE_ALT, DEFAULT_SOCIAL_IMAGE_URL, PAGE_CACHE_VERSION, esc, htmlResponseHeaders, notFoundResponse, renderDocPage } from './html.js';
 
 describe('crawlable page HTML helpers', () => {
   test('escapes strings and safely handles non-string values', () => {
@@ -35,6 +35,13 @@ describe('crawlable page HTML helpers', () => {
     });
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(html).not.toContain('<title><img');
+    expect(html).toContain(`<meta property="og:image" content="${DEFAULT_SOCIAL_IMAGE_URL}">`);
+    expect(html).toContain('<meta property="og:image:type" content="image/jpeg">');
+    expect(html).toContain('<meta property="og:image:width" content="1200">');
+    expect(html).toContain('<meta property="og:image:height" content="630">');
+    expect(html).toContain(`<meta property="og:image:alt" content="${DEFAULT_SOCIAL_IMAGE_ALT}">`);
+    expect(html).toContain(`<meta name="twitter:image" content="${DEFAULT_SOCIAL_IMAGE_URL}">`);
+    expect(html).toContain(`<meta name="twitter:image:alt" content="${DEFAULT_SOCIAL_IMAGE_ALT}">`);
   });
 
   test('renders canonical navigation and safely serializes structured data', () => {
@@ -54,6 +61,24 @@ describe('crawlable page HTML helpers', () => {
     expect(html).not.toMatch(/\sstyle\s*=/i);
     expect(html).toContain('\\u003c/script>');
     expect(html).not.toContain('</script><script>alert(1)</script>');
+  });
+
+  test('does not claim default-card dimensions for a custom record thumbnail', () => {
+    const html = renderDocPage({
+      canonicalPath: '/videos/1',
+      title: 'Released video',
+      description: 'A released video',
+      bodyHtml: '<h1>Released video</h1>',
+      spaHash: 'doc/1',
+      imageUrl: 'https://epsteinproject.org/api/videos/1/thumb',
+      imageAlt: 'Released video thumbnail',
+    });
+    expect(html).toContain('<meta property="og:image" content="https://epsteinproject.org/api/videos/1/thumb">');
+    expect(html).toContain('<meta property="og:image:alt" content="Released video thumbnail">');
+    expect(html).toContain('<meta name="twitter:image" content="https://epsteinproject.org/api/videos/1/thumb">');
+    expect(html).not.toContain('<meta property="og:image:width"');
+    expect(html).not.toContain('<meta property="og:image:height"');
+    expect(html).not.toContain('<meta property="og:image:type"');
   });
 
   test('renders dynamic misses as noindex 404s without a homepage canonical', async () => {

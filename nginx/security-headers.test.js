@@ -36,7 +36,8 @@ describe('nginx response-header inheritance', () => {
     const staticLocation = locationBlocks(nginx).find((block) => block.startsWith('location /static/'));
 
     expect(nginx).toContain('map $uri $static_asset_cache_control {');
-    expect(nginx).toContain('~^/static/app-[0-9a-f]{12}\\.css$ "public, max-age=31536000, immutable";');
+    expect(nginx).toContain('"~^/static/app-[0-9a-f]{12}\\.css$" "public, max-age=31536000, immutable";');
+    expect(nginx).toContain('"~^/static/og-image-[0-9a-f]{12}\\.jpg$" "public, max-age=31536000, immutable";');
     expect(nginx).toContain('~^/static/ "public, max-age=86400";');
     expect(nginx).toContain('add_header Cache-Control $static_asset_cache_control;');
     expect(staticLocation).toBeDefined();
