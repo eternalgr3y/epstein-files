@@ -471,8 +471,12 @@ describe('frontend navigation request lifecycle', () => {
           document_type: 'video',
           content_type: 'video/quicktime',
           playback_content_type: 'video/mp4',
-          page_count: 1,
-          pages: [{ url: '/api/house-oversight/page/HOUSE_OVERSIGHT_026678/0' }],
+          page_count: 3,
+          pages: [
+            { url: '/api/house-oversight/page/HOUSE_OVERSIGHT_026678/0' },
+            { url: '/api/house-oversight/page/HOUSE_OVERSIGHT_026678/1' },
+            { url: '/api/house-oversight/page/HOUSE_OVERSIGHT_026678/2' },
+          ],
           entities: [],
         }));
       }
@@ -490,6 +494,14 @@ describe('frontend navigation request lifecycle', () => {
       expect(html).toContain('<video controls preload="metadata"');
       expect(html).toContain('/api/documents/15999/file?stream=1');
       expect(html).toContain('type="video/mp4"');
+      const pageImages = (html.match(/<img\b[^>]*>/g) ?? [])
+        .filter((image) => image.includes('/api/house-oversight/page/'));
+      expect(pageImages).toHaveLength(3);
+      expect(pageImages[0]).toContain('loading="eager"');
+      expect(pageImages[1]).toContain('loading="eager"');
+      expect(pageImages[2]).toContain('loading="lazy"');
+      pageImages.forEach((image) => expect(image).toContain('decoding="async"'));
+      expect(pageImages.filter((image) => image.includes('fetchpriority="high"'))).toEqual([pageImages[0]]);
     } finally {
       harness.restore();
     }

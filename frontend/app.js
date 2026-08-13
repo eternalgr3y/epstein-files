@@ -1270,9 +1270,11 @@
             html += `<div class="page-grid">`;
             doc.pages.forEach((p, i) => {
                 const pageUrl = `${API_BASE}${p.url}`;
+                const loading = i < 2 ? 'eager' : 'lazy';
+                const fetchPriority = i === 0 ? ' fetchpriority="high"' : '';
                 html += `
                     <a class="oversight-page" href="${pageUrl}" target="_blank" aria-label="Open page ${i + 1}">
-                        <img src="${pageUrl}" alt="Page ${i + 1}" loading="lazy">
+                        <img src="${pageUrl}" alt="Page ${i + 1}" loading="${loading}"${fetchPriority} decoding="async">
                         <span class="preview-error" data-preview-error hidden>Page image unavailable</span>
                     </a>
                 `;
