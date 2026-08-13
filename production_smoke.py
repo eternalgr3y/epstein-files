@@ -28,7 +28,7 @@ VIDEO_DOCUMENT_ID = 22425
 LEGACY_VIDEO_DOCUMENT_ID = 14685
 ESTATE_VIDEO_DOCUMENT_ID = 15999
 ESTATE_VIDEO_BATES = "HOUSE_OVERSIGHT_026678"
-MISSING_ESTATE_THUMB_BATES = "HOUSE_OVERSIGHT_014359"
+ESTATE_THUMB_BATES = "HOUSE_OVERSIGHT_014359"
 
 
 @dataclasses.dataclass
@@ -102,6 +102,10 @@ def hashed_app_asset(html: str) -> tuple[str, str] | None:
 def content_range(value: str | None) -> tuple[int, int, int] | None:
     match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", value or "")
     return tuple(map(int, match.groups())) if match else None
+
+
+def is_jpeg_payload(body: bytes) -> bool:
+    return body.startswith(b"\xff\xd8\xff")
 
 
 def run_smoke(
@@ -257,21 +261,23 @@ def run_smoke(
     elif not estate_stream_range or estate_stream_range[:2] != (0, 1048575):
         add("estate-video-stream", "content-range", estate_stream.headers.get("content-range", "missing"))
 
-    missing_estate_thumb = request_url(
-        f"{api.rstrip('/')}/api/house-oversight/thumbnail/{MISSING_ESTATE_THUMB_BATES}",
+    estate_thumb = request_url(
+        f"{api.rstrip('/')}/api/house-oversight/thumbnail/{ESTATE_THUMB_BATES}",
         budget=budget,
-        follow_redirects=False,
+        read_limit=64,
         timeout=timeout,
         retries=retries,
     )
-    if missing_estate_thumb.status != 302:
-        add("missing-estate-thumbnail", "http-status", str(missing_estate_thumb.status))
-    elif missing_estate_thumb.headers.get("location") != f"{site.rstrip('/')}/og-image.png":
+    if estate_thumb.status != 200:
+        add("estate-thumbnail", "http-status", str(estate_thumb.status))
+    elif estate_thumb.headers.get("content-type", "").split(";", 1)[0] != "image/jpeg":
         add(
-            "missing-estate-thumbnail",
-            "location",
-            missing_estate_thumb.headers.get("location", "missing"),
+            "estate-thumbnail",
+            "content-type",
+            estate_thumb.headers.get("content-type", "missing"),
         )
+    elif not is_jpeg_payload(estate_thumb.body):
+        add("estate-thumbnail", "invalid-jpeg", estate_thumb.body[:8].hex())
 
     media_url = f"{api.rstrip('/')}/api/documents/{VIDEO_DOCUMENT_ID}/file"
     ordinary = request_url(
