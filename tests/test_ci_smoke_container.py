@@ -38,14 +38,18 @@ def valid_fixture():
     origin = "http://127.0.0.1:18000"
     app = b"console.log('container');\n"
     css = b"body { color: #111; }\n"
+    og_image = b"\xff\xd8\xff\xe0container social card\xff\xd9"
     app_hash = hashlib.sha256(app).hexdigest()[:12]
     css_hash = hashlib.sha256(css).hexdigest()[:12]
+    og_image_hash = hashlib.sha256(og_image).hexdigest()[:12]
     app_path = f"/app-{app_hash}.js"
     css_path = f"/static/app-{css_hash}.css"
+    og_image_path = f"/static/og-image-{og_image_hash}.jpg"
     homepage = (
         "<!doctype html><html><head>"
         f'<link rel="stylesheet" href="{css_path}">'
         f'<script defer src="{app_path}"></script>'
+        f'<meta property="og:image" content="https://epsteinproject.org{og_image_path}">'
         "</head><body></body></html>"
     ).encode()
     immutable = "public, max-age=31536000, immutable"
@@ -58,6 +62,7 @@ def valid_fixture():
         origin + "/": FakeResponse(200, "text/html; charset=utf-8", homepage),
         origin + app_path: FakeResponse(200, "application/javascript", app, immutable),
         origin + css_path: FakeResponse(200, "text/css; charset=utf-8", css, immutable),
+        origin + og_image_path: FakeResponse(200, "image/jpeg", og_image, immutable),
     }
     return origin, responses, origin + app_path
 
@@ -69,7 +74,7 @@ class ContainerSmokeTests(unittest.TestCase):
 
         run_smoke(origin, opener)
 
-        self.assertEqual(len(opener.requests), 4)
+        self.assertEqual(len(opener.requests), 5)
         self.assertTrue(all(timeout == 10 for _, timeout in opener.requests))
 
     def test_rejects_asset_bytes_that_do_not_match_filename_hash(self):

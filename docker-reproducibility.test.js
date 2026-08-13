@@ -42,6 +42,7 @@ describe("Docker build inputs", () => {
     expect(legacyApi).toContain('hashlib.sha256(path.read_bytes()).hexdigest()[:12]');
     expect(legacyApi).toContain('@app.get("/app-{asset_hash}.js", include_in_schema=False)');
     expect(legacyApi).toContain('@app.get("/static/app-{asset_hash}.css", include_in_schema=False)');
+    expect(legacyApi).toContain('@app.get("/static/og-image-{asset_hash}.jpg", include_in_schema=False)');
     expect(legacyApi).toContain('"Cache-Control": "public, max-age=31536000, immutable"');
   });
 

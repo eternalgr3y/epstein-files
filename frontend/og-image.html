@@ -2,25 +2,34 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <!-- Source for og-image.png. Render with:
+    <!-- Source for the versioned Open Graph image. Render with:
          google-chrome --headless=new --disable-gpu --hide-scrollbars \
-           --window-size=1200,630 --virtual-time-budget=8000 \
-           --screenshot=frontend/og-image.png frontend/og-image.html -->
+           --force-device-scale-factor=1 --window-size=1200,630 \
+           --virtual-time-budget=8000 --screenshot=frontend/og-image-draft.png \
+           frontend/og-image.html -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400&display=block">
-    <link rel="stylesheet" href="/static/og-image.css?v=20260813-csp-hardening">
+    <link rel="stylesheet" href="static/og-image.css">
 </head>
 <body>
     <div class="frame">
         <div class="masthead">
             <div class="logo">Epstein<span>Project</span>.org</div>
-            <div class="kicker">Public record archive</div>
+            <div class="kicker">Independent public archive</div>
         </div>
         <div class="hero">
-            <h1>Epstein case<br>documents<span class="dot">.</span></h1>
-            <div class="sub">Search DOJ releases, court records, depositions, flight logs, and evidence files.</div>
+            <div class="hero-copy">
+                <div class="eyebrow">Public records, organized and searchable</div>
+                <h1>Search Jeffrey Epstein<br>case records<span class="dot">.</span></h1>
+                <div class="sub">Documents, photos, video, and audio<br>from official public releases.</div>
+            </div>
+            <div class="record-count">
+                <strong>22,000+</strong>
+                <span>public records</span>
+                <div class="source-list">DOJ<br>Court<br>House Oversight</div>
+            </div>
         </div>
         <div class="ledger">
-            <div class="counts"><b>22,310</b> documents &middot; <b>216,591</b> names &middot; <b>3.7M</b> indexed mentions</div>
+            <div class="sources">DOJ &middot; Court &middot; House Oversight</div>
             <div class="stamp">As released</div>
         </div>
     </div>

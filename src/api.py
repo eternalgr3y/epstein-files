@@ -179,6 +179,15 @@ async def serve_versioned_app_css(asset_hash: str):
     )
 
 
+@app.get("/static/og-image-{asset_hash}.jpg", include_in_schema=False)
+async def serve_versioned_og_image(asset_hash: str):
+    return _versioned_frontend_asset(
+        FRONTEND_DIR / "static" / f"og-image-{asset_hash}.jpg",
+        asset_hash,
+        "image/jpeg",
+    )
+
+
 # Frontend - serve versioned CSS and other static assets. Keep the mount rooted
 # at frontend/static so /static/app.css resolves identically behind nginx and
 # on Cloudflare Pages.

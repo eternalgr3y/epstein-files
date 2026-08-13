@@ -5,7 +5,7 @@
  * Uses D1 for database, R2 for file storage.
  */
 
-const MISSING_THUMBNAIL_URL = 'https://epsteinproject.org/og-image.png';
+const MISSING_THUMBNAIL_URL = 'https://epsteinproject.org/static/og-image-cfb5f4496123.jpg';
 
 // Rate limiting: 100 requests per minute per IP, enforced by Cloudflare's
 // Rate Limiting binding in production (see wrangler.toml).

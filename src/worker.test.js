@@ -539,7 +539,7 @@ describe('Worker security behavior', () => {
 
     const video = await worker.fetch(request('/api/videos/15999/thumb'), env, {});
     expect(video.status).toBe(302);
-    expect(video.headers.get('location')).toBe('https://epsteinproject.org/og-image.png');
+    expect(video.headers.get('location')).toBe('https://epsteinproject.org/static/og-image-cfb5f4496123.jpg');
     expect(video.headers.get('cache-control')).toBe('public, max-age=3600');
 
     const estate = await worker.fetch(
@@ -548,7 +548,7 @@ describe('Worker security behavior', () => {
       {},
     );
     expect(estate.status).toBe(302);
-    expect(estate.headers.get('location')).toBe('https://epsteinproject.org/og-image.png');
+    expect(estate.headers.get('location')).toBe('https://epsteinproject.org/static/og-image-cfb5f4496123.jpg');
   });
 
   test('serves extensionless Bates PDFs with their stored media type', async () => {

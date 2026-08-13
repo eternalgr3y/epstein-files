@@ -112,7 +112,7 @@ describe('frontend browser hardening', () => {
 
     expect(index).toMatch(/\/static\/app-[a-f0-9]{12}\.css/);
     expect(notFound).toContain('/static/not-found.css?v=20260813-csp-hardening');
-    expect(socialCard).toContain('/static/og-image.css?v=20260813-csp-hardening');
+    expect(socialCard).toContain('href="static/og-image.css"');
     expect(htmlHelper).toContain('/static/ssr.css?v=20260813-csp-hardening');
     expect(legacyApi).toContain('StaticFiles(directory=str(FRONTEND_DIR / "static"))');
 
