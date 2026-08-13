@@ -1,25 +1,30 @@
 import { documentItems, pageParam, renderCollectionResponse } from '../_lib/collection.js';
 import { setLabel } from '../_lib/html.js';
+import { hasPublicationExclusions, notExcludedSql, publicationPolicy } from '../_lib/publication.js';
 
 const PAGE_SIZE = 100;
 
 export async function onRequestGet({ env, request }) {
+  const policy = publicationPolicy(env);
+  const excluded = notExcludedSql('id', policy.documentIds);
   // Count first so the requested page can be clamped against the real total
   // before the listing query runs.
   const count = await env.DB
-    .prepare("SELECT COUNT(*) AS count FROM documents WHERE data_set != 'house-oversight-estate'")
-    .first();
+    .prepare("SELECT COUNT(*) AS count FROM documents WHERE data_set != 'house-oversight-estate'" + excluded.clause)
+    .bind(...excluded.bindings).first();
   const page = pageParam(request, PAGE_SIZE, count.count);
   const docs = await env.DB.prepare(
     "SELECT id, filename, title, document_type, data_set, page_count FROM documents "
-    + "WHERE data_set != 'house-oversight-estate' ORDER BY id DESC LIMIT ? OFFSET ?"
-  ).bind(PAGE_SIZE, (page - 1) * PAGE_SIZE).all();
+    + "WHERE data_set != 'house-oversight-estate'" + excluded.clause
+    + " ORDER BY id DESC LIMIT ? OFFSET ?"
+  ).bind(...excluded.bindings, PAGE_SIZE, (page - 1) * PAGE_SIZE).all();
 
   // Per-release indexes, ordered by size, as crawlable entry points.
   const sets = await env.DB.prepare(
     "SELECT data_set, COUNT(*) AS n FROM documents "
-    + "WHERE data_set != 'house-oversight-estate' GROUP BY data_set ORDER BY n DESC"
-  ).all();
+    + "WHERE data_set != 'house-oversight-estate'" + excluded.clause
+    + " GROUP BY data_set ORDER BY n DESC"
+  ).bind(...excluded.bindings).all();
   const links = sets.results
     .filter((r) => r.data_set && r.data_set !== 'Data Set 8')
     .map((r) => ({
@@ -41,5 +46,6 @@ export async function onRequestGet({ env, request }) {
     pageSize: PAGE_SIZE,
     links,
     spaHash: 'documents/0',
+    cacheControl: hasPublicationExclusions(policy) ? 'no-store' : undefined,
   });
 }

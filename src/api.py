@@ -9,10 +9,11 @@ FastAPI-based API providing:
 """
 
 from typing import Optional, List, Dict, Any
+import hashlib
 import os
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
@@ -34,22 +35,10 @@ from search import (
     get_document_types, get_data_sets
 )
 from importer import get_document_stats
-from config import FRONTEND_DIR, THUMBNAIL_DIR, BASE_DIR, R2_PUBLIC_URL
+from config import FRONTEND_DIR, THUMBNAIL_DIR, BASE_DIR
 
 IMAGES_DIR = BASE_DIR / "images"
 RAW_DIR = BASE_DIR / "raw"
-
-
-def get_r2_url(local_path: Path) -> Optional[str]:
-    """Convert local path to R2 CDN URL if R2 is configured."""
-    if not R2_PUBLIC_URL:
-        return None
-    try:
-        # Get path relative to BASE_DIR
-        rel_path = local_path.relative_to(BASE_DIR)
-        return f"{R2_PUBLIC_URL}/{rel_path}"
-    except ValueError:
-        return None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -160,9 +149,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Frontend - serve static files
-if FRONTEND_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+# Frontend - accept only content-addressed aliases whose hash matches the bytes
+# in this exact build. Cloudflare Pages performs the equivalent rewrites from
+# frontend/_redirects; these routes keep the local/container entrypoint honest.
+def _versioned_frontend_asset(path: Path, requested_hash: str, media_type: str):
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Frontend asset not found")
+    actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    if requested_hash != actual_hash:
+        raise HTTPException(status_code=404, detail="Frontend asset not found")
+    return FileResponse(
+        str(path),
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@app.get("/app-{asset_hash}.js", include_in_schema=False)
+async def serve_versioned_app(asset_hash: str):
+    return _versioned_frontend_asset(
+        FRONTEND_DIR / "app.js", asset_hash, "application/javascript"
+    )
+
+
+@app.get("/static/app-{asset_hash}.css", include_in_schema=False)
+async def serve_versioned_app_css(asset_hash: str):
+    return _versioned_frontend_asset(
+        FRONTEND_DIR / "static" / "app.css", asset_hash, "text/css"
+    )
+
+
+# Frontend - serve versioned CSS and other static assets. Keep the mount rooted
+# at frontend/static so /static/app.css resolves identically behind nginx and
+# on Cloudflare Pages.
+if (FRONTEND_DIR / "static").exists():
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(FRONTEND_DIR / "static")),
+        name="static",
+    )
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/app", response_class=HTMLResponse)
@@ -513,12 +538,8 @@ async def get_document_file(document_id: int):
 
         file_path = Path(doc.local_path)
 
-        # Redirect to R2 CDN if configured
-        r2_url = get_r2_url(file_path)
-        if r2_url:
-            return RedirectResponse(url=r2_url, status_code=302)
-
-        # Fallback to local file
+        # This legacy/VPS runtime is local-file only. Production R2 objects are
+        # private and are served by the policy-aware Cloudflare Worker.
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -867,12 +888,7 @@ async def get_video_thumbnail(document_id: int):
     """Get pre-generated video thumbnail."""
     thumb_path = THUMBNAIL_DIR / f"{document_id}.jpg"
 
-    # Redirect to R2 CDN if configured
-    r2_url = get_r2_url(thumb_path)
-    if r2_url:
-        return RedirectResponse(url=r2_url, status_code=302)
-
-    # Fallback to local
+    # Local fallback for the legacy/VPS deployment.
     if thumb_path.exists():
         return FileResponse(str(thumb_path), media_type="image/jpeg")
 
@@ -955,12 +971,7 @@ async def get_image(filename: str):
 
     image_path = IMAGES_DIR / filename
 
-    # Redirect to R2 CDN if configured
-    r2_url = get_r2_url(image_path)
-    if r2_url:
-        return RedirectResponse(url=r2_url, status_code=302)
-
-    # Fallback to local
+    # Local fallback for the legacy/VPS deployment.
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="Image not found")
 
@@ -1101,12 +1112,8 @@ async def get_house_oversight_page(bates: str, page: int):
     image_path = pages[page]  # e.g., "IMAGES/001/HOUSE_OVERSIGHT_010477.jpg"
     full_path = RAW_DIR / "house-oversight-estate" / image_path
 
-    # Try R2 CDN first
-    if R2_PUBLIC_URL:
-        r2_url = f"{R2_PUBLIC_URL}/house-oversight/{image_path}"
-        return RedirectResponse(url=r2_url, status_code=302)
-
-    # Fallback to local
+    # Local fallback for the legacy/VPS deployment. Production serves the
+    # equivalent object through the Cloudflare Worker's checked API route.
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Image file not found")
 

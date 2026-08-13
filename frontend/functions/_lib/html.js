@@ -7,7 +7,7 @@
 //
 // Bumping this string changes every cache key at once, so a deploy takes
 // effect immediately. Change it whenever you change what these pages render.
-export const PAGE_CACHE_VERSION = 'sha256-16b25ae9cdb2';
+export const PAGE_CACHE_VERSION = 'sha256-72eca63dbb1e';
 
 // Build the Cache API key for a server-rendered page.
 export function pageCacheKey(request, path) {
@@ -72,7 +72,7 @@ export function esc(s) {
 }
 
 export const SECURITY_HEADERS = Object.freeze({
-  'content-security-policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'sha256-bYsn7nsGP7uuXfrf/dG7upexhfvmAGHpMI8+IRI8cEs=' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https://media.epsteinproject.org; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; upgrade-insecure-requests",
+  'content-security-policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' 'sha256-bYsn7nsGP7uuXfrf/dG7upexhfvmAGHpMI8+IRI8cEs=' https://static.cloudflareinsights.com; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; img-src 'self' data:; media-src 'self'; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; upgrade-insecure-requests",
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'SAMEORIGIN',
   'referrer-policy': 'strict-origin-when-cross-origin',
@@ -80,7 +80,9 @@ export const SECURITY_HEADERS = Object.freeze({
   'strict-transport-security': 'max-age=31536000; includeSubDomains',
 });
 
-export function htmlResponseHeaders(cacheControl = 'public, max-age=3600') {
+export function htmlResponseHeaders(
+  cacheControl = 'public, max-age=0, s-maxage=3600, must-revalidate'
+) {
   return {
     ...SECURITY_HEADERS,
     'content-type': 'text/html;charset=UTF-8',
@@ -95,7 +97,7 @@ export function htmlResponseHeaders(cacheControl = 'public, max-age=3600') {
 // no-store keeps browsers and the SSR cache from holding onto it.
 export function notFoundResponse(heading = 'Record not found') {
   const html = renderDocPage({
-    canonicalPath: '/',
+    canonicalPath: null,
     title: heading,
     description: 'This record is not in the archive.',
     bodyHtml: `
@@ -106,6 +108,7 @@ export function notFoundResponse(heading = 'Record not found') {
 <p>There is no record at this address. It may have been renumbered, or the link may be mistyped. The search above covers the full archive.</p>
 <p class="onward"><a href="/documents">Browse the document index</a></p>`,
     spaHash: null,
+    robots: 'noindex, follow',
   });
   return new Response(html, {
     status: 404,
@@ -122,8 +125,15 @@ export function renderDocPage({
   ogType = 'article',
   imageUrl = 'https://epsteinproject.org/og-image.png',
   structuredData = null,
+  robots = 'index, follow, max-snippet:-1',
 }) {
-  const canonical = `https://epsteinproject.org${canonicalPath}`;
+  const canonical = canonicalPath ? `https://epsteinproject.org${canonicalPath}` : null;
+  const canonicalHtml = canonical
+    ? `<link rel="canonical" href="${canonical}">`
+    : '';
+  const openGraphUrlHtml = canonical
+    ? `<meta property="og:url" content="${canonical}">`
+    : '';
   const structuredDataHtml = structuredData
     ? `<script type="application/ld+json">${JSON.stringify(structuredData).replace(/</g, '\\u003c')}</script>`
     : '';
@@ -136,141 +146,24 @@ export function renderDocPage({
 <script>(function(){var d=document.documentElement,K='epstein-project-theme';function g(){try{var v=localStorage.getItem(K);return v==='light'||v==='dark'?v:'auto'}catch(e){return'auto'}}function a(t){t==='auto'?d.removeAttribute('data-theme'):d.setAttribute('data-theme',t);var b=document.querySelector('[data-action=theme]');if(b){var l=b.querySelector('[data-theme-label]');if(l)l.textContent=t[0].toUpperCase()+t.slice(1);b.setAttribute('aria-label','Color theme: '+t+'. Activate to change.')}}a(g());addEventListener('DOMContentLoaded',function(){a(g());var b=document.querySelector('[data-action=theme]');if(b)b.addEventListener('click',function(){var c=g(),n=c==='auto'?'light':c==='light'?'dark':'auto';try{n==='auto'?localStorage.removeItem(K):localStorage.setItem(K,n)}catch(e){}a(n)})})})();</script>
 <title>${esc(title)} | Epstein Project</title>
 <meta name="description" content="${esc(description)}">
-<link rel="canonical" href="${canonical}">
-<meta name="robots" content="index, follow, max-snippet:-1">
+${canonicalHtml}
+<meta name="robots" content="${esc(robots)}">
 <meta property="og:type" content="${esc(ogType)}">
-<meta property="og:url" content="${canonical}">
+${openGraphUrlHtml}
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:image" content="${esc(imageUrl)}">
 <meta property="og:site_name" content="Epstein Project">
 <meta name="twitter:card" content="summary_large_image">
 ${structuredDataHtml}
-<style>
-/* These server-rendered pages are where all organic search traffic lands, so
-   they carry no webfonts on purpose: a render-blocking third-party font
-   request here would undo the Core Web Vitals work on the main app. The
-   identity comes from colour, structure, and the Bates treatment instead.
-   Colours mirror the SPA so a click through does not feel like a new site. */
-:root{
- color-scheme:light dark;
- --paper:#eeefec;--surface:#f8f8f6;--ink:#1b1e21;--muted:#5c636a;--dim:#636970;
- --rule:rgba(27,30,33,.14);--accent:#3a5463;--stamp:#8b3a3a;
- --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
- --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
- --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-*,*::before,*::after{box-sizing:border-box}
-body{font-family:var(--sans);max-width:70rem;margin:0 auto;padding:1.5rem 1.5rem 4rem;
- line-height:1.55;color:var(--ink);background:var(--paper);
- -webkit-text-size-adjust:100%}
-a{color:var(--accent)}
-a:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-
-/* Masthead: wordmark, collections, and a search field. The field matters most
-   -- an arriving reader previously had no way to search from this page. */
-.masthead{display:flex;flex-wrap:wrap;align-items:baseline;gap:.75rem 1.5rem;
- padding-bottom:1rem;border-bottom:1px solid var(--rule);margin-bottom:2.5rem}
-.wordmark{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;
- text-transform:uppercase;text-decoration:none;color:var(--ink);font-weight:600}
-.wordmark span{color:var(--accent)}
-.theme-btn{font-family:var(--mono);font-size:.66rem;letter-spacing:.12em;
- text-transform:uppercase;padding:.45rem .8rem;cursor:pointer;
- color:var(--muted);background:none;border:1px solid var(--rule);border-radius:0}
-.theme-btn:hover{color:var(--accent);border-color:var(--accent)}
-.masthead nav{display:flex;flex-wrap:wrap;gap:1rem;margin-right:auto}
-.masthead nav a{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;
- text-transform:uppercase;text-decoration:none;color:var(--muted)}
-.masthead nav a:hover{color:var(--accent)}
-.find{display:flex;gap:.4rem;flex:1 1 15rem;max-width:22rem}
-.find input{flex:1;min-width:0;font:inherit;font-size:.85rem;padding:.45rem .6rem;
- color:var(--ink);background:var(--surface);border:1px solid var(--rule);border-radius:0}
-.find button{font-family:var(--mono);font-size:.66rem;letter-spacing:.12em;
- text-transform:uppercase;padding:.45rem .8rem;cursor:pointer;
- color:var(--paper);background:var(--accent);border:1px solid var(--accent);border-radius:0}
-
-/* The record head. The Bates number is the document's real name -- it is how
-   these are cited in filings and by reporters -- so it is the headline, and
-   the filename is demoted to a caption. */
-.eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.18em;
- text-transform:uppercase;color:var(--stamp);margin:0 0 .6rem}
-.bates{font-family:var(--mono);font-weight:500;letter-spacing:.02em;
- font-size:clamp(1.6rem,5.5vw,2.9rem);line-height:1.1;margin:0;overflow-wrap:anywhere}
-.record-title{font-family:var(--serif);font-size:clamp(1.05rem,2.2vw,1.35rem);
- color:var(--muted);margin:.5rem 0 0;font-style:italic}
-.record{padding-bottom:1.5rem;border-bottom:2px solid var(--stamp);margin-bottom:1.75rem}
-
-/* Metadata as a production strip rather than a definition list. */
-dl{display:flex;flex-wrap:wrap;gap:.4rem 2.5rem;margin:1.5rem 0}
-dt{font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;
- text-transform:uppercase;color:var(--dim);margin:0}
-dd{font-family:var(--mono);font-size:.82rem;margin:.15rem 0 0}
-dl>dt{flex:0 0 auto}dl>dd{flex:0 0 auto;margin-right:1.5rem}
-
-h2{font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;
- text-transform:uppercase;color:var(--dim);font-weight:600;margin:2.5rem 0 .75rem}
-/* The released text, set as the photocopy it is. */
-pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);
- font-size:.82rem;line-height:1.7;background:var(--surface);
- border:1px solid var(--rule);border-left:3px solid var(--rule);
- padding:1.5rem;margin:0;max-width:min(80ch,100%)}
-.ocr-note{font-size:.8rem;color:var(--muted);margin:0 0 .75rem;max-width:62ch}
-video,audio,img{max-width:100%}
-.item-list{padding:0;list-style:none;margin:0}
-.item-list li{padding:1rem 0;border-top:1px solid var(--rule)}
-.item-list small{display:block;color:var(--muted);margin-top:.25rem;
- font-family:var(--mono);font-size:.72rem}
-/* Filenames like 01_06CF009454_Controlled_Call_from_S.G._to_Haley_R.wav have no
-   UAX#14 break opportunity and pushed the body sideways on a 360px screen. */
-.item-list a,.item-list small,.record-title{overflow-wrap:anywhere}
-.collection-links{display:flex;flex-wrap:wrap;gap:.5rem;margin:1.5rem 0 2rem}
-.collection-links a{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;
- text-decoration:none;padding:.35rem .6rem;border:1px solid var(--rule);
- color:var(--muted)}
-.collection-links a:hover{border-color:var(--accent);color:var(--accent)}
-.collection-links span{color:var(--dim)}
-.collection-pages{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;
- margin-top:2rem;padding-top:1.25rem;border-top:1px solid var(--rule);
- font-family:var(--mono);font-size:.72rem;letter-spacing:.06em}
-.collection-pages a{text-decoration:none;padding:.25rem .4rem}
-.collection-pages a:hover{text-decoration:underline}
-.collection-pages [aria-current="page"]{color:var(--ink);font-weight:600;
- padding:.25rem .4rem;border-bottom:2px solid var(--stamp)}
-.siblings{display:flex;justify-content:space-between;gap:1rem;margin-top:2rem;
- padding-top:1.25rem;border-top:1px solid var(--rule);
- font-family:var(--mono);font-size:.72rem;letter-spacing:.06em}
-.siblings a{text-decoration:none;overflow-wrap:anywhere}
-.siblings a:hover{text-decoration:underline}
-.onward{margin-top:2.5rem;padding-top:1.25rem;border-top:1px solid var(--rule)}
-.onward a{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
- text-transform:uppercase;text-decoration:none}
-.onward a:hover{text-decoration:underline}
-footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--rule);
- font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
- text-transform:uppercase;color:var(--dim)}
-footer a{text-decoration:none}footer a:hover{text-decoration:underline}
-/* Theme is synced with the SPA: the head script reads the same
-   localStorage key ('epstein-project-theme') and stamps data-theme on <html>
-   before first paint. It has to happen client-side — this HTML is cached in
-   the Cache API and shared across visitors, so the server cannot know the
-   reader's choice. No attribute = follow the system, matching the SPA's
-   "auto". */
-@media(prefers-color-scheme:dark){
- :root:not([data-theme=light]){--paper:#14181a;--surface:#1a1f22;--ink:#e7ece9;--muted:#9aa5a1;--dim:#7e8a86;
-  --rule:rgba(231,236,233,.14);--accent:#8bb1c2;--stamp:#c07a7a;color-scheme:dark}
- :root:not([data-theme=light]) .find button{color:#14181a}}
-:root[data-theme=dark]{--paper:#14181a;--surface:#1a1f22;--ink:#e7ece9;--muted:#9aa5a1;--dim:#7e8a86;
- --rule:rgba(231,236,233,.14);--accent:#8bb1c2;--stamp:#c07a7a;color-scheme:dark}
-:root[data-theme=dark] .find button{color:#14181a}
-:root[data-theme=light]{color-scheme:light}
-@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-</style>
+<link rel="stylesheet" href="/static/ssr.css?v=20260813-csp-hardening">
 </head>
 <body>
 <header class="masthead">
 <a class="wordmark" href="/">Epstein<span>Project</span>.org</a>
 <nav aria-label="Collections"><a href="/documents">Documents</a><a href="/house-oversight">House Oversight</a><a href="/images">Images</a><a href="/videos">Videos</a><a href="/recordings">Recordings</a><a href="/about">About</a></nav>
 <form class="find" action="/" method="get" role="search">
-<label for="q" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search the archive</label>
+<label for="q" class="sr-only">Search the archive</label>
 <input id="q" name="q" type="search" placeholder="Search the archive" maxlength="200" autocomplete="off">
 <button type="submit">Search</button>
 </form>

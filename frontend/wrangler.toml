@@ -8,3 +8,7 @@ compatibility_date = "2024-01-01"
 binding = "DB"
 database_name = "epstein-files-db"
 database_id = "ae344bab-8a31-422d-bb07-fc07d5d69189"
+
+[[services]]
+binding = "API"
+service = "epstein-files-api"

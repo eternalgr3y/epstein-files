@@ -25,9 +25,6 @@ LOG_FILE = BASE_DIR / "scraper.log"
 # Database - can override with environment variable
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATABASE_DIR / "epstein_files.db"))
 
-# R2 CDN URL (when deployed to cloud)
-R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "")  # e.g., "https://pub-xxx.r2.dev"
-
 # DOJ URLs
 DOJ_BASE_URL = "https://www.justice.gov/epstein"
 DOJ_DISCLOSURES_URL = f"{DOJ_BASE_URL}/doj-disclosures"

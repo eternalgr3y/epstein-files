@@ -5,10 +5,12 @@ const frontendUrl = new URL('.', import.meta.url);
 describe('frontend navigation and heading semantics', () => {
   test('keeps the mobile menu button above the open drawer', async () => {
     const html = await Bun.file(new URL('index.html', frontendUrl)).text();
+    const css = await Bun.file(new URL('static/app.css', frontendUrl)).text();
     expect(html).toContain('aria-controls="slide-menu"');
-    expect(html).toMatch(/\.menu-btn\s*\{[\s\S]*?z-index:\s*102;/);
-    expect(html).toMatch(/@media \(max-width: 768px\)[\s\S]*?\.site-nav\s*\{[\s\S]*?z-index:\s*101;/);
+    expect(css).toMatch(/\.menu-btn\s*\{[\s\S]*?z-index:\s*102;/);
+    expect(css).toMatch(/@media \(max-width: 768px\)[\s\S]*?\.site-nav\s*\{[\s\S]*?z-index:\s*101;/);
     expect(html).toMatch(/\/app-[a-f0-9]{12}\.js/);
+    expect(html).toMatch(/\/static\/app-[a-f0-9]{12}\.css/);
   });
 
   test('removes the closed mobile drawer from keyboard and accessibility navigation', async () => {
@@ -24,8 +26,8 @@ describe('frontend navigation and heading semantics', () => {
   });
 
   test('stacks long result headings above counts on narrow screens', async () => {
-    const html = await Bun.file(new URL('index.html', frontendUrl)).text();
-    expect(html).toMatch(/@media \(max-width: 600px\)[\s\S]*?\.results-header\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*flex-start;/);
+    const css = await Bun.file(new URL('static/app.css', frontendUrl)).text();
+    expect(css).toMatch(/@media \(max-width: 600px\)[\s\S]*?\.results-header\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*flex-start;/);
   });
 
   test('uses one primary heading for collection and detail views', async () => {
@@ -47,14 +49,14 @@ describe('frontend navigation and heading semantics', () => {
 
   test('shows video loading and buffering status without blocking controls', async () => {
     const app = await Bun.file(new URL('app.js', frontendUrl)).text();
-    const html = await Bun.file(new URL('index.html', frontendUrl)).text();
+    const css = await Bun.file(new URL('static/app.css', frontendUrl)).text();
     expect(app).toContain('preload="metadata"');
     expect(app).toContain('data-buffering-video');
     expect(app).toContain('/file?stream=1');
     expect(app).toContain("video.addEventListener('waiting', () => show('Buffering…'))");
     expect(app).toContain("video.addEventListener('seeking', () => show('Seeking…'))");
     expect(app).toContain("poster=\"${API}/videos/${id}/thumb\"");
-    expect(html).toMatch(/\.video-buffering\s*\{[\s\S]*?pointer-events:\s*none;/);
+    expect(css).toMatch(/\.video-buffering\s*\{[\s\S]*?pointer-events:\s*none;/);
   });
 
   test('renders missing hash-routed documents as not found records', async () => {

@@ -1,4 +1,11 @@
 import { cleanDocTitle, esc, htmlResponseHeaders, notFoundResponse, pageCacheKey, renderDocPage, setLabel } from '../_lib/html.js';
+import {
+  hasPublicationExclusions,
+  isDocumentExcluded,
+  isHouseOversightExcluded,
+  notExcludedSql,
+  publicationPolicy,
+} from '../_lib/publication.js';
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
@@ -6,11 +13,18 @@ export async function onRequestGet(context) {
   if (!Number.isInteger(id) || String(id) !== params.id) {
     return notFoundResponse();
   }
+  const policy = publicationPolicy(env);
+  const hasExclusions = hasPublicationExclusions(policy);
+  if (isDocumentExcluded(policy, id)) {
+    return notFoundResponse('Document not found');
+  }
 
-  const cache = caches.default;
+  const cache = context.cache || caches.default;
   const cacheKey = pageCacheKey(request, `/documents/${id}`);
-  const cached = await cache.match(cacheKey);
-  if (cached) return cached;
+  if (!hasExclusions) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
 
   const doc = await env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first();
   if (!doc) {
@@ -21,6 +35,9 @@ export async function onRequestGet(context) {
   // /house-oversight/{bates} (filename == bates_begin for these rows) —
   // redirect instead of serving the same content under two URLs.
   if (doc.data_set === 'house-oversight-estate') {
+    if (isHouseOversightExcluded(policy, doc.filename)) {
+      return notFoundResponse('Document not found');
+    }
     return Response.redirect(`https://epsteinproject.org/house-oversight/${doc.filename}`, 301);
   }
 
@@ -34,9 +51,10 @@ export async function onRequestGet(context) {
   // backlog and left readers at a dead end. Uses idx_documents_data_set;
   // the within-set filename sort is a few ms and this render caches for an
   // hour, so no composite index is needed yet.
+  const excludedSiblings = notExcludedSql('id', policy.documentIds);
   const [prevDoc, nextDoc] = doc.data_set && doc.filename ? await Promise.all([
-    env.DB.prepare('SELECT id, filename FROM documents WHERE data_set = ? AND filename < ? ORDER BY filename DESC LIMIT 1').bind(doc.data_set, doc.filename).first(),
-    env.DB.prepare('SELECT id, filename FROM documents WHERE data_set = ? AND filename > ? ORDER BY filename LIMIT 1').bind(doc.data_set, doc.filename).first(),
+    env.DB.prepare('SELECT id, filename FROM documents WHERE data_set = ? AND filename < ?' + excludedSiblings.clause + ' ORDER BY filename DESC LIMIT 1').bind(doc.data_set, doc.filename, ...excludedSiblings.bindings).first(),
+    env.DB.prepare('SELECT id, filename FROM documents WHERE data_set = ? AND filename > ?' + excludedSiblings.clause + ' ORDER BY filename LIMIT 1').bind(doc.data_set, doc.filename, ...excludedSiblings.bindings).first(),
   ]) : [null, null];
 
   // The Bates number identifies the document; a cleaned-up title describes it.
@@ -54,10 +72,11 @@ export async function onRequestGet(context) {
     ? `${batesId || `Document ${id}`} — ${describedAs}`
     : (batesId || cleaned || `Document ${id}`);
   const preview = (text?.full_text || '').slice(0, 2000);
-  const description = preview
-    ? preview.replace(/\s+/g, ' ').trim().slice(0, 280)
-    : `${doc.document_type || 'Document'} from ${doc.data_set ? setLabel(doc.data_set) : 'the Epstein case archive'}, `
-      + `Bates ${batesId || id}.`;
+  const description = (
+    `${doc.document_type || 'Document'} from `
+    + `${doc.data_set ? setLabel(doc.data_set) : 'the Epstein case archive'}, `
+    + `Bates ${batesId || id}${describedAs ? `: ${describedAs}` : ''}.`
+  ).slice(0, 280);
   const isVideo = doc.document_type === 'video';
   const isAudio = doc.document_type === 'audio';
   const sourceDate = doc.download_timestamp || doc.created_at;
@@ -68,12 +87,16 @@ export async function onRequestGet(context) {
     ? parsedDate.toISOString()
     : null;
   const mediaUrl = `https://epsteinproject.org/api/documents/${id}/file`;
-  const playbackUrl = isVideo ? `${mediaUrl}?stream=1` : mediaUrl;
+  // Preserve the Worker stream bootstrap while changing the cache key used by
+  // browsers that may still remember the retired public-media redirect.
+  const playbackUrl = isVideo
+    ? `${mediaUrl}?stream=1&delivery=private-worker-v1`
+    : mediaUrl;
   const thumbnailUrl = `https://epsteinproject.org/api/videos/${id}/thumb`;
   const mediaHtml = isVideo
-    ? `<video controls preload="metadata" poster="${thumbnailUrl}" style="display:block;width:100%;background:#0b0d0e"><source src="${playbackUrl}" type="video/mp4"></video>`
+    ? `<video class="record-media record-video" controls preload="metadata" poster="${thumbnailUrl}"><source src="${playbackUrl}" type="video/mp4"></video>`
     : isAudio
-      ? `<audio controls preload="metadata" style="display:block;width:100%"><source src="${mediaUrl}"></audio>`
+      ? `<audio class="record-media" controls preload="metadata"><source src="${mediaUrl}"></audio>`
       : '';
   const structuredData = isVideo ? {
     '@context': 'https://schema.org',
@@ -103,8 +126,8 @@ export async function onRequestGet(context) {
   const heading = batesId || `Document ${id}`;
   const subtitle = describedAs;
 
-  // The released file name is exact-match text for filename queries (they
-  // appear in Search Console). house-oversight-doj rows carry it in `title`
+  // The released file name provides exact-match text for filename queries.
+  // house-oversight-doj rows carry it in `title`
   // while `filename` holds the Bates; plain DOJ rows carry it in `filename`,
   // which is just the Bates plus .pdf and not worth repeating.
   const rawFile = doc.filename && doc.filename !== batesId && doc.filename !== `${batesId}.pdf`
@@ -152,7 +175,7 @@ ${confidencePct ? `<dt>Text confidence</dt><dd>${esc(confidencePct)}</dd>` : ''}
 </dl>
 ${/^https?:\/\//i.test(doc.source_url || '') ? `<p class="onward"><a href="${esc(doc.source_url)}" rel="noopener" target="_blank">View at the original source</a></p>` : ''}
 ${preview
-  ? `<h2>Text as released</h2><p class="ocr-note">Machine-read from the scan. Names, dates and numbers can be misread &mdash; check anything you rely on against the <a href="/about">original page</a>.</p><pre>${esc(preview)}${text?.full_text?.length > 2000 ? '\n\n[…]' : ''}</pre>`
+  ? `<h2>Text as released</h2><p class="ocr-note">Machine-read from the scan. Names, dates and numbers can be misread &mdash; check anything you rely on against the <a href="/about">original page</a>.</p><pre data-nosnippet>${esc(preview)}${text?.full_text?.length > 2000 ? '\n\n[…]' : ''}</pre>`
   : (isVideo || isAudio)
     ? '<h2>Transcript</h2><p>No transcript has been extracted for this media file.</p>'
     : '<h2>Text as released</h2><p>This scan produced no machine-readable text. The original file is still available above.</p>'}
@@ -174,8 +197,10 @@ ${nextDoc ? `<a href="/documents/${nextDoc.id}" rel="next">${esc(String(nextDoc.
   });
 
   const response = new Response(html, {
-    headers: htmlResponseHeaders(),
+    headers: htmlResponseHeaders(hasExclusions ? 'no-store' : undefined),
   });
-  context.waitUntil(cache.put(cacheKey, response.clone()));
+  if (!hasExclusions) {
+    context.waitUntil(cache.put(cacheKey, response.clone()));
+  }
   return response;
 }

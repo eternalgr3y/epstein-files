@@ -41,6 +41,18 @@
         'maxwell-interview': 'Maxwell Interview',
     };
     const setLabel = name => DATA_SET_LABELS[name] || name;
+    const AUDIO_MIME_TYPES = new Set([
+        'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-wav',
+    ]);
+    const VIDEO_MIME_TYPES = new Set([
+        'video/mp4', 'video/quicktime', 'video/webm',
+    ]);
+    function safeMediaType(value, kind) {
+        const normalized = String(value || '').split(';', 1)[0].trim().toLowerCase();
+        const allowed = kind === 'audio' ? AUDIO_MIME_TYPES : VIDEO_MIME_TYPES;
+        if (allowed.has(normalized)) return normalized;
+        return kind === 'audio' ? 'audio/wav' : 'video/mp4';
+    }
 
     // Elements
     const homeView = document.getElementById('home-view');
@@ -121,7 +133,7 @@
         const shouldOpen = forceOpen === null ? !slideMenu.classList.contains('open') : forceOpen;
         slideMenu.classList.toggle('open', shouldOpen);
         navOverlay.classList.toggle('open', shouldOpen);
-        document.body.style.overflow = shouldOpen ? 'hidden' : '';
+        document.body.classList.toggle('nav-open', shouldOpen);
         menuButton?.setAttribute('aria-expanded', String(shouldOpen));
         menuButton?.setAttribute('aria-label', shouldOpen ? 'Close menu' : 'Menu');
         syncMenuAccessibility(shouldOpen);
@@ -354,6 +366,15 @@
             && slideMenu.classList.contains('open')) {
             toggleMenu(false);
         }
+    });
+
+    document.addEventListener('submit', (event) => {
+        const form = event.target.closest('[data-search-form]');
+        if (!form) return;
+        event.preventDefault();
+        const input = form.querySelector('[data-results-search]');
+        searchInput.value = input?.value || '';
+        doSearch();
     });
 
     document.addEventListener('submit', (event) => {
@@ -646,8 +667,8 @@
             isLoading = false;
         }
         currentView = view;
-        homeView.style.display = view === 'home' ? 'block' : 'none';
-        resultsView.style.display = view === 'home' ? 'none' : 'block';
+        homeView.toggleAttribute('hidden', view !== 'home');
+        resultsView.toggleAttribute('hidden', view === 'home');
         resultsView.classList.toggle('active', view !== 'home');
 
         // Update nav active state
@@ -792,7 +813,7 @@
             `;
             ents.results.forEach(e => {
                 html += `
-                    <div class="entity-card" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="entity-card">
                         <div>
                             <div class="result-title">${esc(e.canonical_name)}</div>
                             <div class="result-meta">${esc(e.entity_type)} · ${e.mention_count.toLocaleString()} mentions across documents</div>
@@ -805,7 +826,7 @@
 
         if (docs.results?.length) {
             html += `
-                <div class="results-header" style="margin-top: 2rem;">
+                <div class="results-header results-header-spaced">
                     <h2>Documents</h2>
                     <span class="results-count">${(docs.total ?? 0).toLocaleString()} found</span>
                 </div>
@@ -1075,7 +1096,7 @@
                 ].filter(Boolean);
                 const named = docLabel(d);
                 html += `
-                    <div class="result-card" style="cursor:pointer;">
+                    <div class="result-card result-card-clickable">
                         <div class="result-title${named.cls}"><a href="/documents/${Number(d.document_id)}" data-action="doc" data-id="${Number(d.document_id)}">${esc(named.label)}</a></div>
                         ${docMeta.length ? `<div class="meta-row">${docMeta.map(m => `<span class="meta-pill">${m}</span>`).join('')}</div>` : ''}
                     </div>
@@ -1232,7 +1253,7 @@
                     <div class="media-player">
                         <div class="video-shell is-buffering" aria-busy="true">
                             <video controls preload="metadata" poster="${API}/videos/${mediaDocumentId}/thumb" data-buffering-video data-media-file data-media-kind="video" data-document-id="${mediaDocumentId}" data-document-title="${esc(doc.title || doc.bates)}">
-                                <source src="${API}/documents/${mediaDocumentId}/file?stream=1" type="${esc(videoContentType)}">
+                                <source src="${API}/documents/${mediaDocumentId}/file?stream=1&delivery=private-worker-v1" type="${safeMediaType(videoContentType, 'video')}">
                             </video>
                             <div class="video-buffering" role="status" aria-live="polite" aria-hidden="false">
                                 <span class="video-buffering-spinner" aria-hidden="true"></span>
@@ -1261,7 +1282,7 @@
             // Entities mentioned
             if (doc.entities && doc.entities.length > 0) {
                 html += `
-                    <div class="entities-section" style="margin-top: 2rem;">
+                    <div class="entities-section entities-section-spaced">
                         <h2>Entities Mentioned</h2>
                         <div class="entity-chips">
                             ${doc.entities.slice(0, 50).map(e => `
@@ -1346,7 +1367,7 @@
                 ` : '<div class="empty"><h2>No extracted images available</h2></div>' : ''}
                 <div class="pagination">
                     ${offset > 0 ? `<button class="btn" data-action="images" data-offset="${offset - 60}">← Previous</button>` : ''}
-                    <span style="color: var(--text-dim); padding: 0.5rem 1rem;">${Math.floor(offset / 60) + 1} / ${Math.max(1, Math.ceil(r.total / 60))}</span>
+                    <span>${Math.floor(offset / 60) + 1} / ${Math.max(1, Math.ceil(r.total / 60))}</span>
                     ${r.images.length === 60 ? `<button class="btn" data-action="images" data-offset="${offset + 60}">Next →</button>` : ''}
                 </div>
             `;
@@ -1387,7 +1408,7 @@
         if (!initialItem) return;
         const initialImageUrl = imageApiUrl(initialItem.filename);
         const previousFocus = document.activeElement;
-        const previousBodyOverflow = document.body.style.overflow;
+        const bodyWasLocked = document.body.classList.contains('nav-open');
         const modalHash = `images/${imagesState.offset}/${index}`;
         currentHash = modalHash;
         if (!skipPush) history.pushState(null, '', `#${modalHash}`);
@@ -1413,12 +1434,12 @@
             </div>
         `;
         modalBackgroundElements.forEach(element => element.toggleAttribute('inert', true));
-        document.body.style.overflow = 'hidden';
+        document.body.classList.add('nav-open');
         const close = ({ syncUrl = true, restoreFocus = true } = {}) => {
             document.removeEventListener('keydown', onKey);
             modal.remove();
             modalBackgroundElements.forEach(element => element.toggleAttribute('inert', false));
-            document.body.style.overflow = previousBodyOverflow;
+            if (!bodyWasLocked) document.body.classList.remove('nav-open');
             if (dismissImageModal === close) dismissImageModal = null;
             if (syncUrl) {
                 currentHash = `images/${imagesState.offset}`;
@@ -1574,7 +1595,7 @@
                         </div>
                         <div class="media-player">
                             <audio controls preload="metadata" data-media-file data-media-kind="audio" data-document-id="${Number(id)}" data-document-title="${esc(docNamed.label)}">
-                                <source src="${API}/documents/${id}/file" type="${doc.content_type || 'audio/wav'}">
+                                <source src="${API}/documents/${id}/file" type="${safeMediaType(doc.content_type, 'audio')}">
                             </audio>
                             <p class="media-error" data-media-error role="alert" hidden>
                                 This audio file could not be loaded. Try Download or <a href="${FEEDBACK_FORM_URL}" target="_blank" rel="noopener" data-broken-file-report>report the broken file</a>.
@@ -1610,7 +1631,7 @@
                         <div class="media-player">
                             <div class="video-shell is-buffering" aria-busy="true">
                             <video controls preload="metadata" poster="${API}/videos/${id}/thumb" data-buffering-video data-media-file data-media-kind="video" data-document-id="${Number(id)}" data-document-title="${esc(docNamed.label)}">
-                                <source src="${API}/documents/${id}/file?stream=1" type="${doc.content_type || 'video/mp4'}">
+                                <source src="${API}/documents/${id}/file?stream=1&delivery=private-worker-v1" type="${safeMediaType(doc.content_type, 'video')}">
                             </video>
                             <div class="video-buffering" role="status" aria-live="polite" aria-hidden="false">
                                 <span class="video-buffering-spinner" aria-hidden="true"></span>
@@ -1656,12 +1677,11 @@
                             <a href="${pdfUrl}" download class="btn">Download</a>
                         </div>
                     </div>
-                    <div id="pdf-view" style="height:80vh;">
-                        <iframe id="pdf-iframe" src="${pdfUrl}" title="${docTitle} PDF viewer" loading="eager"
-                            style="width:100%;height:100%;border:none;border-radius:8px;background:var(--pdf-bg);"></iframe>
+                    <div id="pdf-view" class="pdf-view">
+                        <iframe id="pdf-iframe" src="${pdfUrl}" class="pdf-frame" title="${docTitle} PDF viewer" loading="eager"></iframe>
                         <p class="archive-note">If the embedded preview does not load, use New Tab or Download above.</p>
                     </div>
-                    <div id="text-view" class="doc-content" style="display:none;">${esc(text?.full_text || 'No text available.')}</div>
+                    <div id="text-view" class="doc-content" hidden>${esc(text?.full_text || 'No text available.')}</div>
                 </div>
             `;
             announceDocument();
@@ -1702,9 +1722,9 @@
         const txt = document.getElementById('text-view');
         const button = resultsView.querySelector('[data-action="pdf-text"]');
         if (!pdf || !txt || !button) return;
-        const showText = pdf.style.display !== 'none';
-        pdf.style.display = showText ? 'none' : 'block';
-        txt.style.display = showText ? 'block' : 'none';
+        const showText = !pdf.hidden;
+        pdf.hidden = showText;
+        txt.hidden = !showText;
         button.setAttribute('aria-expanded', String(showText));
         button.textContent = showText ? 'Show PDF' : 'Show text';
     }
@@ -1768,14 +1788,14 @@
                 }
 
                 html += `
-                    <div class="result-card" style="margin-bottom: 1rem;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                    <div class="result-card result-card-spaced">
+                        <div class="mention-header">
                             <div class="result-title">
                                 <a class="mono-link${titleClass(m.document_filename)}" href="/documents/${Number(m.document_id)}" data-action="doc" data-id="${Number(m.document_id)}">${esc(m.document_filename)}</a>
                             </div>
                             <span class="role-badge">${esc(m.role || 'mentioned')}</span>
                         </div>
-                        ${snippet ? `<div class="result-snippet" style="margin: 0.75rem 0;">"${snippet}"</div>` : ''}
+                        ${snippet ? `<div class="result-snippet mention-snippet">"${snippet}"</div>` : ''}
                         ${mentionMeta.length ? `<div class="meta-row">${mentionMeta.map(mv => `<span class="meta-pill">${esc(mv)}</span>`).join('')}</div>` : ''}
                     </div>
                 `;
@@ -1797,7 +1817,7 @@
                 html += `
                     <div class="pagination">
                         ${offset > 0 ? `<button class="btn" data-action="entity" data-id="${Number(id)}" data-offset="${offset - 50}">← Previous</button>` : ''}
-                        <span style="color: var(--text-dim); padding: 0.5rem 1rem;">
+                        <span>
                             ${offset + 1}-${Math.min(offset + mentions.mentions.length, totalMentions)} of ${totalMentions}
                         </span>
                         ${mentions.mentions.length === 50 ? `<button class="btn" data-action="entity" data-id="${Number(id)}" data-offset="${offset + 50}">Next →</button>` : ''}
@@ -1831,13 +1851,13 @@
         if (!skipPush) history.pushState(null, '', '#about');
 
         resultsView.innerHTML = `
-            <div style="max-width: 600px; margin: 0 auto;">
+            <div class="about-page">
                 <button class="back-btn" data-action="home">← Back</button>
 
                 <div class="section-kicker">About</div>
-                <h1 style="font-family: var(--font-serif); font-size: 2.5rem; font-weight: 400; margin-bottom: 2rem; color: var(--text);">About</h1>
+                <h1 class="about-title">About</h1>
 
-                <p style="font-size: 1rem; color: var(--text-muted); line-height: 2; margin-bottom: 3rem;">
+                <p class="about-lede">
                     The Epstein Project is an independent, non-commercial archive that indexes public records from official releases of the Jeffrey Epstein case and preserves links back to source material.
                 </p>
 

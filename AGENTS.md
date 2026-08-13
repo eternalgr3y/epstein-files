@@ -7,7 +7,7 @@ Context for AI agents working on this codebase.
 Searchable archive of Jeffrey Epstein case documents. Largest public index with 20,000+ documents and 6M+ entity mentions.
 
 **Live site:** https://epsteinproject.org
-**API:** https://epstein-files-api.protonuser597.workers.dev
+**API:** https://epsteinproject.org/api
 **Source:** https://github.com/eternalgr3y/epstein-files
 
 ## Architecture
@@ -95,11 +95,11 @@ document_fts (document_id, content)
 ## Deployment
 
 ```bash
-# Deploy Worker API
-CLOUDFLARE_API_TOKEN="..." npx wrangler deploy
+# Deploy Worker API with the repository-pinned Wrangler
+CLOUDFLARE_API_TOKEN="..." npm run deploy:worker
 
 # Deploy Frontend
-CLOUDFLARE_API_TOKEN="..." npx wrangler --cwd frontend pages deploy . --project-name=epstein
+CLOUDFLARE_API_TOKEN="..." npm run deploy:pages
 
 # Upload to R2
 ~/.local/bin/rclone sync ./path r2:epstein-files/path

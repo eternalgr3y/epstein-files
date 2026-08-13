@@ -1,3 +1,8 @@
+# Direct Python dependencies for the ingestion and legacy API tooling.
+# Reproducible Python 3.11 installs use requirements.lock.txt. Regenerate it with:
+# uv pip compile requirements.txt --universal --python-version 3.11 --generate-hashes --output-file requirements.lock.txt
+# Install the lock with: python -m pip install --require-hashes -r requirements.lock.txt
+
 # Scraper
 aiohttp>=3.9.0
 aiofiles>=23.0.0

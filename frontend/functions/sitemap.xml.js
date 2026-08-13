@@ -1,16 +1,35 @@
 import { SECURITY_HEADERS, pageCacheKey } from './_lib/html.js';
+import {
+  hasPublicationExclusions,
+  notExcludedSql,
+  publicationPolicy,
+} from './_lib/publication.js';
 
 const CACHE_SECONDS = 3600;
 
 export async function onRequestGet(context) {
   const { env, request } = context;
-  const cache = caches.default;
+  const policy = publicationPolicy(env);
+  const hasExclusions = hasPublicationExclusions(policy);
+  const excludedDocs = notExcludedSql('d.id', policy.documentIds);
+  const excludedHouseBates = notExcludedSql(
+    'ho.bates_number', policy.houseOversightBates
+  );
+  const excludedHouseLegacy = notExcludedSql(
+    'ho.legacy_document_id', policy.documentIds
+  );
+  const cache = context.cache || caches.default;
   // Key on the path only — dropping the query string prevents cache-busting
   // via arbitrary "?x=..." params from forcing a full-table scan every hit.
   const cacheKey = pageCacheKey(request, '/sitemap.xml');
 
-  const cached = await cache.match(cacheKey);
-  if (cached) return cached;
+  // An emergency exclusion must take effect immediately after the Pages
+  // configuration is updated. Do not serve or repopulate the ordinary
+  // one-hour sitemap cache while an exclusion policy is active.
+  if (!hasExclusions) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
 
   const [docs, houseOversight] = await Promise.all([
     // house-oversight-estate rows are intentionally excluded from the main
@@ -33,8 +52,8 @@ export async function onRequestGet(context) {
                  COALESCE(substr(t.created_at, 1, 10), '')) AS lastmod
       FROM documents d
       LEFT JOIN document_texts t ON t.document_id = d.id
-      WHERE d.data_set != 'house-oversight-estate'
-    `).all(),
+      WHERE d.data_set != 'house-oversight-estate'${excludedDocs.clause}
+    `).bind(...excludedDocs.bindings).all(),
     // house_oversight_documents.created_at is NULL for all 2,897 rows (the
     // import wrote explicit NULLs, so DEFAULT CURRENT_TIMESTAMP never fired),
     // which left every estate URL with no lastmod. Their OCR text lives in
@@ -46,7 +65,10 @@ export async function onRequestGet(context) {
              COALESCE(substr(t.created_at, 1, 10), substr(ho.created_at, 1, 10)) AS lastmod
       FROM house_oversight_documents ho
       LEFT JOIN document_texts t ON t.document_id = ho.legacy_document_id
-    `).all(),
+      WHERE 1=1${excludedHouseBates.clause}${excludedHouseLegacy.clause}
+    `).bind(
+      ...excludedHouseBates.bindings, ...excludedHouseLegacy.bindings
+    ).all(),
   ]);
 
   const urls = [
@@ -77,11 +99,15 @@ export async function onRequestGet(context) {
     headers: {
       ...SECURITY_HEADERS,
       'content-type': 'application/xml;charset=UTF-8',
-      'cache-control': `public, max-age=${CACHE_SECONDS}`,
+      'cache-control': hasExclusions
+        ? 'no-store'
+        : `public, max-age=0, s-maxage=${CACHE_SECONDS}, must-revalidate`,
     },
   });
 
-  context.waitUntil(cache.put(cacheKey, response.clone()));
+  if (!hasExclusions) {
+    context.waitUntil(cache.put(cacheKey, response.clone()));
+  }
   return response;
 }
 

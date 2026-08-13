@@ -5,17 +5,20 @@
  * Uses D1 for database, R2 for file storage.
  */
 
-const R2_PUBLIC_URL = 'https://pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev';
-// R2 custom domain on the epstein-files bucket — unlike the rate-limited
-// r2.dev URL above, this one is production-grade and safe to redirect to.
-const MEDIA_URL = 'https://media.epsteinproject.org';
 const MISSING_THUMBNAIL_URL = 'https://epsteinproject.org/og-image.png';
 
 // Rate limiting: 100 requests per minute per IP, enforced by Cloudflare's
 // Rate Limiting binding in production (see wrangler.toml).
 const RATE_LIMIT = 100;
 const RATE_WINDOW_SECONDS = 60;
+// Media galleries legitimately fan out dozens of requests at once, so give
+// R2-backed delivery its own larger bucket instead of exempting it entirely.
+// Range requests use a separate key so ordinary thumbnails cannot starve
+// video/audio seeking (and vice versa), while each class remains bounded.
+const MEDIA_RATE_LIMIT = 300;
+const MEDIA_RATE_WINDOW_SECONDS = 60;
 const MAX_QUERY_LENGTH = 200;
+const MAX_ENTITY_REQUEST_BYTES = 10 * 1024;
 // Cloudflare D1 rejects LIKE patterns longer than 50 bytes. Reserve two bytes
 // for the surrounding wildcards and truncate at a complete escaped character.
 const MAX_LIKE_PATTERN_BYTES = 50;
@@ -227,6 +230,157 @@ function escapeLikePattern(value) {
   return String(value).replace(/[\\%_]/g, '\\$&');
 }
 
+const MAX_PUBLICATION_EXCLUSIONS_BYTES = 16_384;
+// D1 permits at most 100 bound parameters per query. Visibility predicates
+// share that budget with search/filter/pagination bindings, so keep the
+// emergency list below the tightest document query's remaining headroom.
+const MAX_PUBLICATION_EXCLUSION_TOKENS = 80;
+
+function publicationExclusions(env) {
+  const raw = env.PUBLICATION_EXCLUSIONS;
+  if (raw === undefined || raw === null || raw === '') {
+    return { documentIds: new Set(), houseBates: new Set() };
+  }
+  if (typeof raw !== 'string' ||
+      new TextEncoder().encode(raw).byteLength > MAX_PUBLICATION_EXCLUSIONS_BYTES) {
+    throw new Error('Invalid PUBLICATION_EXCLUSIONS configuration');
+  }
+
+  const tokens = raw.split(/[\s,]+/).filter(Boolean);
+  if (tokens.length > MAX_PUBLICATION_EXCLUSION_TOKENS) {
+    throw new Error('Invalid PUBLICATION_EXCLUSIONS configuration');
+  }
+
+  const documentIds = new Set();
+  const houseBates = new Set();
+  for (const token of tokens) {
+    const docMatch = token.match(/^doc:(\d+)$/i);
+    if (docMatch) {
+      const id = Number(docMatch[1]);
+      if (Number.isSafeInteger(id) && id > 0) {
+        documentIds.add(id);
+        continue;
+      }
+    }
+
+    const houseMatch = token.match(/^house:(HOUSE_OVERSIGHT_\d+)$/i);
+    if (houseMatch) {
+      houseBates.add(houseMatch[1].toUpperCase());
+      continue;
+    }
+
+    throw new Error('Invalid PUBLICATION_EXCLUSIONS configuration');
+  }
+
+  return { documentIds, houseBates };
+}
+
+function imageDocumentId(image) {
+  const explicit = image && typeof image === 'object'
+    ? image.doc_id ?? image.document_id
+    : undefined;
+  const explicitId = Number(explicit);
+  if (Number.isSafeInteger(explicitId) && explicitId > 0) return explicitId;
+
+  const filename = typeof image === 'string' ? image : image?.filename;
+  const filenameMatch = String(filename || '').match(/^(\d+)_p\d+_\d+\.[a-z0-9]+$/i);
+  if (!filenameMatch) return null;
+  const filenameId = Number(filenameMatch[1]);
+  return Number.isSafeInteger(filenameId) && filenameId > 0 ? filenameId : null;
+}
+
+function assertSqlColumn(column) {
+  if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(column)) {
+    throw new Error('Unsafe SQL column name');
+  }
+  return column;
+}
+
+function documentVisibilitySql(idColumn, filenameColumn, exclusions) {
+  const clauses = [];
+  const bindings = [];
+  idColumn = assertSqlColumn(idColumn);
+  filenameColumn = assertSqlColumn(filenameColumn);
+
+  if (exclusions.documentIds.size) {
+    clauses.push(`${idColumn} NOT IN (${[...exclusions.documentIds].map(() => '?').join(', ')})`);
+    bindings.push(...exclusions.documentIds);
+  }
+  if (exclusions.houseBates.size) {
+    clauses.push(`(${filenameColumn} IS NULL OR UPPER(${filenameColumn}) NOT IN (${[...exclusions.houseBates].map(() => '?').join(', ')}))`);
+    bindings.push(...exclusions.houseBates);
+  }
+  return {
+    clause: clauses.length ? ' AND ' + clauses.join(' AND ') : '',
+    bindings,
+  };
+}
+
+function houseVisibilitySql(batesColumn, legacyIdColumn, exclusions) {
+  const clauses = [];
+  const bindings = [];
+  batesColumn = assertSqlColumn(batesColumn);
+  legacyIdColumn = assertSqlColumn(legacyIdColumn);
+
+  if (exclusions.houseBates.size) {
+    clauses.push(`UPPER(${batesColumn}) NOT IN (${[...exclusions.houseBates].map(() => '?').join(', ')})`);
+    bindings.push(...exclusions.houseBates);
+  }
+  if (exclusions.documentIds.size) {
+    clauses.push(`(${legacyIdColumn} IS NULL OR ${legacyIdColumn} NOT IN (${[...exclusions.documentIds].map(() => '?').join(', ')}))`);
+    bindings.push(...exclusions.documentIds);
+  }
+  return {
+    clause: clauses.length ? ' AND ' + clauses.join(' AND ') : '',
+    bindings,
+  };
+}
+
+function hasPublicationExclusions(exclusions) {
+  return exclusions.documentIds.size > 0 || exclusions.houseBates.size > 0;
+}
+
+function documentRowExcluded(id, row, exclusions) {
+  return exclusions.documentIds.has(Number(id)) ||
+    exclusions.houseBates.has(String(row?.filename || '').toUpperCase());
+}
+
+function bindIfNeeded(statement, bindings) {
+  return bindings.length ? statement.bind(...bindings) : statement;
+}
+
+function exclusionForPath(path, exclusions) {
+  const docMatch = path.match(/^\/api\/documents\/(\d+)(?:\/(?:text|file|thumbnail))?$/);
+  if (docMatch && exclusions.documentIds.has(Number(docMatch[1]))) {
+    return true;
+  }
+
+  const videoThumbMatch = path.match(/^\/api\/videos\/(\d+)\/thumb$/);
+  if (videoThumbMatch && exclusions.documentIds.has(Number(videoThumbMatch[1]))) {
+    return true;
+  }
+
+  const imageMatch = path.match(/^\/api\/images\/([^/]+)$/);
+  if (imageMatch && exclusions.documentIds.has(imageDocumentId(imageMatch[1]))) {
+    return true;
+  }
+
+  const houseMatch = path.match(
+    /^\/api\/house-oversight\/(?:documents|thumbnail)\/(HOUSE_OVERSIGHT_\d+)$/
+  );
+  if (houseMatch && exclusions.houseBates.has(houseMatch[1].toUpperCase())) {
+    return true;
+  }
+
+  const housePageMatch = path.match(
+    /^\/api\/house-oversight\/page\/(HOUSE_OVERSIGHT_\d+)\/\d+$/
+  );
+  return Boolean(
+    housePageMatch &&
+    exclusions.houseBates.has(housePageMatch[1].toUpperCase())
+  );
+}
+
 function containsLikePattern(value) {
   const encoder = new TextEncoder();
   const maxBodyBytes = MAX_LIKE_PATTERN_BYTES - 2;
@@ -239,24 +393,48 @@ function containsLikePattern(value) {
   return `%${escaped}%`;
 }
 
-async function checkRateLimit(ip, env) {
+async function checkRateLimit(limiter, key, label) {
   // The binding is absent in lightweight local/unit-test environments. Wrangler
   // provides it in production through the ratelimits entry in wrangler.toml.
-  if (!env.API_RATE_LIMITER?.limit) return { allowed: true };
+  if (!limiter?.limit) {
+    console.error(label + ' rate limiter binding is unavailable');
+    return { allowed: false, unavailable: true };
+  }
 
   try {
-    const result = await env.API_RATE_LIMITER.limit({ key: ip });
-    return { allowed: result.success };
+    const result = await limiter.limit({ key });
+    if (typeof result?.success !== 'boolean') {
+      throw new Error('Rate limiter returned an invalid result');
+    }
+    return { allowed: result.success, unavailable: false };
   } catch (e) {
-    // Availability wins if Cloudflare's limiter is temporarily unavailable;
-    // the failure is still visible in Worker logs.
-    console.error('Rate limiter error:', e);
-    return { allowed: true };
+    // Expensive routes fail closed when their configured limiter is unhealthy.
+    // Otherwise a transient binding failure silently removes the only request
+    // bound in front of D1 searches and uncacheable R2 Range reads.
+    console.error(label + ' rate limiter error:', e);
+    return { allowed: false, unavailable: true };
   }
+}
+
+async function documentIdExcludedByHouseToken(id, db, exclusions) {
+  if (!exclusions.houseBates.size) return false;
+  const row = await db.prepare('SELECT filename FROM documents WHERE id = ?').bind(id).first();
+  return Boolean(row && exclusions.houseBates.has(String(row.filename || '').toUpperCase()));
+}
+
+async function imageSourceExcluded(filename, db, exclusions) {
+  if (!hasPublicationExclusions(exclusions)) return false;
+  const documentId = imageDocumentId(filename);
+  // An object with no attributable source cannot be proven safe while an
+  // emergency withdrawal is active, so fail closed instead of exposing it.
+  if (documentId === null) return true;
+  if (exclusions.documentIds.has(documentId)) return true;
+  return documentIdExcludedByHouseToken(documentId, db, exclusions);
 }
 
 function isMediaDeliveryPath(path) {
   return (
+    path === '/api/images' ||
     /^\/api\/documents\/\d+\/(?:file|thumbnail)$/.test(path) ||
     /^\/api\/videos\/\d+\/thumb$/.test(path) ||
     /^\/api\/images\/[^/]+$/.test(path) ||
@@ -264,10 +442,53 @@ function isMediaDeliveryPath(path) {
   );
 }
 
+function isLimiterExemptPath(path) {
+  return path === '/health' || path === '/api' || path === '/api/' ||
+    path === '/robots.txt' || path === '/' || path === '/app';
+}
+
+function rateLimitPolicy(request, path, env) {
+  if (isLimiterExemptPath(path) || !path.startsWith('/api/')) return null;
+
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (isMediaDeliveryPath(path)) {
+    const requestClass = request.headers.has('Range') ? 'range' : 'media';
+    return {
+      limiter: env.MEDIA_RATE_LIMITER,
+      key: requestClass + ':' + ip,
+      label: 'Media',
+      limit: MEDIA_RATE_LIMIT,
+      windowSeconds: MEDIA_RATE_WINDOW_SECONDS,
+    };
+  }
+
+  return {
+    limiter: env.API_RATE_LIMITER,
+    key: ip,
+    label: 'API',
+    limit: RATE_LIMIT,
+    windowSeconds: RATE_WINDOW_SECONDS,
+  };
+}
+
 // Largest response we will store at the edge. Cloudflare caps cacheable
 // objects (512 MB on this plan) and the DOJ-OGR videos run past 1 GB, so
 // anything big is streamed straight through rather than failing a put.
 const MAX_EDGE_CACHE_BYTES = 100 * 1024 * 1024;
+// Browsers revalidate media quickly enough for an emergency publication
+// exclusion to take effect. The Worker may keep a visible object at the edge
+// longer, because active exclusions bypass the Cache API entirely below.
+const MEDIA_CACHE_CONTROL = 'public, max-age=60, s-maxage=60, must-revalidate';
+// Do not reuse entries written before media moved behind the private Worker;
+// those responses can carry the old immutable policy or omit canonical/MIME
+// headers. Bump this whenever the cached media response contract changes.
+const MEDIA_CACHE_VERSION = 'private-r2-v2';
+
+function mediaCacheKey(request) {
+  const url = new URL(request.url);
+  url.searchParams.set('__ep_media_cache', MEDIA_CACHE_VERSION);
+  return new Request(url.toString(), request);
+}
 
 // Cloudflare's edge does NOT cache Worker-generated responses on its own --
 // the Cache-Control headers set below only instruct the visitor's browser.
@@ -280,7 +501,20 @@ const MAX_EDGE_CACHE_BYTES = 100 * 1024 * 1024;
 //
 // Range requests bypass this deliberately: storing a 206 would poison the
 // entry for whole-file requests, and video seeking depends on them.
-async function withEdgeCache(request, ctx, produce) {
+async function withEdgeCache(request, ctx, exclusions, produce) {
+  // Never consult an entry created under an older publication policy. This is
+  // especially important for aliases (a House Bates token reached through a
+  // numeric /documents/:id route), which require D1 to resolve safely.
+  if (hasPublicationExclusions(exclusions)) {
+    const response = await produce();
+    const headers = new Headers(response.headers);
+    headers.set('Cache-Control', 'no-store');
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
   if (request.method !== 'GET' || request.headers.has('Range')) {
     return await produce();
   }
@@ -293,8 +527,21 @@ async function withEdgeCache(request, ctx, produce) {
   }
 
   const cache = caches.default;
-  const hit = await cache.match(request);
-  if (hit) return hit;
+  const cacheKey = mediaCacheKey(request);
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    // Cache entries can outlive a Worker deployment. Re-apply the current
+    // response policy so an older cached media object cannot omit headers that
+    // are now mandatory on every response class.
+    return workerResponse(hit.body, {
+      status: hit.status,
+      statusText: hit.statusText,
+      headers: {
+        ...Object.fromEntries(hit.headers),
+        ...noIndexHeaders,
+      },
+    });
+  }
 
   const response = await produce();
   if (response.status === 200) {
@@ -302,7 +549,7 @@ async function withEdgeCache(request, ctx, produce) {
     if (!declared || declared <= MAX_EDGE_CACHE_BYTES) {
       // waitUntil so the visitor is never made to wait on the cache write.
       ctx.waitUntil(
-        cache.put(request, response.clone()).catch(e => {
+        cache.put(cacheKey, response.clone()).catch(e => {
           console.error('Edge cache put failed:', e);
         })
       );
@@ -313,10 +560,15 @@ async function withEdgeCache(request, ctx, produce) {
 
 // Security headers
 const securityHeaders = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'Content-Security-Policy': "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'SAMEORIGIN',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
+};
+
+const noIndexHeaders = {
+  'X-Robots-Tag': 'noindex',
 };
 
 // CORS headers
@@ -326,11 +578,31 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+function allowedMethodsForPath(path) {
+  return path === '/api/entities/search'
+    ? ['POST', 'OPTIONS']
+    : ['GET', 'OPTIONS'];
+}
+
+function workerResponse(body = null, init = {}) {
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(securityHeaders)) {
+    headers.set(name, value);
+  }
+  return new Response(body, { ...init, headers });
+}
+
 // JSON response helper
 function json(data, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(data), {
+  return workerResponse(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...securityHeaders, ...extraHeaders },
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      ...corsHeaders,
+      ...noIndexHeaders,
+      ...extraHeaders,
+    },
   });
 }
 
@@ -346,6 +618,35 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
+    // workers.dev is directly reachable outside browser HSTS enforcement.
+    // Redirect before rate limiting, body reads, D1 sessions, or R2 work.
+    if (url.protocol !== 'https:') {
+      url.protocol = 'https:';
+      return workerResponse(null, {
+        status: 308,
+        headers: {
+          Location: url.toString(),
+          ...corsHeaders,
+          ...noIndexHeaders,
+        },
+      });
+    }
+
+    let exclusions;
+    try {
+      exclusions = publicationExclusions(env);
+    } catch (e) {
+      console.error('Publication exclusions error:', e);
+      return json(
+        { error: 'Service temporarily unavailable. Please retry shortly.' },
+        503,
+        { 'Cache-Control': 'no-store', 'Retry-After': '5' }
+      );
+    }
+    if (exclusionForPath(path, exclusions)) {
+      return error('Document not found', 404);
+    }
+
     // D1 read replication only takes effect through the Sessions API: without
     // withSession() every query is served by the primary in ENAM regardless of
     // the dashboard toggle. This API performs zero writes and the archive only
@@ -360,31 +661,54 @@ export default {
       ? env.DB.withSession('first-unconstrained')
       : env.DB;
 
+    const allowedMethods = allowedMethodsForPath(path);
+
     // Handle CORS preflight
     if (method === 'OPTIONS') {
-      return new Response(null, { headers: { ...corsHeaders, ...securityHeaders } });
+      return workerResponse(null, {
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Allow-Methods': allowedMethods.join(', '),
+          Allow: allowedMethods.join(', '),
+          ...noIndexHeaders,
+        },
+      });
     }
 
     const isEntitySearch = path === '/api/entities/search' && method === 'POST';
     if (method !== 'GET' && !isEntitySearch) {
       return json({ error: 'Method not allowed' }, 405, {
-        Allow: path === '/api/entities/search' ? 'POST, OPTIONS' : 'GET, OPTIONS',
+        Allow: allowedMethods.join(', '),
+        'Access-Control-Allow-Methods': allowedMethods.join(', '),
       });
     }
 
-    // Limit database/query endpoints, but not R2-backed media delivery. A
-    // single gallery page can legitimately request 60 thumbnails at once.
-    if (!isMediaDeliveryPath(path)) {
-      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-      const rateLimit = await checkRateLimit(ip, env);
+    const ratePolicy = rateLimitPolicy(request, path, env);
+    if (ratePolicy) {
+      const rateLimit = await checkRateLimit(
+        ratePolicy.limiter,
+        ratePolicy.key,
+        ratePolicy.label
+      );
+
+      if (rateLimit.unavailable) {
+        return json(
+          { error: 'Service temporarily unavailable. Please retry shortly.' },
+          503,
+          {
+            'Cache-Control': 'no-store',
+            'Retry-After': '5',
+          }
+        );
+      }
 
       if (!rateLimit.allowed) {
         return json(
-          { error: 'Rate limit exceeded. Please slow down.', retry_after: RATE_WINDOW_SECONDS },
+          { error: 'Rate limit exceeded. Please slow down.', retry_after: ratePolicy.windowSeconds },
           429,
           {
-            'X-RateLimit-Limit': RATE_LIMIT.toString(),
-            'Retry-After': RATE_WINDOW_SECONDS.toString(),
+            'X-RateLimit-Limit': ratePolicy.limit.toString(),
+            'Retry-After': ratePolicy.windowSeconds.toString(),
           }
         );
       }
@@ -397,84 +721,99 @@ export default {
       }
 
       if (path === '/api/stats') {
-        return await getStats(db);
+        return await getStats(db, exclusions);
       }
 
       if (path === '/api/search') {
-        return await searchDocuments(url, db);
+        return await searchDocuments(url, db, exclusions);
       }
 
       if (path === '/api/browse') {
-        return await browseDocuments(url, db);
+        return await browseDocuments(url, db, exclusions);
       }
 
       // Document routes
       const docMatch = path.match(/^\/api\/documents\/(\d+)$/);
       if (docMatch) {
-        return await getDocument(parseInt(docMatch[1]), db);
+        return await getDocument(parseInt(docMatch[1]), db, exclusions);
       }
 
       const docTextMatch = path.match(/^\/api\/documents\/(\d+)\/text$/);
       if (docTextMatch) {
-        return await getDocumentText(parseInt(docTextMatch[1]), url, db);
+        return await getDocumentText(parseInt(docTextMatch[1]), url, db, exclusions);
       }
 
       const docFileMatch = path.match(/^\/api\/documents\/(\d+)\/file$/);
       if (docFileMatch) {
-        return await withEdgeCache(request, ctx, () =>
-          getDocumentFile(parseInt(docFileMatch[1]), request, db, env.R2));
+        return await withEdgeCache(request, ctx, exclusions, () =>
+          getDocumentFile(parseInt(docFileMatch[1]), request, db, env.R2, exclusions));
       }
 
       const docThumbMatch = path.match(/^\/api\/documents\/(\d+)\/thumbnail$/);
       if (docThumbMatch) {
-        return await withEdgeCache(request, ctx, () =>
-          getDocumentThumbnail(parseInt(docThumbMatch[1]), db, env.R2));
+        return await withEdgeCache(request, ctx, exclusions, () =>
+          getDocumentThumbnail(parseInt(docThumbMatch[1]), request, db, env.R2, exclusions));
       }
 
       // Video routes
       if (path === '/api/videos') {
-        return await listVideos(url, db);
+        return await listVideos(url, db, exclusions);
       }
 
       const videoThumbMatch = path.match(/^\/api\/videos\/(\d+)\/thumb$/);
       if (videoThumbMatch) {
-        return await withEdgeCache(request, ctx, () =>
-          getVideoThumbnail(parseInt(videoThumbMatch[1]), env.R2));
+        if (await documentIdExcludedByHouseToken(
+          Number(videoThumbMatch[1]), db, exclusions
+        )) return error('Document not found', 404);
+        return await withEdgeCache(request, ctx, exclusions, () =>
+          getVideoThumbnail(parseInt(videoThumbMatch[1]), request, env.R2));
       }
 
       // Maxwell tapes
       if (path === '/api/maxwell-tapes') {
-        return await listMaxwellTapes(db);
+        return await listMaxwellTapes(db, exclusions);
       }
 
       // Images
       if (path === '/api/images') {
-        return await listImages(url, env.R2);
+        return await listImages(url, env.R2, db, exclusions);
       }
 
       const imageMatch = path.match(/^\/api\/images\/([^/]+)$/);
       if (imageMatch) {
-        return await withEdgeCache(request, ctx, () => getImage(imageMatch[1], env.R2));
+        if (await imageSourceExcluded(imageMatch[1], db, exclusions)) {
+          return error('Image not found', 404);
+        }
+        return await withEdgeCache(request, ctx, exclusions, () =>
+          getImage(imageMatch[1], request, env.R2));
       }
 
       // Entity routes
       const entityMatch = path.match(/^\/api\/entities\/(\d+)$/);
       if (entityMatch) {
-        return await getEntity(parseInt(entityMatch[1]), db);
+        return await getEntity(parseInt(entityMatch[1]), db, exclusions);
       }
 
       const entityMentionsMatch = path.match(/^\/api\/entities\/(\d+)\/mentions$/);
       if (entityMentionsMatch) {
-        return await getEntityMentions(parseInt(entityMentionsMatch[1]), url, db);
+        return await getEntityMentions(parseInt(entityMentionsMatch[1]), url, db, exclusions);
       }
 
       const entityCoocMatch = path.match(/^\/api\/entities\/(\d+)\/co-occurrences$/);
       if (entityCoocMatch) {
-        return await getEntityCoOccurrences(parseInt(entityCoocMatch[1]), url, db);
+        return await getEntityCoOccurrences(parseInt(entityCoocMatch[1]), url, db, exclusions);
       }
 
       if (path === '/api/entities/search' && method === 'POST') {
-        return await searchEntities(request, db);
+        const declaredLength = request.headers.get('Content-Length');
+        if (declaredLength !== null) {
+          const contentLength = Number(declaredLength);
+          if (!Number.isFinite(contentLength) || contentLength < 0 ||
+              contentLength > MAX_ENTITY_REQUEST_BYTES) {
+            throw new HttpError('Request body too large', 413);
+          }
+        }
+        return await searchEntities(request, db, exclusions);
       }
 
       // Utility routes
@@ -483,21 +822,24 @@ export default {
       }
 
       if (path === '/api/document-types') {
-        return await getDocumentTypes(db);
+        return await getDocumentTypes(db, exclusions);
       }
 
       if (path === '/api/data-sets') {
-        return await getDataSets(db);
+        return await getDataSets(db, exclusions);
       }
 
       // House Oversight routes
       if (path === '/api/house-oversight/documents') {
-        return await listHouseOversightDocs(url, db);
+        return await listHouseOversightDocs(url, db, exclusions);
       }
 
       const hoDocMatch = path.match(/^\/api\/house-oversight\/documents\/(HOUSE_OVERSIGHT_\d+)$/);
       if (hoDocMatch) {
-        return await getHouseOversightDoc(hoDocMatch[1], db, env.R2);
+        if (await houseLegacyDocumentExcluded(hoDocMatch[1], db, exclusions)) {
+          return error('Document not found', 404);
+        }
+        return await getHouseOversightDoc(hoDocMatch[1], db, env.R2, exclusions);
       }
 
       const hoPageMatch = path.match(/^\/api\/house-oversight\/page\/(HOUSE_OVERSIGHT_\d+)\/(\d+)$/);
@@ -506,18 +848,25 @@ export default {
         if (!Number.isSafeInteger(pageIndex) || pageIndex > 10_000) {
           throw new HttpError('page index must be between 0 and 10000');
         }
-        return await withEdgeCache(request, ctx, () =>
-          getHouseOversightPage(hoPageMatch[1], pageIndex, env.R2));
+        const houseDoc = await getVisibleHouseMediaDocument(hoPageMatch[1], db, exclusions);
+        if (!houseDoc || pageIndex >= Math.max(1, Number(houseDoc.page_count) || 1)) {
+          return error('Document not found', 404);
+        }
+        return await withEdgeCache(request, ctx, exclusions, () =>
+          getHouseOversightPage(hoPageMatch[1], pageIndex, request, env.R2));
       }
 
       const hoThumbMatch = path.match(/^\/api\/house-oversight\/thumbnail\/(HOUSE_OVERSIGHT_\d+)$/);
       if (hoThumbMatch) {
-        return await withEdgeCache(request, ctx, () =>
-          getHouseOversightThumbnail(hoThumbMatch[1], env.R2));
+        if (!await getVisibleHouseMediaDocument(hoThumbMatch[1], db, exclusions)) {
+          return error('Document not found', 404);
+        }
+        return await withEdgeCache(request, ctx, exclusions, () =>
+          getHouseOversightThumbnail(hoThumbMatch[1], request, env.R2));
       }
 
       if (path === '/api/house-oversight/stats') {
-        return await getHouseOversightStats(db);
+        return await getHouseOversightStats(db, exclusions);
       }
 
       if (path === '/health') {
@@ -525,16 +874,19 @@ export default {
       }
 
       if (path === '/robots.txt') {
-        return new Response(
+        return workerResponse(
           'User-agent: *\nAllow: /\nDisallow: /api/\nCrawl-delay: 10\n',
-          { headers: { 'Content-Type': 'text/plain', ...corsHeaders } }
+          { headers: { 'Content-Type': 'text/plain', ...corsHeaders, ...noIndexHeaders } }
         );
       }
 
       // Frontend - redirect to Pages
       if (path === '/' || path === '/app') {
         // Will be served by Pages, this is fallback
-        return new Response('Frontend served by Cloudflare Pages', { status: 200 });
+        return workerResponse('Frontend served by Cloudflare Pages', {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', ...noIndexHeaders },
+        });
       }
 
       return error('Not found', 404);
@@ -566,23 +918,63 @@ function apiInfo() {
   });
 }
 
-async function getStats(db) {
-  const [docs, entities, mentions, texts] = await Promise.all([
-    db.prepare('SELECT COUNT(*) as count FROM documents').first(),
-    db.prepare('SELECT COUNT(*) as count FROM entities').first(),
-    db.prepare('SELECT COUNT(*) as count FROM mentions').first(),
-    db.prepare('SELECT COUNT(*) as count FROM document_texts').first(),
-  ]);
+async function getStats(db, exclusions) {
+  let docs;
+  let entities;
+  let mentions;
+  let texts;
+  let types;
+  let dataSets;
 
-  // Get document type counts
-  const types = await db.prepare(
-    'SELECT document_type, COUNT(*) as count FROM documents GROUP BY document_type'
-  ).all();
-
-  // Get data set counts
-  const dataSets = await db.prepare(
-    'SELECT data_set, COUNT(*) as count FROM documents WHERE data_set IS NOT NULL GROUP BY data_set'
-  ).all();
+  if (!hasPublicationExclusions(exclusions)) {
+    [docs, entities, mentions, texts] = await Promise.all([
+      db.prepare('SELECT COUNT(*) as count FROM documents').first(),
+      db.prepare('SELECT COUNT(*) as count FROM entities').first(),
+      db.prepare('SELECT COUNT(*) as count FROM mentions').first(),
+      db.prepare('SELECT COUNT(*) as count FROM document_texts').first(),
+    ]);
+    types = await db.prepare(
+      'SELECT document_type, COUNT(*) as count FROM documents GROUP BY document_type'
+    ).all();
+    dataSets = await db.prepare(
+      'SELECT data_set, COUNT(*) as count FROM documents WHERE data_set IS NOT NULL GROUP BY data_set'
+    ).all();
+  } else {
+    // Aggregate endpoints must not reveal stale totals from withdrawn records.
+    // This more expensive join path runs only while an emergency policy is
+    // active; the normal no-exclusion stats path remains unchanged.
+    const visibility = documentVisibilitySql('d.id', 'd.filename', exclusions);
+    const visible = (sql) => bindIfNeeded(db.prepare(sql), visibility.bindings);
+    [docs, entities, mentions, texts] = await Promise.all([
+      visible(`SELECT COUNT(*) as count FROM documents d WHERE 1=1${visibility.clause}`).first(),
+      visible(`
+        SELECT COUNT(DISTINCT m.entity_id) as count
+        FROM mentions m JOIN documents d ON d.id = m.document_id
+        WHERE 1=1${visibility.clause}
+      `).first(),
+      visible(`
+        SELECT COUNT(*) as count
+        FROM mentions m JOIN documents d ON d.id = m.document_id
+        WHERE 1=1${visibility.clause}
+      `).first(),
+      visible(`
+        SELECT COUNT(*) as count
+        FROM document_texts t JOIN documents d ON d.id = t.document_id
+        WHERE 1=1${visibility.clause}
+      `).first(),
+    ]);
+    types = await visible(`
+      SELECT d.document_type, COUNT(*) as count
+      FROM documents d WHERE 1=1${visibility.clause}
+      GROUP BY d.document_type
+    `).all();
+    dataSets = await visible(`
+      SELECT d.data_set, COUNT(*) as count
+      FROM documents d
+      WHERE d.data_set IS NOT NULL${visibility.clause}
+      GROUP BY d.data_set
+    `).all();
+  }
 
   return json({
     total_documents: docs.count,
@@ -594,7 +986,7 @@ async function getStats(db) {
   });
 }
 
-async function searchDocuments(url, db) {
+async function searchDocuments(url, db, exclusions) {
   const q = url.searchParams.get('q') || '';
   const documentType = url.searchParams.get('document_type');
   const dataSets = resolveDataSetFilter(url.searchParams);
@@ -604,7 +996,9 @@ async function searchDocuments(url, db) {
   // If no query but filters, browse by filter
   if (!q && (documentType || dataSets)) {
     let sql = 'SELECT * FROM documents WHERE 1=1';
-    const params = [];
+    const visibility = documentVisibilitySql('documents.id', 'documents.filename', exclusions);
+    sql += visibility.clause;
+    const params = [...visibility.bindings];
 
     if (documentType) {
       sql += ' AND document_type = ?';
@@ -643,6 +1037,7 @@ async function searchDocuments(url, db) {
   // Parse the supported query language into quoted FTS5 terms. Quoting every
   // sanitized term prevents user input from becoming an FTS operator.
   const ftsQuery = buildFtsQuery(q);
+  const visibility = documentVisibilitySql('d.id', 'd.filename', exclusions);
 
   // Run document search and entity search in parallel
   const [results, countResult, entityResults] = await Promise.all([
@@ -655,12 +1050,14 @@ async function searchDocuments(url, db) {
       FROM document_fts
       JOIN documents d ON d.id = document_fts.document_id
       WHERE document_fts MATCH ?
+      ${visibility.clause}
       ${documentType ? 'AND d.document_type = ?' : ''}
       ${dataSets ? `AND d.data_set IN (${dataSetPlaceholders(dataSets)})` : ''}
       ORDER BY rank
       LIMIT ? OFFSET ?
     `).bind(
       ftsQuery,
+      ...visibility.bindings,
       ...(documentType ? [documentType] : []),
       ...(dataSets || []),
       limit,
@@ -673,10 +1070,12 @@ async function searchDocuments(url, db) {
       FROM document_fts
       JOIN documents d ON d.id = document_fts.document_id
       WHERE document_fts MATCH ?
+      ${visibility.clause}
       ${documentType ? 'AND d.document_type = ?' : ''}
       ${dataSets ? `AND d.data_set IN (${dataSetPlaceholders(dataSets)})` : ''}
     `).bind(
       ftsQuery,
+      ...visibility.bindings,
       ...(documentType ? [documentType] : []),
       ...(dataSets || []),
     ).first(),
@@ -720,7 +1119,7 @@ async function searchDocuments(url, db) {
       relevance_score: 1.0,
       snippet: r.snippet || '',
     })),
-    entities: entityResults.results.map(e => ({
+    entities: (hasPublicationExclusions(exclusions) ? [] : entityResults.results).map(e => ({
       entity_id: e.id,
       name: e.canonical_name,
       type: e.entity_type,
@@ -729,7 +1128,7 @@ async function searchDocuments(url, db) {
   });
 }
 
-async function browseDocuments(url, db) {
+async function browseDocuments(url, db, exclusions) {
   const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 24, min: 1, max: 100 });
   const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
   const filter = url.searchParams.get('filter');
@@ -744,7 +1143,9 @@ async function browseDocuments(url, db) {
 
   // DOJ only - House Oversight has separate endpoints
   let sql = "SELECT * FROM documents WHERE data_set != 'house-oversight-estate'";
-  const params = [];
+  const visibility = documentVisibilitySql('documents.id', 'documents.filename', exclusions);
+  sql += visibility.clause;
+  const params = [...visibility.bindings];
 
   if (documentType) {
     sql += ' AND document_type = ?';
@@ -807,11 +1208,12 @@ async function browseDocuments(url, db) {
   });
 }
 
-async function getDocument(id, db) {
+async function getDocument(id, db, exclusions) {
   const doc = await db.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first();
   if (!doc) {
     return error('Document not found', 404);
   }
+  if (documentRowExcluded(id, doc, exclusions)) return error('Document not found', 404);
 
   const text = await db.prepare(
     'SELECT full_text, word_count FROM document_texts WHERE document_id = ?'
@@ -841,11 +1243,12 @@ async function getDocument(id, db) {
   });
 }
 
-async function getDocumentText(id, url, db) {
+async function getDocumentText(id, url, db, exclusions) {
   const doc = await db.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first();
   if (!doc) {
     return error('Document not found', 404);
   }
+  if (documentRowExcluded(id, doc, exclusions)) return error('Document not found', 404);
 
   const text = await db.prepare(
     'SELECT * FROM document_texts WHERE document_id = ?'
@@ -898,6 +1301,118 @@ const DOCUMENT_MEDIA_TYPES = new Set([
   'video/webm',
 ]);
 
+const IMAGE_MEDIA_TYPES = new Set([
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/tiff',
+  'image/webp',
+]);
+
+function r2GetOptions(request) {
+  return request.headers.has('Range') ? { range: request.headers } : undefined;
+}
+
+async function getR2MediaObject(r2, key, request) {
+  if (request.headers.has('Range') && typeof r2.head === 'function') {
+    const head = await r2.head(key);
+    if (head && Number.isFinite(head.size) &&
+        requestRangeIsUnsatisfiable(request.headers.get('Range'), head.size)) {
+      return { response: rangeNotSatisfiableResponse(head.size) };
+    }
+  }
+  return { object: await r2.get(key, r2GetOptions(request)) };
+}
+
+function canonicalLink(path) {
+  return `<https://epsteinproject.org${path}>; rel=canonical`;
+}
+
+function safeDownloadFilename(value) {
+  return String(value || 'download').replace(/["\\\r\n]/g, '_').slice(0, 180);
+}
+
+function imageMediaType(filename, object) {
+  const stored = String(object?.httpMetadata?.contentType || '')
+    .split(';', 1)[0].trim().toLowerCase();
+  if (IMAGE_MEDIA_TYPES.has(stored)) return stored;
+
+  const extension = String(filename || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  return ({
+    gif: 'image/gif',
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+    webp: 'image/webp',
+  })[extension] || null;
+}
+
+function r2MediaResponse(object, request, {
+  contentType,
+  canonicalPath,
+  downloadName = null,
+  forceRange = false,
+}) {
+  const rangeRequested = forceRange || request.headers.has('Range');
+  const headers = new Headers({
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, ETag, Link',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    ...corsHeaders,
+    ...noIndexHeaders,
+  });
+  object.writeHttpMetadata?.(headers);
+
+  // Stored object metadata is descriptive, not policy. Re-apply the public
+  // response contract after writeHttpMetadata() so an old R2 Cache-Control or
+  // Content-Type value cannot weaken withdrawal timing or MIME enforcement.
+  headers.set('Content-Type', contentType);
+  headers.set('Cache-Control', MEDIA_CACHE_CONTROL);
+  headers.set('Link', canonicalLink(canonicalPath));
+  if (object.httpEtag) headers.set('ETag', object.httpEtag);
+  if (downloadName) {
+    headers.set('Content-Disposition', `attachment; filename="${safeDownloadFilename(downloadName)}"`);
+  } else {
+    headers.delete('Content-Disposition');
+  }
+
+  let status = 200;
+  if (rangeRequested) {
+    const range = object.range;
+    const suffix = Number(range?.suffix);
+    const start = Number.isFinite(Number(range?.offset))
+      ? Number(range.offset)
+      : Number.isFinite(suffix) && Number.isFinite(object.size)
+        ? Math.max(0, object.size - suffix)
+        : NaN;
+    const length = Number.isFinite(Number(range?.length))
+      ? Number(range.length)
+      : Number.isFinite(suffix) && Number.isFinite(object.size)
+        ? Math.min(suffix, object.size)
+        : NaN;
+
+    if (!Number.isFinite(start) || !Number.isFinite(length) || length <= 0 ||
+        !Number.isFinite(object.size) || start >= object.size) {
+      headers.set('Cache-Control', 'no-store');
+      if (Number.isFinite(object.size)) {
+        headers.set('Content-Range', `bytes */${object.size}`);
+      }
+      headers.set('Content-Length', '0');
+      return workerResponse(null, { status: 416, headers });
+    }
+
+    headers.set('Content-Range', `bytes ${start}-${start + length - 1}/${object.size}`);
+    headers.set('Content-Length', String(length));
+    status = 206;
+  } else if (Number.isFinite(object.size)) {
+    headers.set('Content-Length', String(object.size));
+  }
+
+  return workerResponse(object.body, { status, headers });
+}
+
 function documentMediaType(doc, object) {
   for (const value of [object?.httpMetadata?.contentType, doc.content_type]) {
     const normalized = String(value || '').split(';', 1)[0].trim().toLowerCase();
@@ -915,41 +1430,24 @@ function documentMediaType(doc, object) {
   return 'application/octet-stream';
 }
 
-function documentFileResponse(doc, object, rangeRequested) {
+function documentFileResponse(
+  id,
+  doc,
+  object,
+  request,
+  canonicalPath = `/documents/${id}`,
+  forceRange = false
+) {
   if (object?.size === 0) {
     return error('File is empty', 502);
   }
-  const headers = new Headers({
-    'Content-Type': documentMediaType(doc, object),
-    'Cache-Control': 'public, max-age=86400',
-    'Accept-Ranges': 'bytes',
-    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, ETag',
-    'Cross-Origin-Resource-Policy': 'cross-origin',
-    ...corsHeaders,
+  const wantsDownload = new URL(request.url).searchParams.get('download') === '1';
+  return r2MediaResponse(object, request, {
+    contentType: documentMediaType(doc, object),
+    canonicalPath,
+    downloadName: wantsDownload ? doc.filename || doc.title || `document-${id}` : null,
+    forceRange,
   });
-  object.writeHttpMetadata?.(headers);
-  headers.set('Content-Type', documentMediaType(doc, object));
-  if (object.httpEtag) headers.set('ETag', object.httpEtag);
-
-  let status = 200;
-  if (rangeRequested && object.range && Number.isFinite(object.size)) {
-    const suffix = Number(object.range.suffix);
-    const start = Number.isFinite(object.range.offset)
-      ? Number(object.range.offset)
-      : Math.max(0, object.size - suffix);
-    const length = Number.isFinite(object.range.length)
-      ? Number(object.range.length)
-      : Math.min(suffix, object.size);
-    if (Number.isFinite(start) && Number.isFinite(length) && length > 0) {
-      headers.set('Content-Range', `bytes ${start}-${start + length - 1}/${object.size}`);
-      headers.set('Content-Length', String(length));
-      status = 206;
-    }
-  } else if (Number.isFinite(object.size)) {
-    headers.set('Content-Length', String(object.size));
-  }
-
-  return new Response(object.body, { status, headers });
 }
 
 function rangeNotSatisfiableResponse(size) {
@@ -996,7 +1494,7 @@ function houseOversightNative(doc) {
   };
 }
 
-async function getHouseOversightNativeFile(doc, request, r2, native) {
+async function getHouseOversightNativeFile(id, doc, request, r2, native) {
   const rangeRequested = request.headers.has('Range');
   const searchParams = new URL(request.url).searchParams;
   const wantsDownload = searchParams.get('download') === '1';
@@ -1005,44 +1503,41 @@ async function getHouseOversightNativeFile(doc, request, r2, native) {
     ? { key: native.key, contentType: native.contentType }
     : { key: native.playbackKey, contentType: native.playbackContentType };
   if (rangeRequested) {
-    const targetSize = wantsDownload
-      ? Number(doc.file_size)
-      : Number((await r2.head(target.key))?.size);
+    const storedSize = Number(doc.file_size);
+    const targetHead = typeof r2.head === 'function' ? await r2.head(target.key) : null;
+    // Prefer the authoritative selected R2 representation. Legacy estate rows
+    // can have a null/unknown file_size even when the released native exists.
+    const targetSize = Number(targetHead?.size) > 0
+      ? Number(targetHead.size)
+      : wantsDownload && Number.isFinite(storedSize) && storedSize > 0
+        ? storedSize
+        : NaN;
     if (!Number.isFinite(targetSize) || targetSize <= 0) return error('File not available', 404);
     if (requestRangeIsUnsatisfiable(request.headers.get('Range'), targetSize)) {
       return rangeNotSatisfiableResponse(targetSize);
     }
   }
-  const bootstrapsStream = wantsStream && !rangeRequested;
+  const bootstrapsStream = !wantsDownload && wantsStream && !rangeRequested;
   const rangeOpts = rangeRequested
     ? { range: request.headers }
     : bootstrapsStream
       ? { range: { offset: 0, length: 1024 * 1024 } }
       : undefined;
 
-  if (!wantsDownload && !wantsStream && !rangeRequested) {
-    const object = await r2.head(target.key);
-    if (!object) return error('File not available', 404);
-    return new Response(null, {
-      status: 302,
-      headers: {
-        'Location': `${MEDIA_URL}/${encodeURI(target.key)}`,
-        'Cache-Control': 'public, max-age=3600',
-        ...corsHeaders,
-      },
-    });
-  }
-
   const object = await r2.get(target.key, rangeOpts);
   if (!object) return error('File not available', 404);
-  return documentFileResponse(
-    { ...doc, content_type: target.contentType },
-    object,
-    rangeRequested || bootstrapsStream,
-  );
+  if (object.size === 0) return error('File is empty', 502);
+  return r2MediaResponse(object, request, {
+    contentType: target.contentType,
+    canonicalPath: `/documents/${id}`,
+    downloadName: wantsDownload
+      ? doc.title || doc.filename || `document-${id}`
+      : null,
+    forceRange: bootstrapsStream,
+  });
 }
 
-async function getDocumentFile(id, request, db, r2) {
+async function getDocumentFile(id, request, db, r2, exclusions) {
   const doc = await db.prepare(
     'SELECT local_path, filename, title, data_set, content_type, document_type, file_size FROM documents WHERE id = ?'
   ).bind(id).first();
@@ -1050,11 +1545,12 @@ async function getDocumentFile(id, request, db, r2) {
   if (!doc) {
     return error('Document not found', 404);
   }
+  if (documentRowExcluded(id, doc, exclusions)) return error('Document not found', 404);
 
   const estateNative = houseOversightNative(doc);
   if (estateNative) {
     try {
-      return await getHouseOversightNativeFile(doc, request, r2, estateNative);
+      return await getHouseOversightNativeFile(id, doc, request, r2, estateNative);
     } catch (e) {
       console.error('R2 fetch error for House Oversight native:', e);
       return error('File not available', 404);
@@ -1070,15 +1566,15 @@ async function getDocumentFile(id, request, db, r2) {
     const r2Key = `house-oversight/IMAGES/${folder}/${bates}.jpg`;
 
     try {
-      const object = await r2.get(r2Key);
+      const { object, response } = await getR2MediaObject(r2, r2Key, request);
+      if (response) return response;
       if (object) {
-        return new Response(object.body, {
-          headers: {
-            'Content-Type': 'image/jpeg',
-            'Cache-Control': 'public, max-age=86400',
-            'Cross-Origin-Resource-Policy': 'cross-origin',
-            ...corsHeaders,
-          },
+        return r2MediaResponse(object, request, {
+          contentType: 'image/jpeg',
+          canonicalPath: `/house-oversight/${bates}`,
+          downloadName: new URL(request.url).searchParams.get('download') === '1'
+            ? `${bates}.jpg`
+            : null,
         });
       }
     } catch (e) {
@@ -1097,51 +1593,40 @@ async function getDocumentFile(id, request, db, r2) {
       let effectiveRangeOpts = rangeOpts;
       let bootstrapsStream = false;
       let rangeTargetSize = null;
-      if (rangeRequested && requestRangeIsUnsatisfiable(request.headers.get('Range'), doc.file_size)) {
-        return rangeNotSatisfiableResponse(Number(doc.file_size));
-      }
       // Videos: prefer the faststart remux under streaming/ (originals stay
-      // byte-identical to the DOJ release for hash verification). Playback
-      // redirects to the R2 custom domain so multi-GB streams don't flow
-      // through the Worker; ?download=1 keeps the response same-origin so
-      // the <a download> attribute works.
+      // byte-identical to the DOJ release for hash verification). Both playback
+      // and downloads remain behind this policy-aware, rate-limited Worker.
       if (doc.document_type === 'video') {
         const searchParams = new URL(request.url).searchParams;
         const wantsDownload = searchParams.get('download') === '1';
         const wantsStream = searchParams.get('stream') === '1';
-        bootstrapsStream = wantsStream && !rangeRequested;
+        bootstrapsStream = !wantsDownload && wantsStream && !rangeRequested;
         effectiveRangeOpts = bootstrapsStream
           ? { range: { offset: 0, length: 1024 * 1024 } }
           : rangeOpts;
-        // The R2 custom domain currently answers Range requests for very large
-        // raw videos with 200/full Content-Length. Keep ranged playback on the
-        // Worker so R2 receives and returns the exact slice; only whole-file
-        // playback requests are redirected off-worker.
-        if (!wantsDownload && !wantsStream && !rangeRequested) {
-          const streamHead = await r2.head(`streaming/${r2Key}`);
-          const key = streamHead ? `streaming/${r2Key}` : r2Key;
-          return new Response(null, {
-            status: 302,
-            headers: {
-              'Location': `${MEDIA_URL}/${encodeURI(key)}`,
-              'Cache-Control': 'public, max-age=3600',
-              ...corsHeaders,
-            },
-          });
-        }
         const streamKey = `streaming/${r2Key}`;
-        const streamObject = await r2.get(streamKey, effectiveRangeOpts);
-        if (streamObject) {
-          return documentFileResponse(doc, streamObject, rangeRequested || bootstrapsStream);
+        if (!wantsDownload) {
+          if (rangeRequested && typeof r2.head === 'function') {
+            const streamHead = await r2.head(streamKey);
+            if (streamHead && Number.isFinite(streamHead.size)) {
+              rangeTargetSize = streamHead.size;
+              if (requestRangeIsUnsatisfiable(request.headers.get('Range'), rangeTargetSize)) {
+                return rangeNotSatisfiableResponse(rangeTargetSize);
+              }
+            }
+          }
+          const streamObject = await r2.get(streamKey, effectiveRangeOpts);
+          if (streamObject) {
+            return documentFileResponse(id, doc, streamObject, request, `/documents/${id}`, bootstrapsStream);
+          }
         }
-        if (rangeRequested && typeof r2.head === 'function') {
-          const streamHead = await r2.head(streamKey);
-          if (streamHead && Number.isFinite(streamHead.size)) rangeTargetSize = streamHead.size;
-        }
+      }
+      if (rangeRequested && requestRangeIsUnsatisfiable(request.headers.get('Range'), doc.file_size)) {
+        return rangeNotSatisfiableResponse(Number(doc.file_size));
       }
       const object = await r2.get(r2Key, effectiveRangeOpts);
       if (object) {
-        return documentFileResponse(doc, object, rangeRequested || bootstrapsStream);
+        return documentFileResponse(id, doc, object, request, `/documents/${id}`, bootstrapsStream);
       }
       if (rangeRequested && typeof r2.head === 'function') {
         const objectHead = await r2.head(r2Key);
@@ -1156,22 +1641,23 @@ async function getDocumentFile(id, request, db, r2) {
   return error('File not available', 404);
 }
 
-async function getDocumentThumbnail(id, db, r2) {
+async function getDocumentThumbnail(id, request, db, r2, exclusions) {
   const doc = await db.prepare('SELECT local_path, filename FROM documents WHERE id = ?').bind(id).first();
   if (!doc) {
     return error('Document not found', 404);
   }
+  if (documentRowExcluded(id, doc, exclusions)) return error('Document not found', 404);
 
   // Try pre-generated thumbnail first
   try {
-    const thumb = await r2.get(`thumbnails/${id}.jpg`);
+    const { object: thumb, response } = await getR2MediaObject(
+      r2, `thumbnails/${id}.jpg`, request
+    );
+    if (response) return response;
     if (thumb) {
-      return new Response(thumb.body, {
-        headers: {
-          'Content-Type': 'image/jpeg',
-          'Cache-Control': 'public, max-age=86400',
-          ...corsHeaders,
-        },
+      return r2MediaResponse(thumb, request, {
+        contentType: 'image/jpeg',
+        canonicalPath: `/documents/${id}`,
       });
     }
   } catch (e) {
@@ -1183,17 +1669,20 @@ async function getDocumentThumbnail(id, db, r2) {
   return error('Thumbnail not available', 404);
 }
 
-async function listVideos(url, db) {
+async function listVideos(url, db, exclusions) {
   const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 100, min: 1, max: 500 });
   const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
 
-  const total = await db.prepare(
-    "SELECT COUNT(*) as count FROM documents WHERE document_type = 'video'"
-  ).first();
+  const visibility = documentVisibilitySql('documents.id', 'documents.filename', exclusions);
+  const totalStatement = db.prepare(
+    "SELECT COUNT(*) as count FROM documents WHERE document_type = 'video'" + visibility.clause
+  );
+  const total = await bindIfNeeded(totalStatement, visibility.bindings).first();
 
   const videos = await db.prepare(
-    "SELECT id, filename, title, data_set FROM documents WHERE document_type = 'video' ORDER BY id LIMIT ? OFFSET ?"
-  ).bind(limit, offset).all();
+    "SELECT id, filename, title, data_set FROM documents WHERE document_type = 'video'" +
+    visibility.clause + ' ORDER BY id LIMIT ? OFFSET ?'
+  ).bind(...visibility.bindings, limit, offset).all();
 
   return json({
     total: total.count,
@@ -1208,41 +1697,41 @@ async function listVideos(url, db) {
   });
 }
 
-// Streamed from R2 rather than redirected to R2_PUBLIC_URL: r2.dev dev URLs
-// are rate-limited by Cloudflare and stall for tens of seconds under the
-// burst a 48-card gallery produces, which held up video poster loads (and
-// with them Chrome's media requests) long enough to look broken.
-async function getVideoThumbnail(id, r2) {
-  const object = await r2.get(`thumbnails/${id}.jpg`);
+// Stream every object through this Worker so publication policy and the media
+// limiter remain authoritative even when somebody knows the old R2 key.
+async function getVideoThumbnail(id, request, r2) {
+  const { object, response } = await getR2MediaObject(
+    r2, `thumbnails/${id}.jpg`, request
+  );
+  if (response) return response;
   if (!object) {
     return missingThumbnailResponse();
   }
-  return new Response(object.body, {
-    headers: {
-      'Content-Type': 'image/jpeg',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'Cross-Origin-Resource-Policy': 'cross-origin',
-      ...corsHeaders,
-    },
+  return r2MediaResponse(object, request, {
+    contentType: 'image/jpeg',
+    canonicalPath: `/documents/${id}`,
   });
 }
 
 function missingThumbnailResponse() {
-  return new Response(null, {
+  return workerResponse(null, {
     status: 302,
     headers: {
       'Location': MISSING_THUMBNAIL_URL,
       'Cache-Control': 'public, max-age=3600',
       'Cross-Origin-Resource-Policy': 'cross-origin',
       ...corsHeaders,
+      ...noIndexHeaders,
     },
   });
 }
 
-async function listMaxwellTapes(db) {
+async function listMaxwellTapes(db, exclusions) {
+  const visibility = documentVisibilitySql('documents.id', 'documents.filename', exclusions);
   const tapes = await db.prepare(
-    "SELECT * FROM documents WHERE document_type = 'audio' AND data_set = 'maxwell-interview' ORDER BY filename"
-  ).all();
+    "SELECT * FROM documents WHERE document_type = 'audio' AND data_set = 'maxwell-interview'" +
+    visibility.clause + ' ORDER BY filename'
+  ).bind(...visibility.bindings).all();
 
   return json({
     total: tapes.results.length,
@@ -1257,7 +1746,7 @@ async function listMaxwellTapes(db) {
   });
 }
 
-async function listImages(url, r2) {
+async function listImages(url, r2, db, exclusions) {
   const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 60, min: 1, max: 200 });
   const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
 
@@ -1266,11 +1755,39 @@ async function listImages(url, r2) {
     const manifest = await r2.get('images/manifest.json');
     if (manifest) {
       const data = await manifest.json();
-      const images = data.images || [];
+      const images = Array.isArray(data.images) ? data.images : [];
+      const excludedImageDocumentIds = new Set(exclusions.documentIds);
+      if (exclusions.houseBates.size) {
+        const bates = [...exclusions.houseBates];
+        const houseRows = await db.prepare(`
+          SELECT legacy_document_id
+          FROM house_oversight_documents
+          WHERE UPPER(bates_number) IN (${bates.map(() => '?').join(', ')})
+        `).bind(...bates).all();
+        for (const row of houseRows.results || []) {
+          const legacyId = Number(row.legacy_document_id);
+          if (Number.isSafeInteger(legacyId) && legacyId > 0) {
+            excludedImageDocumentIds.add(legacyId);
+          }
+        }
+      }
+      const visibleImages = images.filter((image) => {
+        const documentId = imageDocumentId(image);
+        if (documentId !== null && excludedImageDocumentIds.has(documentId)) return false;
+        const bates = String(
+          image?.bates ?? image?.bates_number ?? image?.document_filename ?? ''
+        ).toUpperCase();
+        if (bates && exclusions.houseBates.has(bates)) return false;
+        // When policy is active, do not publish a manifest object that cannot
+        // be attributed to either a source document or an explicit Bates id.
+        return !hasPublicationExclusions(exclusions) || documentId !== null || Boolean(bates);
+      });
       return json({
-        total: data.total_images || 0,
+        total: exclusions.documentIds.size || exclusions.houseBates.size
+          ? visibleImages.length
+          : Number(data.total_images) || visibleImages.length,
         offset,
-        images: images.slice(offset, offset + limit),
+        images: visibleImages.slice(offset, offset + limit),
       });
     }
   } catch (e) {
@@ -1280,38 +1797,54 @@ async function listImages(url, r2) {
   return json({ total: 0, images: [], status: 'manifest not found' });
 }
 
-async function getImage(filename, r2) {
+async function getImage(filename, request, r2) {
   // Sanitize filename
   if (filename.includes('..') || filename.includes('/')) {
     return error('Invalid filename', 400);
   }
 
-  // Streamed rather than redirected to the rate-limited r2.dev URL (see
-  // getVideoThumbnail).
-  const object = await r2.get(`images/${filename}`);
+  const { object, response } = await getR2MediaObject(
+    r2, `images/${filename}`, request
+  );
+  if (response) return response;
   if (!object) {
     return error('Image not found', 404);
   }
-  return new Response(object.body, {
-    headers: {
-      'Content-Type': object.httpMetadata?.contentType || 'image/jpeg',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'Cross-Origin-Resource-Policy': 'cross-origin',
-      ...corsHeaders,
-    },
+  const contentType = imageMediaType(filename, object);
+  if (!contentType) return error('Image not found', 404);
+  const documentId = imageDocumentId(filename);
+  return r2MediaResponse(object, request, {
+    contentType,
+    canonicalPath: documentId === null ? '/images' : `/documents/${documentId}`,
   });
 }
 
-async function getEntity(id, db) {
+async function getEntity(id, db, exclusions) {
   const entity = await db.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first();
   if (!entity) {
     return error('Entity not found', 404);
   }
 
-  // Report the merged total so this agrees with search and the mentions list.
-  const merged = await db.prepare(
-    `SELECT SUM(mention_count) AS total FROM entities WHERE id IN (${ENTITY_SIBLINGS_SQL})`
-  ).bind(id, id).first();
+  // During an emergency exclusion, derive the public count from visible
+  // mentions rather than the precomputed all-record total. If the entity only
+  // occurred in withdrawn documents, the entity itself is no longer public.
+  let merged;
+  if (hasPublicationExclusions(exclusions)) {
+    const visibility = documentVisibilitySql('d.id', 'd.filename', exclusions);
+    merged = await db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM mentions m
+      JOIN documents d ON d.id = m.document_id
+      WHERE m.entity_id IN (${ENTITY_SIBLINGS_SQL})
+      ${visibility.clause}
+    `).bind(id, id, ...visibility.bindings).first();
+    if (!merged?.total) return error('Entity not found', 404);
+  } else {
+    // Report the merged total so this agrees with search and the mentions list.
+    merged = await db.prepare(
+      `SELECT SUM(mention_count) AS total FROM entities WHERE id IN (${ENTITY_SIBLINGS_SQL})`
+    ).bind(id, id).first();
+  }
 
   return json({
     id: entity.id,
@@ -1333,11 +1866,16 @@ async function getEntity(id, db) {
 // src/build_cooccurrence.py from the backup dumps (top 40 partners per
 // entity, >= 2 shared docs, mega-documents excluded). Computing this live
 // over 3.7M mentions is not viable in D1.
-async function getEntityCoOccurrences(entityId, url, db) {
+async function getEntityCoOccurrences(entityId, url, db, exclusions) {
   const type = url.searchParams.get('type');
   const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 20, min: 1, max: 40 });
   if (type && type.length > 40) {
     throw new HttpError('type must be 40 characters or fewer');
+  }
+  // The precomputed table has no per-document provenance, so it cannot be
+  // safely subtracted after a record is withdrawn. Fail closed until rebuilt.
+  if (hasPublicationExclusions(exclusions)) {
+    return json({ entity_id: entityId, results: [] });
   }
 
   try {
@@ -1370,7 +1908,7 @@ async function getEntityCoOccurrences(entityId, url, db) {
   }
 }
 
-async function getEntityMentions(entityId, url, db) {
+async function getEntityMentions(entityId, url, db, exclusions) {
   const role = url.searchParams.get('role');
   const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 100, min: 1, max: 500 });
   const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
@@ -1389,7 +1927,9 @@ async function getEntityMentions(entityId, url, db) {
     JOIN documents d ON d.id = m.document_id
     WHERE m.entity_id IN (${ENTITY_SIBLINGS_CAPPED_SQL})
   `;
-  const params = [entityId, entityId];
+  const visibility = documentVisibilitySql('d.id', 'd.filename', exclusions);
+  sql += visibility.clause;
+  const params = [entityId, entityId, ...visibility.bindings];
 
   if (role) {
     sql += ' AND m.role = ?';
@@ -1424,11 +1964,36 @@ async function getEntityMentions(entityId, url, db) {
   });
 }
 
-async function searchEntities(request, db) {
-  const rawBody = await request.text();
-  if (rawBody.length > 10_000) {
-    throw new HttpError('Request body too large', 413);
+async function readUtf8Body(request, maxBytes) {
+  if (!request.body) return '';
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let bytesRead = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        await reader.cancel('Request body too large');
+        throw new HttpError('Request body too large', 413);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    throw new HttpError('Request body must be valid UTF-8');
+  } finally {
+    reader.releaseLock();
   }
+}
+
+async function searchEntities(request, db, exclusions) {
+  const rawBody = await readUtf8Body(request, MAX_ENTITY_REQUEST_BYTES);
 
   let body;
   try {
@@ -1482,23 +2047,36 @@ async function searchEntities(request, db) {
   params.push(resultLimit);
 
   const results = await db.prepare(sql).bind(...params).all();
+  const visibility = documentVisibilitySql('d.id', 'd.filename', exclusions);
 
   // Get distinct documents where entity is mentioned
   const entities = await Promise.all(results.results.map(async (e) => {
-    const mentions = await db.prepare(`
-      SELECT DISTINCT m.document_id, d.filename as document_filename, m.role
-      FROM mentions m
-      JOIN documents d ON d.id = m.document_id
-      WHERE m.entity_id IN (${ENTITY_SIBLINGS_CAPPED_SQL})
-      GROUP BY m.document_id
-      LIMIT 5
-    `).bind(e.id, e.id).all();
+    const [mentions, visibleCount] = await Promise.all([
+      db.prepare(`
+        SELECT DISTINCT m.document_id, d.filename as document_filename, m.role
+        FROM mentions m
+        JOIN documents d ON d.id = m.document_id
+        WHERE m.entity_id IN (${ENTITY_SIBLINGS_CAPPED_SQL})
+        ${visibility.clause}
+        GROUP BY m.document_id
+        LIMIT 5
+      `).bind(e.id, e.id, ...visibility.bindings).all(),
+      hasPublicationExclusions(exclusions)
+        ? db.prepare(`
+            SELECT COUNT(*) AS total
+            FROM mentions m
+            JOIN documents d ON d.id = m.document_id
+            WHERE m.entity_id IN (${ENTITY_SIBLINGS_CAPPED_SQL})
+            ${visibility.clause}
+          `).bind(e.id, e.id, ...visibility.bindings).first()
+        : Promise.resolve(null),
+    ]);
 
     return {
       entity_id: e.id,
       canonical_name: e.canonical_name,
       entity_type: normalizeEntityType(e.entity_type),
-      mention_count: e.mention_count,
+      mention_count: visibleCount?.total ?? e.mention_count,
       mentions: mentions.results.map(m => ({
         role: m.role || 'unknown',
         document_id: m.document_id,
@@ -1521,12 +2099,17 @@ async function searchEntities(request, db) {
       GROUP BY LOWER(canonical_name), ${ENTITY_TYPE_NORM_SQL}
     )
   `).bind(likePattern, ...(entity_type ? [entity_type] : [])).first();
+  const visibleEntities = hasPublicationExclusions(exclusions)
+    ? entities.filter(entity => entity.mentions.length > 0)
+    : entities;
 
   return json({
     query,
-    total_results: entities.length,
-    total_matches: totalRow?.total ?? entities.length,
-    results: entities,
+    total_results: visibleEntities.length,
+    total_matches: hasPublicationExclusions(exclusions)
+      ? visibleEntities.length
+      : totalRow?.total ?? visibleEntities.length,
+    results: visibleEntities,
   });
 }
 
@@ -1548,10 +2131,12 @@ function getRoles() {
   });
 }
 
-async function getDocumentTypes(db) {
+async function getDocumentTypes(db, exclusions) {
+  const visibility = documentVisibilitySql('documents.id', 'documents.filename', exclusions);
   const types = await db.prepare(
-    'SELECT document_type, COUNT(*) as count FROM documents GROUP BY document_type ORDER BY count DESC'
-  ).all();
+    'SELECT document_type, COUNT(*) as count FROM documents WHERE 1=1' +
+    visibility.clause + ' GROUP BY document_type ORDER BY count DESC'
+  ).bind(...visibility.bindings).all();
 
   return json({
     document_types: types.results.map(t => ({
@@ -1561,10 +2146,12 @@ async function getDocumentTypes(db) {
   });
 }
 
-async function getDataSets(db) {
+async function getDataSets(db, exclusions) {
+  const visibility = documentVisibilitySql('documents.id', 'documents.filename', exclusions);
   const sets = await db.prepare(
-    'SELECT data_set, COUNT(*) as count FROM documents WHERE data_set IS NOT NULL GROUP BY data_set ORDER BY count DESC'
-  ).all();
+    'SELECT data_set, COUNT(*) as count FROM documents WHERE data_set IS NOT NULL' +
+    visibility.clause + ' GROUP BY data_set ORDER BY count DESC'
+  ).bind(...visibility.bindings).all();
 
   return json({
     data_sets: mergeDataSetCounts(sets.results).sort((a, b) => b.count - a.count),
@@ -1593,7 +2180,27 @@ async function loadHouseOversightPages(r2) {
   return {};
 }
 
-async function listHouseOversightDocs(url, db) {
+async function houseLegacyDocumentExcluded(bates, db, exclusions) {
+  if (!exclusions.documentIds.size) return false;
+  const row = await db.prepare(
+    'SELECT legacy_document_id FROM house_oversight_documents WHERE bates_number = ?'
+  ).bind(bates).first();
+  return Boolean(row && exclusions.documentIds.has(Number(row.legacy_document_id)));
+}
+
+async function getVisibleHouseMediaDocument(bates, db, exclusions) {
+  const row = await db.prepare(
+    'SELECT legacy_document_id, page_count FROM house_oversight_documents WHERE bates_number = ?'
+  ).bind(bates).first();
+  if (!row) return null;
+  if (exclusions.houseBates.has(String(bates).toUpperCase()) ||
+      exclusions.documentIds.has(Number(row.legacy_document_id))) {
+    return null;
+  }
+  return row;
+}
+
+async function listHouseOversightDocs(url, db, exclusions) {
   const limit = parseIntegerParam(url.searchParams, 'limit', { defaultValue: 50, min: 1, max: 100 });
   const offset = parseIntegerParam(url.searchParams, 'offset', { defaultValue: 0, min: 0, max: 1_000_000 });
   const search = url.searchParams.get('search') || '';
@@ -1602,11 +2209,17 @@ async function listHouseOversightDocs(url, db) {
     throw new HttpError('Search too long. Maximum 100 characters allowed.');
   }
 
-  let sql = "SELECT * FROM house_oversight_documents";
-  const params = [];
+  let sql = 'SELECT * FROM house_oversight_documents WHERE 1=1';
+  const visibility = houseVisibilitySql(
+    'house_oversight_documents.bates_number',
+    'house_oversight_documents.legacy_document_id',
+    exclusions
+  );
+  sql += visibility.clause;
+  const params = [...visibility.bindings];
 
   if (search) {
-    sql += " WHERE (bates_number LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')";
+    sql += " AND (bates_number LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')";
     const pattern = containsLikePattern(search);
     params.push(pattern, pattern);
   }
@@ -1634,7 +2247,7 @@ async function listHouseOversightDocs(url, db) {
   });
 }
 
-async function getHouseOversightDoc(bates, db, r2) {
+async function getHouseOversightDoc(bates, db, r2, exclusions) {
   // text_content is empty on all 2,897 estate rows -- the importer writes their
   // OCR text to document_texts keyed by legacy_document_id. Reading the column
   // made this endpoint report no text for documents whose text /api/search was
@@ -1651,6 +2264,10 @@ async function getHouseOversightDoc(bates, db, r2) {
   `).bind(bates).first();
 
   if (!doc) {
+    return error('Document not found', 404);
+  }
+  if (exclusions.houseBates.has(String(doc.bates_number).toUpperCase()) ||
+      exclusions.documentIds.has(Number(doc.legacy_document_id))) {
     return error('Document not found', 404);
   }
 
@@ -1704,7 +2321,7 @@ async function getHouseOversightDoc(bates, db, r2) {
   });
 }
 
-async function getHouseOversightPage(bates, pageIndex, r2) {
+async function getHouseOversightPage(bates, pageIndex, request, r2) {
   // Calculate actual page bates number
   const baseBates = parseInt(bates.replace('HOUSE_OVERSIGHT_', ''));
   const pageNum = baseBates + pageIndex;
@@ -1720,57 +2337,60 @@ async function getHouseOversightPage(bates, pageIndex, r2) {
 
   // Serve directly from R2 binding
   try {
-    const object = await r2.get(r2Key);
+    const { object, response } = await getR2MediaObject(r2, r2Key, request);
+    if (response) return response;
     if (!object) {
       return error('Image not found', 404);
     }
 
-    return new Response(object.body, {
-      headers: {
-        'Content-Type': 'image/jpeg',
-        'Cache-Control': 'public, max-age=86400',
-        ...corsHeaders,
-      },
+    return r2MediaResponse(object, request, {
+      contentType: 'image/jpeg',
+      canonicalPath: `/house-oversight/${bates}`,
     });
   } catch (e) {
-    // Fallback to redirect
-    return new Response(null, {
-      status: 302,
-      headers: {
-        'Location': `${R2_PUBLIC_URL}/${r2Key}`,
-        ...corsHeaders,
-      },
-    });
+    console.error('House Oversight R2 fetch error:', e);
+    // Do not fall back to any public object-storage hostname: that would route
+    // around both publication policy and this Worker's media limiter.
+    return json(
+      { error: 'Media temporarily unavailable. Please retry shortly.' },
+      503,
+      { 'Retry-After': '5' }
+    );
   }
 }
 
-async function getHouseOversightThumbnail(bates, r2) {
+async function getHouseOversightThumbnail(bates, request, r2) {
   // Pre-generated small thumbnail (~420px wide) — falls back to the full-res
   // page-0 scan for any doc that hasn't been processed by
   // generate_ho_thumbnails.py yet, so this route never 404s outright.
   const thumbKey = `house-oversight/thumbnails/${bates}.jpg`;
-  const object = await r2.get(thumbKey);
+  const { object, response } = await getR2MediaObject(r2, thumbKey, request);
+  if (response) return response;
   if (object) {
-    return new Response(object.body, {
-      headers: {
-        'Content-Type': 'image/jpeg',
-        'Cache-Control': 'public, max-age=31536000, immutable',
-        ...corsHeaders,
-      },
+    return r2MediaResponse(object, request, {
+      contentType: 'image/jpeg',
+      canonicalPath: `/house-oversight/${bates}`,
     });
   }
-  const firstPage = await getHouseOversightPage(bates, 0, r2);
+  const firstPage = await getHouseOversightPage(bates, 0, request, r2);
   return firstPage.status === 404 ? missingThumbnailResponse() : firstPage;
 }
 
-async function getHouseOversightStats(db) {
+async function getHouseOversightStats(db, exclusions) {
   // Materialize the 315k oversight mentions once. Starting from the 2.9k
   // legacy documents lets SQLite use idx_mentions_document instead of walking
   // every entity and its mentions in the much larger combined archive.
-  const stats = await db.prepare(`
-    WITH oversight_mentions AS MATERIALIZED (
-      SELECT m.entity_id
+  const visibility = houseVisibilitySql('h.bates_number', 'h.legacy_document_id', exclusions);
+  const statement = db.prepare(`
+    WITH visible_house AS MATERIALIZED (
+      SELECT h.*
       FROM house_oversight_documents h
+      WHERE 1=1
+      ${visibility.clause}
+    ),
+    oversight_mentions AS MATERIALIZED (
+      SELECT m.entity_id
+      FROM visible_house h
       CROSS JOIN mentions m ON m.document_id = h.legacy_document_id
     ),
     top_entities AS (
@@ -1782,8 +2402,8 @@ async function getHouseOversightStats(db) {
       LIMIT 20
     )
     SELECT
-      (SELECT COUNT(*) FROM house_oversight_documents) AS documents,
-      (SELECT COALESCE(SUM(page_count), 0) FROM house_oversight_documents) AS pages,
+      (SELECT COUNT(*) FROM visible_house) AS documents,
+      (SELECT COALESCE(SUM(page_count), 0) FROM visible_house) AS pages,
       (SELECT COUNT(DISTINCT entity_id) FROM oversight_mentions) AS entities,
       (SELECT COUNT(*) FROM oversight_mentions) AS mentions,
       (SELECT json_group_array(json_object(
@@ -1792,7 +2412,8 @@ async function getHouseOversightStats(db) {
         'type', entity_type,
         'mentions', mention_count
       )) FROM top_entities) AS top_entities
-  `).first();
+  `);
+  const stats = await bindIfNeeded(statement, visibility.bindings).first();
 
   let topEntities = [];
   try {

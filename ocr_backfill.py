@@ -7,8 +7,8 @@ Why this is standalone rather than reusing src/ocr_pipeline.py:
     which is from 22 Jul and no longer matches production D1.
   * The originals it expects under /mnt/e/... are on a drive that is not on
     this machine. R2 is now the only source, reachable through
-    /api/documents/<id>/file (exempt from the worker's rate limiter because it
-    is classed as media delivery).
+    /api/documents/<id>/file (protected by the Worker's dedicated media rate
+    limiter and publication-exclusion checks).
   * ocr_pipeline.py currently carries ~300 lines of uncommitted changes. This
     script deliberately does not depend on that in-progress work.
 
