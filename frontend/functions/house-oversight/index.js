@@ -1,19 +1,27 @@
 import { pageParam, renderCollectionResponse } from '../_lib/collection.js';
 import { cleanDocTitle } from '../_lib/html.js';
+import { hasPublicationExclusions, notExcludedSql, publicationPolicy } from '../_lib/publication.js';
 
 const PAGE_SIZE = 100;
 
 export async function onRequestGet({ env, request }) {
+  const policy = publicationPolicy(env);
+  const excludedBates = notExcludedSql('bates_number', policy.houseOversightBates);
+  const excludedLegacy = notExcludedSql('legacy_document_id', policy.documentIds);
+  const exclusions = `${excludedBates.clause}${excludedLegacy.clause}`;
+  const exclusionBindings = [
+    ...excludedBates.bindings, ...excludedLegacy.bindings,
+  ];
   // Count first so the requested page can be clamped against the real total
   // before the listing query runs.
   const count = await env.DB
-    .prepare('SELECT COUNT(*) AS count FROM house_oversight_documents')
-    .first();
+    .prepare('SELECT COUNT(*) AS count FROM house_oversight_documents WHERE 1=1' + exclusions)
+    .bind(...exclusionBindings).first();
   const page = pageParam(request, PAGE_SIZE, count.count);
   const docs = await env.DB.prepare(
     'SELECT bates_number, title, page_count FROM house_oversight_documents '
-    + 'ORDER BY bates_number LIMIT ? OFFSET ?'
-  ).bind(PAGE_SIZE, (page - 1) * PAGE_SIZE).all();
+    + `WHERE 1=1${exclusions} ORDER BY bates_number LIMIT ? OFFSET ?`
+  ).bind(...exclusionBindings, PAGE_SIZE, (page - 1) * PAGE_SIZE).all();
 
   const items = docs.results.map((doc) => ({
     url: `/house-oversight/${encodeURIComponent(doc.bates_number)}`,
@@ -33,5 +41,6 @@ export async function onRequestGet({ env, request }) {
     page,
     pageSize: PAGE_SIZE,
     spaHash: 'house-oversight/page/0',
+    cacheControl: hasPublicationExclusions(policy) ? 'no-store' : undefined,
   });
 }

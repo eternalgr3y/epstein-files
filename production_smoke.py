@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only production smoke checks for pages, API metadata, and media ranges."""
+"""Low-volume, read-only release smoke for the same-origin production site."""
 
 from __future__ import annotations
 
@@ -16,19 +16,16 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
-from crawl_canonical_pages import parse_signals, validate_page
+from crawl_canonical_pages import validate_page
 from qa_request_budget import RequestBudget, RequestBudgetExceeded
 
 
 DEFAULT_SITE = "https://epsteinproject.org"
-DEFAULT_API = "https://epstein-files-api.protonuser597.workers.dev"
-DEFAULT_REQUEST_BUDGET = 25
-USER_AGENT = "epstein-production-smoke/1"
-VIDEO_DOCUMENT_ID = 22425
-LEGACY_VIDEO_DOCUMENT_ID = 14685
-ESTATE_VIDEO_DOCUMENT_ID = 15999
-ESTATE_VIDEO_BATES = "HOUSE_OVERSIGHT_026678"
-ESTATE_THUMB_BATES = "HOUSE_OVERSIGHT_014359"
+DEFAULT_REQUEST_BUDGET = 8
+USER_AGENT = "epstein-production-smoke/2"
+DOCUMENT_ID = 14389
+MEDIA_DOCUMENT_ID = 14685
+MAX_TEXT_BYTES = 2_000_000
 
 
 @dataclasses.dataclass
@@ -51,17 +48,21 @@ def request_url(
     budget: RequestBudget,
     headers: dict[str, str] | None = None,
     follow_redirects: bool = True,
-    read_limit: int = 2_000_000,
-    timeout: float = 20.0,
-    retries: int = 2,
+    read_limit: int = MAX_TEXT_BYTES,
+    timeout: float = 10.0,
+    retries: int = 0,
 ) -> HttpResult:
-    opener = urllib.request.build_opener() if follow_redirects else urllib.request.build_opener(NoRedirect)
+    opener = (
+        urllib.request.build_opener()
+        if follow_redirects
+        else urllib.request.build_opener(NoRedirect)
+    )
     request_headers = {"User-Agent": USER_AGENT, **(headers or {})}
     last_error: Exception | None = None
     for attempt in range(retries + 1):
         budget.consume(f"GET {url}")
         try:
-            request = urllib.request.Request(url, headers=request_headers)
+            request = urllib.request.Request(url, headers=request_headers, method="GET")
             with opener.open(request, timeout=timeout) as response:
                 body = response.read(read_limit)
                 response_headers = {
@@ -90,12 +91,19 @@ def request_url(
             last_error = exc
             if attempt == retries:
                 break
-        time.sleep(0.25 * (2**attempt))
+        if attempt < retries:
+            time.sleep(0.25 * (2**attempt))
     return HttpResult(None, {}, b"", None, str(last_error))
 
 
+# Retained for compatibility with the broader upstream QA helpers and tests.
 def hashed_app_asset(html: str) -> tuple[str, str] | None:
     match = re.search(r'["\'](/app-([0-9a-f]{12})\.js)["\']', html)
+    return (match.group(1), match.group(2)) if match else None
+
+
+def hashed_app_stylesheet(html: str) -> tuple[str, str] | None:
+    match = re.search(r'["\'](/static/app-([0-9a-f]{12})\.css)["\']', html)
     return (match.group(1), match.group(2)) if match else None
 
 
@@ -108,259 +116,189 @@ def is_jpeg_payload(body: bytes) -> bool:
     return body.startswith(b"\xff\xd8\xff")
 
 
+def _csp_directives(value: str) -> dict[str, set[str]]:
+    directives: dict[str, set[str]] = {}
+    for raw_directive in value.split(";"):
+        parts = raw_directive.strip().split()
+        if parts:
+            directives[parts[0].lower()] = set(parts[1:])
+    return directives
+
+
+def strict_header_findings(headers: dict[str, str]) -> list[tuple[str, str]]:
+    findings: list[tuple[str, str]] = []
+    csp = headers.get("content-security-policy", "")
+    policy = _csp_directives(csp)
+    required = {
+        "default-src": {"'self'"},
+        "base-uri": {"'self'"},
+        "object-src": {"'none'"},
+        "script-src-attr": {"'none'"},
+        "style-src-attr": {"'none'"},
+    }
+    if not csp:
+        findings.append(("missing-csp", "Content-Security-Policy is absent"))
+    for directive, values in required.items():
+        if not values.issubset(policy.get(directive, set())):
+            findings.append(("weak-csp", f"{directive} lacks the required restriction"))
+    all_sources = set().union(*policy.values()) if policy else set()
+    if "'unsafe-inline'" in all_sources:
+        findings.append(("weak-csp", "unsafe-inline is permitted"))
+    if "*" in all_sources:
+        findings.append(("weak-csp", "a wildcard source is permitted"))
+
+    hsts = headers.get("strict-transport-security", "")
+    max_age = re.search(r"(?:^|;)\s*max-age=(\d+)", hsts, re.IGNORECASE)
+    if not max_age or int(max_age.group(1)) < 31_536_000:
+        findings.append(("weak-hsts", "max-age is below one year"))
+    if not re.search(r"(?:^|;)\s*includeSubDomains(?:;|$)", hsts, re.IGNORECASE):
+        findings.append(("weak-hsts", "includeSubDomains is absent"))
+    if re.search(r"(?:^|;)\s*preload(?:;|$)", hsts, re.IGNORECASE):
+        findings.append(("unexpected-hsts-preload", "preload must remain off"))
+    return findings
+
+
 def run_smoke(
     site: str,
-    api: str,
     timeout: float,
     retries: int,
     budget: RequestBudget,
+    expected_app: Path | None = None,
+    expected_css: Path | None = None,
 ) -> list[dict]:
     findings: list[dict] = []
+    origin = site.rstrip("/")
 
     def add(check: str, problem: str, detail: str) -> None:
         findings.append({"check": check, "problem": problem, "detail": detail})
 
-    home_url = f"{site.rstrip('/')}/"
-    home = request_url(home_url, budget=budget, timeout=timeout, retries=retries)
-    if home.status != 200:
-        add("home", "http-status", str(home.status))
-    elif "text/html" not in home.headers.get("content-type", ""):
-        add("home", "content-type", home.headers.get("content-type", "missing"))
-    else:
-        home_html = home.body.decode("utf-8", errors="replace")
-        asset = hashed_app_asset(home_html)
-        if not asset:
-            add("app-asset", "missing-hashed-asset", "home does not reference /app-<hash>.js")
-        else:
-            path, expected_hash = asset
-            script = request_url(
-                urllib.parse.urljoin(home_url, path),
-                budget=budget,
-                timeout=timeout,
-                retries=retries,
+    def get(path: str, **kwargs) -> HttpResult:
+        result = request_url(
+            f"{origin}{path}",
+            budget=budget,
+            timeout=timeout,
+            retries=retries,
+            follow_redirects=False,
+            **kwargs,
+        )
+        if result.error:
+            add(path, "request-error", result.error)
+        return result
+
+    page_checks = [
+        ("homepage", "/"),
+        ("canonical-document", f"/documents/{DOCUMENT_ID}"),
+        ("videos", "/videos"),
+    ]
+    for check, path in page_checks:
+        result = get(path)
+        requested_url = f"{origin}{path}"
+        for finding in validate_page(
+            requested_url,
+            result.status,
+            result.headers,
+            result.body,
+            result.final_url,
+        ):
+            add(check, finding["problem"], finding["detail"])
+        if check == "homepage":
+            for problem, detail in strict_header_findings(result.headers):
+                add(check, problem, detail)
+            asset = hashed_app_asset(result.body.decode("utf-8", errors="replace"))
+            stylesheet = hashed_app_stylesheet(
+                result.body.decode("utf-8", errors="replace")
             )
-            if script.status != 200:
-                add("app-asset", "http-status", str(script.status))
+            if not asset:
+                add("app-asset", "missing-hashed-asset", "home does not reference /app-<hash>.js")
             else:
-                actual_hash = hashlib.sha256(script.body).hexdigest()[:12]
-                if actual_hash != expected_hash:
-                    add("app-asset", "hash-mismatch", f"name={expected_hash} body={actual_hash}")
-                cache_control = script.headers.get("cache-control", "").lower()
-                if "immutable" not in cache_control:
-                    add("app-asset", "cache-policy", cache_control or "missing")
+                asset_path, expected_hash = asset
+                if expected_app is not None:
+                    repository_hash = hashlib.sha256(expected_app.read_bytes()).hexdigest()[:12]
+                    if expected_hash != repository_hash:
+                        add(
+                            "app-asset",
+                            "deployed-ref-mismatch",
+                            f"live={expected_hash} repository={repository_hash}",
+                        )
+                if expected_css is not None:
+                    repository_css_hash = hashlib.sha256(expected_css.read_bytes()).hexdigest()[:12]
+                    if not stylesheet or stylesheet[1] != repository_css_hash:
+                        add(
+                            "app-stylesheet",
+                            "deployed-ref-mismatch",
+                            f"live={stylesheet[1] if stylesheet else 'missing'} repository={repository_css_hash}",
+                        )
+                if stylesheet:
+                    stylesheet_path, stylesheet_hash = stylesheet
+                    live_css = get(stylesheet_path)
+                    if live_css.status != 200:
+                        add("app-stylesheet", "http-status", str(live_css.status))
+                    else:
+                        actual_css_hash = hashlib.sha256(live_css.body).hexdigest()[:12]
+                        if actual_css_hash != stylesheet_hash:
+                            add(
+                                "app-stylesheet",
+                                "hash-mismatch",
+                                f"name={stylesheet_hash} body={actual_css_hash}",
+                            )
+                        css_type = live_css.headers.get("content-type", "").lower()
+                        if "text/css" not in css_type:
+                            add("app-stylesheet", "content-type", css_type or "missing")
+                        css_cache = live_css.headers.get("cache-control", "").lower()
+                        if "immutable" not in css_cache:
+                            add("app-stylesheet", "cache-policy", css_cache or "missing")
+                script = get(asset_path)
+                if script.status != 200:
+                    add("app-asset", "http-status", str(script.status))
+                else:
+                    actual_hash = hashlib.sha256(script.body).hexdigest()[:12]
+                    if actual_hash != expected_hash:
+                        add(
+                            "app-asset",
+                            "hash-mismatch",
+                            f"name={expected_hash} body={actual_hash}",
+                        )
+                    cache_control = script.headers.get("cache-control", "").lower()
+                    if "immutable" not in cache_control:
+                        add("app-asset", "cache-policy", cache_control or "missing")
 
-    document_url = f"{site.rstrip('/')}/documents/14389"
-    document = request_url(document_url, budget=budget, timeout=timeout, retries=retries)
-    for finding in validate_page(
-        document_url,
-        document.status,
-        document.headers,
-        document.body,
-        document.final_url,
-    ):
-        add("canonical-document", finding["problem"], finding["detail"])
-
-    missing_url = f"{site.rstrip('/')}/documents/999999999"
-    missing = request_url(missing_url, budget=budget, timeout=timeout, retries=retries)
-    if missing.status != 404:
-        add("missing-document", "http-status", str(missing.status))
+    sitemap = get("/sitemap.xml")
+    if sitemap.status != 200:
+        add("sitemap", "http-status", str(sitemap.status))
     else:
-        if "no-store" not in missing.headers.get("cache-control", "").lower():
-            add("missing-document", "cache-policy", missing.headers.get("cache-control", "missing"))
-        signals = parse_signals(missing.body.decode("utf-8", errors="replace"))
-        if signals.canonical != home_url:
-            add("missing-document", "canonical-mismatch", str(signals.canonical))
+        content_type = sitemap.headers.get("content-type", "").lower()
+        if "xml" not in content_type:
+            add("sitemap", "content-type", content_type or "missing")
+        if b"<urlset" not in sitemap.body.lower():
+            add("sitemap", "invalid-xml", "urlset marker is absent")
 
-    stats = request_url(
-        f"{api.rstrip('/')}/api/stats",
-        budget=budget,
-        timeout=timeout,
-        retries=retries,
-    )
+    stats = get("/api/stats", read_limit=64 * 1024)
     if stats.status != 200:
         add("api-stats", "http-status", str(stats.status))
     else:
         try:
-            stats_payload = json.loads(stats.body)
-            if int(stats_payload.get("total_documents") or 0) <= 0:
-                add("api-stats", "empty-dataset", str(stats_payload.get("total_documents")))
+            payload = json.loads(stats.body)
+            if int(payload.get("total_documents") or 0) <= 0:
+                add("api-stats", "empty-dataset", str(payload.get("total_documents")))
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            add("api-stats", "invalid-json", str(exc))
+            add("api-stats", "invalid-json", type(exc).__name__)
 
-    videos = request_url(
-        f"{api.rstrip('/')}/api/videos?limit=500&offset=0",
-        budget=budget,
-        timeout=timeout,
-        retries=retries,
+    media = get(
+        f"/api/documents/{MEDIA_DOCUMENT_ID}/file?stream=1",
+        headers={"Range": "bytes=0-0"},
+        read_limit=2,
     )
-    if videos.status != 200:
-        add("video-collection", "http-status", str(videos.status))
-    else:
-        try:
-            videos_payload = json.loads(videos.body)
-            video_rows = videos_payload.get("videos") or []
-            video_ids = {int(row["id"]) for row in video_rows}
-            if ESTATE_VIDEO_DOCUMENT_ID not in video_ids:
-                add("video-collection", "missing-estate-video", str(ESTATE_VIDEO_DOCUMENT_ID))
-            if int(videos_payload.get("total") or 0) != len(video_rows):
-                add(
-                    "video-collection",
-                    "incomplete-page",
-                    f"total={videos_payload.get('total')} returned={len(video_rows)}",
-                )
-        except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
-            add("video-collection", "invalid-json", str(exc))
-
-    # Legacy data-set-8 rows have a NULL D1 file_size. Keep one of those in
-    # the smoke path so NULL cannot regress into a zero-byte 416 response.
-    legacy_video = request_url(
-        f"{api.rstrip('/')}/api/documents/{LEGACY_VIDEO_DOCUMENT_ID}/file?stream=1",
-        budget=budget,
-        headers={"Range": "bytes=0-1023"},
-        read_limit=2048,
-        timeout=timeout,
-        retries=retries,
-    )
-    legacy_range = content_range(legacy_video.headers.get("content-range"))
-    if legacy_video.status != 206:
-        add("legacy-video-range", "http-status", str(legacy_video.status))
-    elif legacy_video.headers.get("content-type", "").split(";", 1)[0] != "video/mp4":
-        add("legacy-video-range", "content-type", legacy_video.headers.get("content-type", "missing"))
-    elif legacy_range is None or legacy_range[:2] != (0, 1023) or len(legacy_video.body) != 1024:
-        add(
-            "legacy-video-range",
-            "range-response",
-            f"content-range={legacy_video.headers.get('content-range')} bytes={len(legacy_video.body)}",
-        )
-
-    estate_document = request_url(
-        f"{site.rstrip('/')}/documents/{ESTATE_VIDEO_DOCUMENT_ID}",
-        budget=budget,
-        follow_redirects=False,
-        timeout=timeout,
-        retries=retries,
-    )
-    expected_estate_location = f"https://epsteinproject.org/house-oversight/{ESTATE_VIDEO_BATES}"
-    if estate_document.status != 301:
-        add("estate-canonical", "http-status", str(estate_document.status))
-    elif estate_document.headers.get("location") != expected_estate_location:
-        add("estate-canonical", "location", estate_document.headers.get("location", "missing"))
-
-    estate_stream = request_url(
-        f"{api.rstrip('/')}/api/documents/{ESTATE_VIDEO_DOCUMENT_ID}/file?stream=1",
-        budget=budget,
-        read_limit=64,
-        timeout=timeout,
-        retries=retries,
-    )
-    estate_stream_range = content_range(estate_stream.headers.get("content-range"))
-    if estate_stream.status != 206:
-        add("estate-video-stream", "http-status", str(estate_stream.status))
-    elif estate_stream.headers.get("content-type", "").split(";", 1)[0] != "video/mp4":
-        add("estate-video-stream", "content-type", estate_stream.headers.get("content-type", "missing"))
-    elif not estate_stream_range or estate_stream_range[:2] != (0, 1048575):
-        add("estate-video-stream", "content-range", estate_stream.headers.get("content-range", "missing"))
-
-    estate_thumb = request_url(
-        f"{api.rstrip('/')}/api/house-oversight/thumbnail/{ESTATE_THUMB_BATES}",
-        budget=budget,
-        read_limit=64,
-        timeout=timeout,
-        retries=retries,
-    )
-    if estate_thumb.status != 200:
-        add("estate-thumbnail", "http-status", str(estate_thumb.status))
-    elif estate_thumb.headers.get("content-type", "").split(";", 1)[0] != "image/jpeg":
-        add(
-            "estate-thumbnail",
-            "content-type",
-            estate_thumb.headers.get("content-type", "missing"),
-        )
-    elif not is_jpeg_payload(estate_thumb.body):
-        add("estate-thumbnail", "invalid-jpeg", estate_thumb.body[:8].hex())
-
-    media_url = f"{api.rstrip('/')}/api/documents/{VIDEO_DOCUMENT_ID}/file"
-    ordinary = request_url(
-        media_url,
-        budget=budget,
-        follow_redirects=False,
-        read_limit=1024,
-        timeout=timeout,
-        retries=retries,
-    )
-    if ordinary.status != 302:
-        add("media-redirect", "http-status", str(ordinary.status))
-    elif not ordinary.headers.get("location", "").startswith("https://media.epsteinproject.org/"):
-        add("media-redirect", "location", ordinary.headers.get("location", "missing"))
-
-    stream = request_url(
-        f"{media_url}?stream=1",
-        budget=budget,
-        read_limit=64,
-        timeout=timeout,
-        retries=retries,
-    )
-    stream_range = content_range(stream.headers.get("content-range"))
-    if stream.status != 206:
-        add("media-stream-bootstrap", "http-status", str(stream.status))
-    elif not stream_range or stream_range[:2] != (0, 1048575):
-        add("media-stream-bootstrap", "content-range", stream.headers.get("content-range", "missing"))
-
-    partial = request_url(
-        media_url,
-        budget=budget,
-        headers={"Range": "bytes=0-1023"},
-        read_limit=2048,
-        timeout=timeout,
-        retries=retries,
-    )
-    partial_range = content_range(partial.headers.get("content-range"))
-    if partial.status != 206:
-        add("media-range", "http-status", str(partial.status))
-    elif partial_range is None or partial_range[:2] != (0, 1023) or len(partial.body) != 1024:
+    parsed_range = content_range(media.headers.get("content-range"))
+    if media.status != 206:
+        add("media-range", "http-status", str(media.status))
+    elif parsed_range is None or parsed_range[:2] != (0, 0):
+        add("media-range", "content-range", media.headers.get("content-range", "missing"))
+    elif media.headers.get("content-length") != "1" or len(media.body) != 1:
         add(
             "media-range",
             "range-response",
-            f"content-range={partial.headers.get('content-range')} bytes={len(partial.body)}",
+            f"declared={media.headers.get('content-length', 'missing')} bytes={len(media.body)}",
         )
-
-    seek = request_url(
-        media_url,
-        budget=budget,
-        headers={"Range": "bytes=10485760-10486783"},
-        read_limit=2048,
-        timeout=timeout,
-        retries=retries,
-    )
-    seek_range = content_range(seek.headers.get("content-range"))
-    if seek.status != 206:
-        add("media-seek-range", "http-status", str(seek.status))
-    elif seek_range is None or seek_range[:2] != (10485760, 10486783) or len(seek.body) != 1024:
-        add(
-            "media-seek-range",
-            "range-response",
-            f"content-range={seek.headers.get('content-range')} bytes={len(seek.body)}",
-        )
-
-    invalid = request_url(
-        media_url,
-        budget=budget,
-        headers={"Range": "bytes=999999999999-1000000000000"},
-        read_limit=1024,
-        timeout=timeout,
-        retries=retries,
-    )
-    if invalid.status != 416:
-        add("media-invalid-range", "http-status", str(invalid.status))
-    elif not re.fullmatch(r"bytes \*/\d+", invalid.headers.get("content-range", "")):
-        add("media-invalid-range", "content-range", invalid.headers.get("content-range", "missing"))
-
-    totals = [value[2] for value in (stream_range, partial_range, seek_range) if value]
-    invalid_total = invalid.headers.get("content-range", "").partition("*/")[2]
-    if invalid_total.isdigit():
-        totals.append(int(invalid_total))
-    if totals and len(set(totals)) != 1:
-        add("media-size", "inconsistent-total", ", ".join(map(str, totals)))
 
     return findings
 
@@ -368,9 +306,8 @@ def run_smoke(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site", default=DEFAULT_SITE)
-    parser.add_argument("--api", default=DEFAULT_API)
-    parser.add_argument("--timeout", type=float, default=20.0)
-    parser.add_argument("--retries", type=int, default=2)
+    parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument("--retries", type=int, default=0)
     parser.add_argument(
         "--max-requests",
         type=int,
@@ -378,16 +315,41 @@ def main() -> int:
         help=f"Hard ceiling across retries (default: {DEFAULT_REQUEST_BUDGET})",
     )
     parser.add_argument("--report", type=Path)
+    parser.add_argument(
+        "--expected-app",
+        type=Path,
+        help="Repository app.js whose hash must match the live physical asset name",
+    )
+    parser.add_argument(
+        "--expected-css",
+        type=Path,
+        help="Repository app.css whose hash must match the live physical stylesheet name",
+    )
     args = parser.parse_args()
+    parsed_site = urllib.parse.urlparse(args.site)
+    if parsed_site.scheme != "https" or not parsed_site.netloc:
+        parser.error("--site must be an absolute HTTPS origin")
+    if args.timeout <= 0 or args.timeout > 30:
+        parser.error("--timeout must be greater than 0 and at most 30 seconds")
+    if args.retries < 0:
+        parser.error("--retries cannot be negative")
+    if args.max_requests != DEFAULT_REQUEST_BUDGET:
+        parser.error(f"--max-requests must be exactly {DEFAULT_REQUEST_BUDGET}")
+    if args.expected_app is not None and not args.expected_app.is_file():
+        parser.error("--expected-app must name a readable file")
+    if args.expected_css is not None and not args.expected_css.is_file():
+        parser.error("--expected-css must name a readable file")
+
     budget = RequestBudget(args.max_requests)
     print(f"request budget: {budget.limit} maximum", flush=True)
     try:
         findings = run_smoke(
             args.site,
-            args.api,
             args.timeout,
-            max(0, args.retries),
+            args.retries,
             budget,
+            args.expected_app,
+            args.expected_css,
         )
     except RequestBudgetExceeded as exc:
         print(f"stopped: {exc}", file=sys.stderr)
@@ -396,7 +358,6 @@ def main() -> int:
     summary = dict(sorted(Counter(item["problem"] for item in findings).items()))
     report = {
         "site": args.site,
-        "api": args.api,
         "request_budget": budget.limit,
         "requests_used": budget.used,
         "summary": summary,

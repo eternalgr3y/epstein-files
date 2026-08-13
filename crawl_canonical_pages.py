@@ -16,8 +16,10 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-import httpx
+if TYPE_CHECKING:
+    import httpx
 
 from qa_request_budget import RequestBudget, RequestBudgetExceeded
 
@@ -174,10 +176,11 @@ def fetch_page(
 
 async def check_url_async(
     url: str,
-    client: httpx.AsyncClient,
+    client: Any,
     retries: int,
     budget: RequestBudget,
 ) -> list[dict]:
+    import httpx
     last_error: Exception | None = None
     for attempt in range(retries + 1):
         budget.consume(f"GET {url}")
@@ -209,6 +212,7 @@ async def crawl_urls_async(
     retries: int,
     budget: RequestBudget,
 ) -> list[dict]:
+    import httpx
     findings: list[dict] = []
     queue: asyncio.Queue[str] = asyncio.Queue()
     for url in urls:

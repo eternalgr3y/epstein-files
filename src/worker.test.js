@@ -5,8 +5,22 @@ function request(path, init = {}) {
   return new Request(`https://api.example.test${path}`, init);
 }
 
+const allowLimiter = {
+  async limit() {
+    return { success: true };
+  },
+};
+
+function testEnv(env = {}) {
+  return {
+    API_RATE_LIMITER: allowLimiter,
+    MEDIA_RATE_LIMITER: allowLimiter,
+    ...env,
+  };
+}
+
 async function responseJson(path, env = {}, init = {}) {
-  const response = await worker.fetch(request(path, init), env, {});
+  const response = await worker.fetch(request(path, init), testEnv(env), {});
   return { response, body: await response.json() };
 }
 
@@ -103,11 +117,66 @@ describe('Worker request validation', () => {
     expect(body.error).toBe('Request body must be valid JSON');
   });
 
+  test('rejects declared entity request bodies over 10 KiB before reading', async () => {
+    let pulls = 0;
+    const body = new ReadableStream({
+      pull(controller) {
+        pulls++;
+        controller.enqueue(new Uint8Array([123]));
+      },
+    });
+    const response = await worker.fetch(new Request(
+      'https://api.example.test/api/entities/search',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': String(10 * 1024 + 1),
+        },
+        body,
+        duplex: 'half',
+      }
+    ), testEnv(), {});
+    expect(response.status).toBe(413);
+    // Bun may prime a request stream once while constructing Request, but the
+    // Worker must reject on Content-Length without advancing it further.
+    expect(pulls).toBeLessThanOrEqual(1);
+  });
+
+  test('cancels a chunked entity request as soon as it exceeds 10 KiB', async () => {
+    let pulls = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(4096).fill(0x61);
+    const body = new ReadableStream({
+      pull(controller) {
+        pulls++;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = await worker.fetch(new Request(
+      'https://api.example.test/api/entities/search',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        duplex: 'half',
+      }
+    ), testEnv(), {});
+    expect(response.status).toBe(413);
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThanOrEqual(4);
+  });
+
   test('returns 405 for unsupported methods', async () => {
     const { response, body } = await responseJson('/api/stats', {}, { method: 'POST' });
     expect(response.status).toBe(405);
     expect(response.headers.get('allow')).toBe('GET, OPTIONS');
     expect(body.error).toBe('Method not allowed');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex');
   });
 });
 
@@ -299,7 +368,7 @@ describe('Video collection', () => {
 });
 
 describe('Worker security behavior', () => {
-  test('uses the Cloudflare rate-limit binding and returns 429', async () => {
+  test('uses the API rate-limit binding and returns 429', async () => {
     let key;
     const env = {
       API_RATE_LIMITER: {
@@ -309,7 +378,7 @@ describe('Worker security behavior', () => {
         },
       },
     };
-    const { response, body } = await responseJson('/health', env, {
+    const { response, body } = await responseJson('/api/stats', env, {
       headers: { 'CF-Connecting-IP': '203.0.113.10' },
     });
     expect(key).toBe('203.0.113.10');
@@ -318,13 +387,20 @@ describe('Worker security behavior', () => {
     expect(body.retry_after).toBe(60);
   });
 
-  test('does not rate-limit R2-backed image delivery', async () => {
-    let calls = 0;
+  test('uses the separate media limiter for R2-backed image delivery', async () => {
+    let mediaKey;
+    let apiCalls = 0;
     const env = {
       API_RATE_LIMITER: {
         async limit() {
-          calls++;
+          apiCalls++;
           return { success: false };
+        },
+      },
+      MEDIA_RATE_LIMITER: {
+        async limit(input) {
+          mediaKey = input.key;
+          return { success: true };
         },
       },
     };
@@ -332,20 +408,134 @@ describe('Worker security behavior', () => {
     env.R2 = {
       async get(key) {
         return key === 'images/14672_p0_0.png'
-          ? { body: 'png-bytes', httpMetadata: { contentType: 'image/png' } }
+          ? { body: 'png-bytes', httpMetadata: { contentType: 'text/html' } }
           : null;
       },
     };
 
-    const response = await worker.fetch(request('/api/images/14672_p0_0.png'), env, {});
-    expect(calls).toBe(0);
+    const response = await worker.fetch(request('/api/images/14672_p0_0.png'), testEnv(env), {});
+    expect(apiCalls).toBe(0);
+    expect(mediaKey).toBe('media:unknown');
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
-    expect(response.headers.get('cache-control')).toContain('immutable');
+    expect(response.headers.get('cache-control')).toContain('max-age=60');
+    expect(response.headers.get('cache-control')).not.toContain('immutable');
+    expect(response.headers.get('link')).toBe(
+      '<https://epsteinproject.org/documents/14672>; rel=canonical'
+    );
+  });
+
+  test('uses a distinct media limiter key for Range delivery', async () => {
+    let key;
+    const response = await worker.fetch(request('/api/documents/42/file', {
+      headers: { Range: 'bytes=0-0', 'CF-Connecting-IP': '203.0.113.12' },
+    }), {
+      API_RATE_LIMITER: allowLimiter,
+      MEDIA_RATE_LIMITER: {
+        async limit(input) {
+          key = input.key;
+          return { success: false };
+        },
+      },
+    }, {});
+
+    expect(key).toBe('range:203.0.113.12');
+    expect(response.status).toBe(429);
+    expect(response.headers.get('x-ratelimit-limit')).toBe('300');
+  });
+
+  test('fails closed when the API limiter binding is absent', async () => {
+    const response = await worker.fetch(request('/api/search?q=test'), {}, {});
+    const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('5');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(body.error).toBe('Service temporarily unavailable. Please retry shortly.');
+  });
+
+  test('fails closed before R2 when the media limiter binding is absent', async () => {
+    let r2Calls = 0;
+    const response = await worker.fetch(request('/api/images/14672_p0_0.png'), {
+      API_RATE_LIMITER: allowLimiter,
+      R2: {
+        async get() {
+          r2Calls++;
+          return { body: 'must not be served' };
+        },
+      },
+    }, {});
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('5');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(r2Calls).toBe(0);
+  });
+
+  test('fails closed when the API limiter binding throws', async () => {
+    const response = await worker.fetch(request('/api/search?q=test'), {
+      API_RATE_LIMITER: {
+        async limit() {
+          throw new Error('binding unavailable');
+        },
+      },
+    }, {});
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('5');
+  });
+
+  test('keeps health and API discovery available without limiter bindings', async () => {
+    const health = await worker.fetch(request('/health'), {}, {});
+    const info = await worker.fetch(request('/api'), {}, {});
+    expect(health.status).toBe(200);
+    expect(info.status).toBe(200);
+  });
+
+  test('redirects cleartext requests before body, D1, or limiter work', async () => {
+    let limiterCalls = 0;
+    let d1Calls = 0;
+    const req = new Request(
+      'http://epstein-files-api.protonuser597.workers.dev/api/entities/search?x=1',
+      { method: 'POST', body: '{}' }
+    );
+    const response = await worker.fetch(req, {
+      DB: {
+        withSession() {
+          d1Calls++;
+          throw new Error('D1 must not be touched before redirect');
+        },
+      },
+      API_RATE_LIMITER: {
+        async limit() {
+          limiterCalls++;
+          return { success: true };
+        },
+      },
+    }, {});
+    expect(response.status).toBe(308);
+    expect(response.headers.get('location')).toBe(
+      'https://epstein-files-api.protonuser597.workers.dev/api/entities/search?x=1'
+    );
+    expect(limiterCalls).toBe(0);
+    expect(d1Calls).toBe(0);
+    expect(response.headers.get('strict-transport-security')).toContain('max-age=31536000');
   });
 
   test('redirects missing video and estate thumbnails to a stable placeholder', async () => {
-    const env = { R2: { async get() { return null; } } };
+    const env = testEnv({
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return { legacy_document_id: 15999, page_count: 1 };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: { async get() { return null; } },
+    });
 
     const video = await worker.fetch(request('/api/videos/15999/thumb'), env, {});
     expect(video.status).toBe(302);
@@ -390,9 +580,15 @@ describe('Worker security behavior', () => {
       },
     };
 
-    const response = await worker.fetch(request('/api/documents/20913/file'), env, {});
+    const response = await worker.fetch(request('/api/documents/20913/file'), testEnv(env), {});
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(response.headers.get('strict-transport-security')).toContain('max-age=31536000');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex');
+    expect(response.headers.get('link')).toBe(
+      '<https://epsteinproject.org/documents/20913>; rel=canonical'
+    );
   });
 
   test('streams a verified House Oversight native video instead of its page scan', async () => {
@@ -447,14 +643,18 @@ describe('Worker security behavior', () => {
 
     const response = await worker.fetch(request('/api/documents/15999/file', {
       headers: { Range: 'bytes=1024-2047' },
-    }), env, {});
+    }), testEnv(env), {});
 
     expect(requestedKeys[0]).toBe('streaming/house-oversight/NATIVES/001/HOUSE_OVERSIGHT_026678.mp4');
     expect(response.status).toBe(206);
     expect(response.headers.get('content-type')).toBe('video/mp4');
     expect(response.headers.get('content-range')).toBe('bytes 1024-2047/2513782');
 
-    const download = await worker.fetch(request('/api/documents/15999/file?download=1'), env, {});
+    const download = await worker.fetch(
+      request('/api/documents/15999/file?download=1'),
+      testEnv(env),
+      {}
+    );
     expect(requestedKeys[1]).toBe('house-oversight/NATIVES/001/HOUSE_OVERSIGHT_026678.mov');
     expect(download.status).toBe(200);
     expect(download.headers.get('content-type')).toBe('video/quicktime');
@@ -500,11 +700,104 @@ describe('Worker security behavior', () => {
 
     const response = await worker.fetch(request('/api/documents/15999/file?stream=1', {
       headers: { Range: 'bytes=2505000-2506000' },
-    }), env, {});
+    }), testEnv(env), {});
 
     expect(getCalled).toBe(true);
     expect(response.status).toBe(206);
     expect(response.headers.get('content-range')).toBe('bytes 2505000-2506000/2513782');
+  });
+
+  test('uses the native R2 size for a ranged estate download when D1 size is unknown', async () => {
+    let getCalled = false;
+    const response = await worker.fetch(
+      request('/api/documents/15999/file?download=1', {
+        headers: { Range: 'bytes=200-' },
+      }),
+      testEnv({
+        DB: {
+          prepare() {
+            return {
+              bind() {
+                return {
+                  async first() {
+                    return {
+                      filename: 'HOUSE_OVERSIGHT_026678',
+                      title: 'IMG_0642.MP4.mov',
+                      data_set: 'house-oversight-estate',
+                      document_type: 'video',
+                      content_type: 'video/quicktime',
+                      file_size: null,
+                    };
+                  },
+                };
+              },
+            };
+          },
+        },
+        R2: {
+          async head(key) {
+            expect(key).toBe('house-oversight/NATIVES/001/HOUSE_OVERSIGHT_026678.mov');
+            return { size: 100 };
+          },
+          async get() {
+            getCalled = true;
+            return null;
+          },
+        },
+      }),
+      {}
+    );
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get('content-range')).toBe('bytes */100');
+    expect(getCalled).toBe(false);
+  });
+
+  test('returns authoritative 416 for an unsatisfiable scan-only document alias range', async () => {
+    let getCalled = false;
+    const response = await worker.fetch(
+      request('/api/documents/42/file', {
+        headers: { Range: 'bytes=200-' },
+      }),
+      testEnv({
+        DB: {
+          prepare() {
+            return {
+              bind() {
+                return {
+                  async first() {
+                    return {
+                      filename: 'HOUSE_OVERSIGHT_010477',
+                      title: 'HOUSE_OVERSIGHT_010477',
+                      data_set: 'house-oversight-estate',
+                      document_type: 'image',
+                      content_type: 'image/jpeg',
+                      file_size: 100,
+                    };
+                  },
+                };
+              },
+            };
+          },
+        },
+        R2: {
+          async head(key) {
+            expect(key).toBe('house-oversight/IMAGES/001/HOUSE_OVERSIGHT_010477.jpg');
+            return { size: 100 };
+          },
+          async get() {
+            getCalled = true;
+            return null;
+          },
+        },
+      }),
+      {}
+    );
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get('content-range')).toBe('bytes */100');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(getCalled).toBe(false);
   });
 
   test('returns explicit non-cacheable errors for missing and zero-byte document files', async () => {
@@ -531,16 +824,16 @@ describe('Worker security behavior', () => {
       R2: { async get() { return storedObject; } },
     };
 
-    const missing = await worker.fetch(request('/api/documents/88/file'), env, {});
+    const missing = await worker.fetch(request('/api/documents/88/file'), testEnv(env), {});
     expect(missing.status).toBe(404);
     expect(await missing.json()).toEqual({ error: 'File not available' });
-    expect(missing.headers.get('cache-control')).toBeNull();
+    expect(missing.headers.get('cache-control')).toBe('no-store');
 
     storedObject = { body: new Uint8Array(), size: 0 };
-    const empty = await worker.fetch(request('/api/documents/88/file'), env, {});
+    const empty = await worker.fetch(request('/api/documents/88/file'), testEnv(env), {});
     expect(empty.status).toBe(502);
     expect(await empty.json()).toEqual({ error: 'File is empty' });
-    expect(empty.headers.get('cache-control')).toBeNull();
+    expect(empty.headers.get('cache-control')).toBe('no-store');
   });
 
   test('streams document byte ranges instead of returning the entire object', async () => {
@@ -557,6 +850,7 @@ describe('Worker security behavior', () => {
                     filename: 'DOJ-OGR-00022168',
                     title: 'video1.mp4',
                     data_set: 'house-oversight-doj',
+                    document_type: 'video',
                     content_type: 'video/mp4',
                   };
                 },
@@ -567,7 +861,7 @@ describe('Worker security behavior', () => {
       },
       R2: {
         async get(key, options) {
-          expect(key).toBe('raw/house-oversight-doj/DOJ-OGR-00022168.mp4');
+          expect(key).toBe('streaming/raw/house-oversight-doj/DOJ-OGR-00022168.mp4');
           getOptions = options;
           return {
             body: new Uint8Array(1024),
@@ -581,13 +875,14 @@ describe('Worker security behavior', () => {
 
     const response = await worker.fetch(request('/api/documents/22425/file', {
       headers: { Range: 'bytes=0-1023' },
-    }), env, {});
+    }), testEnv(env), {});
 
     expect(getOptions.range.get('range')).toBe('bytes=0-1023');
     expect(response.status).toBe(206);
     expect(response.headers.get('accept-ranges')).toBe('bytes');
     expect(response.headers.get('content-range')).toBe('bytes 0-1023/20955328421');
     expect(response.headers.get('content-length')).toBe('1024');
+    expect(response.headers.get('link')).toContain('/documents/22425');
     expect(response.headers.get('etag')).toBe('"video-etag"');
   });
 
@@ -631,7 +926,7 @@ describe('Worker security behavior', () => {
 
     const response = await worker.fetch(request('/api/documents/22425/file', {
       headers: { Range: 'bytes=1048576-1049599' },
-    }), env, {});
+    }), testEnv(env), {});
 
     expect(response.status).toBe(206);
     expect(response.headers.get('location')).toBeNull();
@@ -683,7 +978,7 @@ describe('Worker security behavior', () => {
 
     const response = await worker.fetch(request('/api/documents/14685/file?stream=1', {
       headers: { Range: 'bytes=0-1023' },
-    }), env, {});
+    }), testEnv(env), {});
 
     expect(requestedRange).toBe('bytes=0-1023');
     expect(response.status).toBe(206);
@@ -717,15 +1012,16 @@ describe('Worker security behavior', () => {
         async get() {
           throw new Error('an unsatisfiable range should be rejected before R2.get');
         },
-        async head() {
-          throw new Error('an unsatisfiable range should be rejected before R2.head');
+        async head(key) {
+          expect(key).toBe('streaming/raw/house-oversight-doj/DOJ-OGR-00022168.mp4');
+          return { size: 20_955_328_421 };
         },
       },
     };
 
     const response = await worker.fetch(request('/api/documents/22425/file', {
       headers: { Range: 'bytes=20955328421-' },
-    }), env, {});
+    }), testEnv(env), {});
 
     expect(response.status).toBe(416);
     expect(response.headers.get('content-range')).toBe('bytes */20955328421');
@@ -734,7 +1030,7 @@ describe('Worker security behavior', () => {
     expect(await response.json()).toEqual({ error: 'Requested range is not satisfiable' });
   });
 
-  test('still redirects an ordinary whole-video playback request', async () => {
+  test('keeps ordinary whole-video playback behind the Worker', async () => {
     const env = {
       DB: {
         prepare() {
@@ -755,21 +1051,22 @@ describe('Worker security behavior', () => {
         },
       },
       R2: {
-        async head(key) {
+        async get(key) {
           expect(key).toBe('streaming/raw/video.mp4');
-          return { size: 1234 };
-        },
-        async get() {
-          throw new Error('whole playback should redirect before R2.get');
+          return {
+            body: new Uint8Array(1234),
+            size: 1234,
+            httpMetadata: { contentType: 'video/mp4' },
+          };
         },
       },
     };
 
-    const response = await worker.fetch(request('/api/documents/7/file'), env, {});
-    expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toBe(
-      'https://media.epsteinproject.org/streaming/raw/video.mp4'
-    );
+    const response = await worker.fetch(request('/api/documents/7/file'), testEnv(env), {});
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('content-length')).toBe('1234');
+    expect(response.headers.get('link')).toContain('/documents/7');
   });
 
   test('keeps an initial browser metadata request on the Worker in streaming mode', async () => {
@@ -810,7 +1107,7 @@ describe('Worker security behavior', () => {
       },
     };
 
-    const response = await worker.fetch(request('/api/documents/7/file?stream=1'), env, {});
+    const response = await worker.fetch(request('/api/documents/7/file?stream=1'), testEnv(env), {});
 
     expect(response.status).toBe(206);
     expect(response.headers.get('location')).toBeNull();
@@ -822,6 +1119,331 @@ describe('Worker security behavior', () => {
     ]);
     expect(gets.every(item => item.options?.range?.offset === 0)).toBe(true);
     expect(gets.every(item => item.options?.range?.length === 1024 * 1024)).toBe(true);
+  });
+
+  test('streams faststart video through the Worker without a public-media redirect', async () => {
+    const keys = [];
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/house-oversight-doj/DOJ-OGR-00022168.mp4',
+                    filename: 'DOJ-OGR-00022168',
+                    title: 'video1.mp4',
+                    data_set: 'house-oversight-doj',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async get(key) {
+          keys.push(key);
+          return {
+            body: new Uint8Array([0, 1, 2, 3]),
+            size: 4,
+            httpMetadata: {
+              contentType: 'text/html',
+              cacheControl: 'public, max-age=31536000, immutable',
+            },
+          };
+        },
+      },
+    };
+
+    const response = await worker.fetch(
+      request('/api/documents/22425/file'),
+      testEnv(env),
+      {}
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('content-type')).toBe('video/mp4');
+    expect(response.headers.get('cache-control')).toContain('max-age=60');
+    expect(response.headers.get('cache-control')).not.toContain('immutable');
+    expect(response.headers.get('link')).toBe(
+      '<https://epsteinproject.org/documents/22425>; rel=canonical'
+    );
+    expect(keys).toEqual(['streaming/raw/house-oversight-doj/DOJ-OGR-00022168.mp4']);
+  });
+
+  test('bypasses stale edge media cache whenever publication exclusions are active', async () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'caches');
+    let cacheReads = 0;
+    Object.defineProperty(globalThis, 'caches', {
+      configurable: true,
+      value: {
+        default: {
+          async match() {
+            cacheReads++;
+            return new Response('stale media');
+          },
+        },
+      },
+    });
+
+    try {
+      const response = await worker.fetch(request('/api/documents/42/file'), testEnv({
+        PUBLICATION_EXCLUSIONS: 'house:HOUSE_OVERSIGHT_010477',
+        DB: {
+          prepare() {
+            return {
+              bind() {
+                return {
+                  async first() {
+                    return {
+                      local_path: '/archive/epstein-files/house-oversight/file.jpg',
+                      filename: 'HOUSE_OVERSIGHT_010477',
+                      data_set: 'house-oversight-estate',
+                    };
+                  },
+                };
+              },
+            };
+          },
+        },
+        R2: {
+          async get() {
+            throw new Error('excluded media must not reach R2');
+          },
+        },
+      }), {
+        waitUntil() {
+          throw new Error('excluded media must not be cached');
+        },
+      });
+      expect(response.status).toBe(404);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(cacheReads).toBe(0);
+    } finally {
+      if (previous) Object.defineProperty(globalThis, 'caches', previous);
+      else delete globalThis.caches;
+    }
+  });
+
+  test('versions private-media cache keys away from pre-policy responses', async () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'caches');
+    let matchedUrl;
+    Object.defineProperty(globalThis, 'caches', {
+      configurable: true,
+      value: {
+        default: {
+          async match(cacheKey) {
+            matchedUrl = cacheKey.url;
+            return new Response('cached image', {
+              headers: {
+                'Content-Type': 'image/png',
+                'Cache-Control': 'public, max-age=60, s-maxage=60, must-revalidate',
+              },
+            });
+          },
+        },
+      },
+    });
+
+    try {
+      const response = await worker.fetch(
+        request('/api/images/14672_p0_0.png'),
+        testEnv(),
+        { waitUntil() {} }
+      );
+      expect(response.status).toBe(200);
+      expect(new URL(matchedUrl).searchParams.get('__ep_media_cache')).toBe('private-r2-v2');
+      expect(response.headers.get('x-robots-tag')).toBe('noindex');
+    } finally {
+      if (previous) Object.defineProperty(globalThis, 'caches', previous);
+      else delete globalThis.caches;
+    }
+  });
+
+  test('rejects fabricated House page aliases before reading R2', async () => {
+    let r2Reads = 0;
+    const response = await worker.fetch(
+      request('/api/house-oversight/page/HOUSE_OVERSIGHT_010478/0'),
+      testEnv({
+        DB: {
+          prepare() {
+            return {
+              bind() {
+                return { async first() { return null; } };
+              },
+            };
+          },
+        },
+        R2: {
+          async get() {
+            r2Reads++;
+            return { body: 'hidden adjacent scan' };
+          },
+        },
+      }),
+      {}
+    );
+    expect(response.status).toBe(404);
+    expect(r2Reads).toBe(0);
+  });
+
+  test('serves an authorized House page range with its record canonical', async () => {
+    const response = await worker.fetch(
+      request('/api/house-oversight/page/HOUSE_OVERSIGHT_010477/1', {
+        headers: { Range: 'bytes=10-19' },
+      }),
+      testEnv({
+        DB: {
+          prepare() {
+            return {
+              bind() {
+                return {
+                  async first() { return { legacy_document_id: 42, page_count: 2 }; },
+                };
+              },
+            };
+          },
+        },
+        R2: {
+          async get(key, options) {
+            expect(key).toBe('house-oversight/IMAGES/001/HOUSE_OVERSIGHT_010478.jpg');
+            expect(options.range.get('range')).toBe('bytes=10-19');
+            return {
+              body: new Uint8Array(10),
+              size: 100,
+              range: { offset: 10, length: 10 },
+              httpMetadata: { contentType: 'text/html' },
+            };
+          },
+        },
+      }),
+      {}
+    );
+    expect(response.status).toBe(206);
+    expect(response.headers.get('content-type')).toBe('image/jpeg');
+    expect(response.headers.get('content-range')).toBe('bytes 10-19/100');
+    expect(response.headers.get('link')).toBe(
+      '<https://epsteinproject.org/house-oversight/HOUSE_OVERSIGHT_010477>; rel=canonical'
+    );
+  });
+
+  test('returns authoritative 416 for an unsatisfiable image range', async () => {
+    let getCalled = false;
+    const response = await worker.fetch(
+      request('/api/images/14672_p0_0.png', {
+        headers: { Range: 'bytes=256-' },
+      }),
+      testEnv({
+        R2: {
+          async head(key) {
+            expect(key).toBe('images/14672_p0_0.png');
+            return { size: 128 };
+          },
+          async get() {
+            getCalled = true;
+            return null;
+          },
+        },
+      }),
+      {}
+    );
+    expect(response.status).toBe(416);
+    expect(response.headers.get('content-range')).toBe('bytes */128');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(getCalled).toBe(false);
+  });
+
+  test('downloads the released video original even when streaming is also requested', async () => {
+    const keys = [];
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/video.mp4',
+                    filename: 'video.mp4',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                    file_size: 8,
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async get(key, options) {
+          keys.push({ key, options });
+          if (key.startsWith('streaming/')) {
+            throw new Error('downloads must never read the faststart derivative');
+          }
+          return {
+            body: new Uint8Array(8),
+            size: 8,
+            httpMetadata: { contentType: 'video/mp4' },
+          };
+        },
+      },
+    };
+
+    const response = await worker.fetch(
+      request('/api/documents/7/file?download=1&stream=1'),
+      testEnv(env),
+      {}
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-disposition')).toContain('attachment');
+    expect(response.headers.get('content-length')).toBe('8');
+    expect(keys).toEqual([{ key: 'raw/video.mp4', options: undefined }]);
+  });
+
+  test('validates regular playback ranges against the derivative size', async () => {
+    let getCalled = false;
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    local_path: '/archive/epstein-files/raw/video.mp4',
+                    filename: 'video.mp4',
+                    document_type: 'video',
+                    content_type: 'video/mp4',
+                    file_size: 20_000,
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async head(key) {
+          expect(key).toBe('streaming/raw/video.mp4');
+          return { size: 10_000 };
+        },
+        async get() {
+          getCalled = true;
+          return null;
+        },
+      },
+    };
+    const response = await worker.fetch(request('/api/documents/7/file?stream=1', {
+      headers: { Range: 'bytes=15000-' },
+    }), testEnv(env), {});
+    expect(response.status).toBe(416);
+    expect(response.headers.get('content-range')).toBe('bytes */10000');
+    expect(getCalled).toBe(false);
   });
 
   test('scopes House Oversight stats from documents into the mentions index', async () => {
@@ -868,10 +1490,297 @@ describe('Worker security behavior', () => {
   });
 
   test('adds security headers to preflight responses', async () => {
-    const response = await worker.fetch(request('/api/search', { method: 'OPTIONS' }), {}, {});
+    const response = await worker.fetch(request('/api/search', { method: 'OPTIONS' }), testEnv(), {});
     expect(response.status).toBe(200);
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('strict-transport-security')).toContain('max-age=31536000');
+    expect(response.headers.get('access-control-allow-methods')).toBe('GET, OPTIONS');
+    expect(response.headers.get('allow')).toBe('GET, OPTIONS');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex');
+  });
+  test('advertises POST only for the entity-search preflight', async () => {
+    const response = await worker.fetch(
+      request('/api/entities/search', { method: 'OPTIONS' }),
+      testEnv(),
+      {}
+    );
+    expect(response.headers.get('access-control-allow-methods')).toBe('POST, OPTIONS');
+    expect(response.headers.get('allow')).toBe('POST, OPTIONS');
+  });
+
+  test('marks successful JSON as non-cacheable and non-indexable', async () => {
+    const response = await worker.fetch(request('/health'), {}, {});
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex');
+    expect(response.headers.get('strict-transport-security')).toContain('max-age=31536000');
+  });
+
+  test('blocks excluded direct document routes before D1 or R2 access', async () => {
+    let touched = false;
+    const env = testEnv({
+      PUBLICATION_EXCLUSIONS: 'doc:42',
+      DB: {
+        prepare() {
+          touched = true;
+          throw new Error('must not touch D1');
+        },
+      },
+      R2: {
+        async get() {
+          touched = true;
+          throw new Error('must not touch R2');
+        },
+      },
+    });
+    for (const suffix of ['', '/text', '/file', '/thumbnail']) {
+      const response = await worker.fetch(request('/api/documents/42' + suffix), env, {});
+      expect(response.status).toBe(404);
+      expect((await response.json()).error).toBe('Document not found');
+    }
+    for (const path of ['/api/videos/42/thumb', '/api/images/42_p0_0.png']) {
+      const response = await worker.fetch(request(path), env, {});
+      expect(response.status).toBe(404);
+    }
+    expect(touched).toBe(false);
+  });
+
+  test('blocks excluded House detail, page, and thumbnail routes before storage', async () => {
+    let touched = false;
+    const env = testEnv({
+      PUBLICATION_EXCLUSIONS: 'house:house_oversight_010477',
+      DB: {
+        prepare() {
+          touched = true;
+          throw new Error('must not touch D1');
+        },
+      },
+      R2: {
+        async get() {
+          touched = true;
+          throw new Error('must not touch R2');
+        },
+      },
+    });
+    const paths = [
+      '/api/house-oversight/documents/HOUSE_OVERSIGHT_010477',
+      '/api/house-oversight/page/HOUSE_OVERSIGHT_010477/0',
+      '/api/house-oversight/thumbnail/HOUSE_OVERSIGHT_010477',
+    ];
+    for (const path of paths) {
+      const response = await worker.fetch(request(path), env, {});
+      expect(response.status).toBe(404);
+    }
+    expect(touched).toBe(false);
+  });
+
+  test('fails closed on malformed publication-exclusion configuration', async () => {
+    const response = await worker.fetch(request('/api/documents/42'), testEnv({
+      PUBLICATION_EXCLUSIONS: 'doc:not-a-number',
+    }), {});
+    expect(response.status).toBe(503);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  test('accepts 80 publication exclusions and fails closed at 81', async () => {
+    const eighty = Array.from({ length: 80 }, (_, index) => `doc:${index + 1}`).join(' ');
+    const accepted = await worker.fetch(request('/api'), {
+      PUBLICATION_EXCLUSIONS: eighty,
+    }, {});
+    expect(accepted.status).toBe(200);
+
+    const rejected = await worker.fetch(request('/api'), {
+      PUBLICATION_EXCLUSIONS: eighty + ' doc:81',
+    }, {});
+    expect(rejected.status).toBe(503);
+    expect(rejected.headers.get('retry-after')).toBe('5');
+  });
+
+  test('filters the image manifest and corrects its total', async () => {
+    const { response, body } = await responseJson('/api/images?limit=50', {
+      PUBLICATION_EXCLUSIONS: 'doc:12',
+      R2: {
+        async get(key) {
+          expect(key).toBe('images/manifest.json');
+          return {
+            async json() {
+              return {
+                total_images: 3,
+                images: [
+                  { doc_id: 12, page: 0, filename: '12_p0_0.png' },
+                  { doc_id: 13, page: 0, filename: '13_p0_0.png' },
+                  { filename: 'unattributed.png' },
+                ],
+              };
+            },
+          };
+        },
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(body.total).toBe(1);
+    expect(body.images).toEqual([
+      { doc_id: 13, page: 0, filename: '13_p0_0.png' },
+    ]);
+  });
+
+  test('adds bound exclusions to browse totals and rows', async () => {
+    const calls = [];
+    const DB = {
+      prepare(sql) {
+        return {
+          bind(...params) {
+            calls.push({ sql, params });
+            return {
+              async first() { return { count: 1 }; },
+              async all() {
+                return { results: [{ id: 13, filename: 'visible.pdf', data_set: 'court-records' }] };
+              },
+            };
+          },
+        };
+      },
+    };
+    const { body } = await responseJson('/api/browse', {
+      DB,
+      PUBLICATION_EXCLUSIONS: 'doc:12 house:HOUSE_OVERSIGHT_010477',
+    });
+    expect(body.total).toBe(1);
+    expect(body.results.map(row => row.document_id)).toEqual([13]);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.sql).toContain('documents.id NOT IN (?)');
+      expect(call.sql).toContain('UPPER(documents.filename) NOT IN (?)');
+      expect(call.params.slice(0, 2)).toEqual([12, 'HOUSE_OVERSIGHT_010477']);
+    }
+  });
+
+  test('adds bound exclusions to FTS results and counts', async () => {
+    const documentCalls = [];
+    const DB = {
+      prepare(sql) {
+        return {
+          bind(...params) {
+            if (sql.includes('FROM document_fts')) documentCalls.push({ sql, params });
+            return {
+              async first() { return { total: 1 }; },
+              async all() {
+                if (sql.includes('FROM entities')) return { results: [] };
+                return { results: [{ id: 13, filename: 'visible.pdf', data_set: 'court-records' }] };
+              },
+            };
+          },
+        };
+      },
+    };
+    const { body } = await responseJson('/api/search?q=visible', {
+      DB,
+      PUBLICATION_EXCLUSIONS: 'doc:12 house:HOUSE_OVERSIGHT_010477',
+    });
+    expect(body.total).toBe(1);
+    expect(body.results.map(row => row.document_id)).toEqual([13]);
+    expect(body.entities).toEqual([]);
+    expect(documentCalls).toHaveLength(2);
+    for (const call of documentCalls) {
+      expect(call.sql).toContain('d.id NOT IN (?)');
+      expect(call.sql).toContain('UPPER(d.filename) NOT IN (?)');
+      expect(call.params.slice(1, 3)).toEqual([12, 'HOUSE_OVERSIGHT_010477']);
+    }
+  });
+
+  test('filters entity mention document sidecars with bound predicates', async () => {
+    let mentionQuery;
+    const DB = {
+      prepare(sql) {
+        return {
+          bind(...params) {
+            return {
+              async first() { return { canonical_name: 'Example Entity' }; },
+              async all() {
+                mentionQuery = { sql, params };
+                return { results: [{ id: 2, document_id: 13, filename: 'visible.pdf' }] };
+              },
+            };
+          },
+        };
+      },
+    };
+    const { body } = await responseJson('/api/entities/1/mentions', {
+      DB,
+      PUBLICATION_EXCLUSIONS: 'doc:12',
+    });
+    expect(body.total_mentions).toBe(1);
+    expect(body.mentions.map(row => row.document_id)).toEqual([13]);
+    expect(mentionQuery.sql).toContain('d.id NOT IN (?)');
+    expect(mentionQuery.params).toContain(12);
+  });
+
+  test('blocks House tokens through legacy document aliases before text or R2', async () => {
+    let secondaryReads = 0;
+    const env = testEnv({
+      PUBLICATION_EXCLUSIONS: 'house:HOUSE_OVERSIGHT_010477',
+      DB: {
+        prepare(sql) {
+          if (!sql.includes('FROM documents')) secondaryReads++;
+          return {
+            bind() {
+              return {
+                async first() {
+                  return {
+                    id: 42,
+                    filename: 'HOUSE_OVERSIGHT_010477',
+                    data_set: 'house-oversight-estate',
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+      R2: {
+        async get() {
+          secondaryReads++;
+          return { body: 'must not be served' };
+        },
+      },
+    });
+    for (const suffix of ['', '/text', '/file', '/thumbnail']) {
+      const response = await worker.fetch(request('/api/documents/42' + suffix), env, {});
+      expect(response.status).toBe(404);
+    }
+    expect(secondaryReads).toBe(0);
+  });
+
+  test('blocks doc tokens through House aliases before text or R2', async () => {
+    let r2Reads = 0;
+    const env = testEnv({
+      PUBLICATION_EXCLUSIONS: 'doc:42',
+      DB: {
+        prepare() {
+          return {
+            bind() {
+              return { async first() { return { legacy_document_id: 42 }; } };
+            },
+          };
+        },
+      },
+      R2: {
+        async get() {
+          r2Reads++;
+          return { body: 'must not be served' };
+        },
+      },
+    });
+    for (const path of [
+      '/api/house-oversight/documents/HOUSE_OVERSIGHT_010477',
+      '/api/house-oversight/page/HOUSE_OVERSIGHT_010477/0',
+      '/api/house-oversight/thumbnail/HOUSE_OVERSIGHT_010477',
+    ]) {
+      const response = await worker.fetch(request(path), env, {});
+      expect(response.status).toBe(404);
+    }
+    expect(r2Reads).toBe(0);
   });
 });
 

@@ -1,0 +1,147 @@
+name: Security and release gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-release-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: "1.3.14"
+  PYTHON_VERSION: "3.11.15"
+
+jobs:
+  javascript-and-cloudflare:
+    name: Bun tests, audit, and Cloudflare builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install locked JavaScript dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run the complete Bun test suite
+        run: bun test
+
+      - name: Audit all JavaScript dependencies
+        run: bun audit
+
+      - name: Compile the Worker without deploying
+        run: |
+          mkdir -p "$RUNNER_TEMP/wrangler/worker"
+          ./node_modules/.bin/wrangler deploy \
+            --dry-run \
+            --outdir "$RUNNER_TEMP/wrangler/worker"
+
+      - name: Compile Pages Functions without deploying
+        run: |
+          mkdir -p "$RUNNER_TEMP/wrangler/pages"
+          ./node_modules/.bin/wrangler pages functions build frontend/functions \
+            --project-directory frontend \
+            --outdir "$RUNNER_TEMP/wrangler/pages"
+
+  python-dependency-audit:
+    name: Python lock and vulnerability audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run dependency-free Python release tests
+        run: |
+          python -m unittest \
+            tests.test_production_smoke \
+            tests.test_ci_smoke_container \
+            tests.test_qa_request_budget \
+            tests.test_crawl_canonical_pages \
+            tests.test_audit_archive_integrity \
+            -v
+
+      - name: Audit base hash-locked Python dependencies
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: requirements.lock.txt
+          no-deps: true
+          require-hashes: true
+
+      - name: Audit optional transcription hash lock
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: requirements-transcription.lock.txt
+          no-deps: true
+          require-hashes: true
+
+  container-smoke:
+    name: Reproducible container build and health smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python for the database fixture
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Assemble a clean fixture build context
+        run: |
+          context="$RUNNER_TEMP/container-context"
+          mkdir -p "$context/database"
+          cp Dockerfile requirements.lock.txt "$context/"
+          cp -R src frontend "$context/"
+          python scripts/ci_create_container_fixture.py \
+            "$context/database/epstein_files.db"
+
+      - name: Build the pinned production image
+        run: |
+          docker build \
+            --tag epstein-files-ci:smoke \
+            "$RUNNER_TEMP/container-context"
+
+      - name: Start the image and verify the API plus frontend assets
+        run: |
+          container="epstein-files-ci-smoke"
+          docker run --detach \
+            --name "$container" \
+            --publish 127.0.0.1:18000:8000 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            epstein-files-ci:smoke
+          trap 'docker rm --force "$container" >/dev/null 2>&1 || true' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              --output "$RUNNER_TEMP/container-stats.json" \
+              http://127.0.0.1:18000/api/stats; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs "$container"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          python scripts/ci_smoke_container.py http://127.0.0.1:18000

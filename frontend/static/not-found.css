@@ -1,0 +1,34 @@
+:root{
+ color-scheme:light dark;
+ --paper:#eeefec;--ink:#1b1e21;--dim:#636970;--accent:#3a5463;--stamp:#8b3a3a;
+ --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+ --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);
+ max-width:44rem;margin:0 auto;padding:6rem 1.5rem;line-height:1.55}
+.eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.18em;
+ text-transform:uppercase;color:var(--stamp);margin:0 0 .6rem}
+h1{font-family:var(--mono);font-weight:500;font-size:clamp(1.6rem,5vw,2.6rem);
+ line-height:1.1;margin:0 0 1.25rem}
+p{margin:0 0 1rem;max-width:60ch}
+a{color:var(--accent)}
+a:focus-visible,input:focus-visible,button:focus-visible{
+ outline:2px solid var(--accent);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+ overflow:hidden;clip:rect(0,0,0,0);border:0}
+.find{display:flex;gap:.4rem;margin:2rem 0;max-width:26rem}
+.find input{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:.5rem .65rem;
+ border:1px solid rgba(27,30,33,.14);background:#f8f8f6;color:var(--ink);border-radius:0}
+.find button{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;
+ text-transform:uppercase;padding:.5rem .9rem;cursor:pointer;color:var(--paper);
+ background:var(--accent);border:1px solid var(--accent);border-radius:0}
+nav{display:flex;flex-wrap:wrap;gap:1.25rem;margin-top:2.5rem;
+ padding-top:1.25rem;border-top:1px solid rgba(27,30,33,.14)}
+nav a{font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;
+ text-transform:uppercase;text-decoration:none;color:var(--dim)}
+nav a:hover{color:var(--accent)}
+@media(prefers-color-scheme:dark){
+ :root{--paper:#14181a;--ink:#e7ece9;--dim:#9aa5a1;--accent:#8bb1c2;--stamp:#c07a7a}
+ .find input{background:#1a1f22;border-color:rgba(231,236,233,.14);color:var(--ink)}
+ .find button{color:#14181a}
+ nav{border-top-color:rgba(231,236,233,.14)}}

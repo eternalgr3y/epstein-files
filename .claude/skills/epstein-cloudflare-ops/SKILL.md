@@ -7,7 +7,7 @@ description: Operational knowledge for epsteinproject.org's Cloudflare stack (Wo
 
 Stack: Worker `epstein-files-api` (src/worker.js, route `epsteinproject.org/api/*`),
 D1 `epstein-files-db` (~900 MB, id ae344bab-8a31-422d-bb07-fc07d5d69189),
-R2 `epstein-files` (public media) + `epstein-files-backups` (private),
+R2 `epstein-files` (private media behind the Worker) + `epstein-files-backups` (private),
 Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root —
 `set -a; source .env; set +a` before wrangler/rclone/curl-API commands.
 
@@ -74,16 +74,20 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   consumes them (load .sql.gz into local sqlite via python, not sqlite3 CLI
   — not installed).
 
-## R2: never expose r2.dev URLs
+## R2: keep every object private
 
-- The public dev URL `pub-440e605d59b24afeb9a9d3291bf7a927.r2.dev` is
-  **rate-limited by Cloudflare**. After a gallery page bursts ~48 requests,
-  the next one can hang tens of seconds. This blocked video poster loads,
-  which in turn kept Chrome from even *starting* the video request —
-  "video looks dead" reports.
-- Serve media by **streaming from the R2 binding in the worker**
-  (`r2.get(key)` → `new Response(object.body, …)` with immutable
-  Cache-Control), never `Response.redirect` to r2.dev.
+- Never enable an R2 public development URL or attach a bucket custom domain.
+  Do not record public object-storage hostnames in code or runbooks.
+- Serve media only through the policy-aware Worker R2 binding. Its media rate
+  limiter, short revalidation policy, Range handling, and
+  `PUBLICATION_EXCLUSIONS` must execute before bytes leave R2.
+- Keep project-level Cloudflare Access enabled for all `pages.dev` deployments;
+  this is what protects immutable historical previews whose older bundles
+  cannot inherit new middleware. Current root Pages middleware also redirects
+  newly built Pages hosts to the apex before SSR, sitemap, collection, or
+  static fallback code runs. `noindex` is not access control. If previews are
+  ever made public, mirror `PUBLICATION_EXCLUSIONS` into the Pages preview
+  environment before deploying.
 
 ## Video serving
 
@@ -98,27 +102,22 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
 - Huge DOJ-OGR videos have ~6 MB moov atoms: metadata load is seconds on
   fast connections, longer on slow ones — that part is physics, not a bug.
 
-## R2 custom domain (media.epsteinproject.org)
+## R2 public access is a release blocker
 
-- Fronts the `epstein-files` bucket; video /file requests 302 here
-  (streaming/ copy preferred; `?download=1` bypasses the redirect to keep
-  same-origin streaming so `<a download>` works). CSP media-src must list it.
-- API gotcha: the legacy `POST /r2/buckets/<b>/custom_domains` route
-  **silently ignores `enabled:true`** — the domain 401s even after SSL goes
-  active. Use `PUT /r2/buckets/<b>/domains/custom/<domain>` with
-  `{"enabled":true}`. SSL provisioning takes ~20+ min; poll for HTTP 200
-  before deploying anything that depends on the domain.
-- Ordering matters: never deploy the worker redirect before the domain
-  serves 200, or every video breaks.
+- The bucket's Public Development URL must remain disabled and no custom media
+  domain may be attached. A release is incomplete until a known historical
+  object URL fails while the same-origin Worker media route returns 200/206.
+- Never add a browser redirect to object storage or widen CSP `media-src` for
+  an R2 hostname. Originals remain byte-identical and downloadable through the
+  Worker's `?download=1`; playback may use the private `streaming/` derivative.
 
 ## Deploys
 
-- **`wrangler pages deploy` tags the deployment with the current git branch.**
-  The project's production branch is `main`, so deploying from any other
-  branch silently produces a *preview* deployment — wrangler prints "Success"
-  and a pages.dev URL, but epsteinproject.org keeps serving the old code.
-  Pass `--branch=main` explicitly when deploying from another branch
-  (learned 2026-08-09 deploying from the desktop's `production` branch).
+- Production Pages deployment must use `npm run deploy:pages` from a clean
+  `main` checkout. The wrapper rejects dirty/feature/detached trees, invokes
+  Wrangler with `--cwd frontend`, `--branch=main`, exact commit metadata, and
+  runs the bounded same-origin smoke. Do not invoke `wrangler pages deploy`
+  directly.
 - Stored OAuth from `wrangler login` DOES carry Pages deploys in
   non-interactive shells (verified on the desktop 2026-08-09, wrangler 4.54) —
   the CLOUDFLARE_API_TOKEN requirement noted below was observed on the laptop
@@ -141,8 +140,8 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   bun. `node_modules/.bin/wrangler` has a `#!/usr/bin/env node` shebang and
   works first try:
   `PATH=~/.local/node/bin:$PATH node_modules/.bin/wrangler deploy`
-  Note `package.json`'s `deploy:worker` script still says `bunx wrangler
-  deploy` and therefore does not work.
+  The repository's `deploy:worker` script invokes the locally installed
+  `wrangler` binary directly through the package-script PATH; keep it that way.
 - The exit code is useless here, so still confirm the `Deployed
   epstein-files-api triggers` line and curl the new behaviour before believing
   a deploy landed.
@@ -151,8 +150,7 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   deploy without it fails with "In a non-interactive environment, it's
   necessary to set a CLOUDFLARE_API_TOKEN". `~/deploy-pages.sh` handles both
   this and the node-on-PATH requirement.
-- Pages: `PATH=~/.local/node/bin:$PATH bun run deploy:pages` (needs Node,
-  bun alone won't do it).
+- Pages: `PATH=~/.local/node/bin:$PATH npm run deploy:pages`.
 - Tests: `bun test` (worker + frontend suites). `bun test | tail` swallows
   the exit code — check the pass/fail line, not the pipeline status.
 - Deploys need auth in non-interactive shells: `set -a && source .env &&
@@ -199,20 +197,25 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   immutable asset (83–121 ms). A "cache everything" rule for HTML buys
   essentially nothing and adds a purge-on-deploy staleness footgun — it was
   proposed, measured, and rejected.
-- `frontend/_headers` marks `app.js` and the icons `immutable`. **This makes
-  bumping the `?v=` string in index.html mandatory** — editing app.js without
-  it strands returning visitors on the old file for a year. index.html itself
-  stays `max-age=0`, which is what makes the versioning safe.
+- `frontend/index.html` references physical content-hashed app JS/CSS names;
+  `_redirects` maps those exact paths to source files and `_headers` grants
+  immutable caching only to hashed aliases. Regenerate both hash names from LF
+  bytes whenever either source changes.
 - **The SSR pages cache their own HTML for an hour** in the Cache API, keyed on
   path with the query string stripped, so a deploy is invisible until the hour
   is up and no `?cachebust=` on the request can dodge it. The `.env` token has
   no cache-purge scope either. **Bump `PAGE_CACHE_VERSION` in
   `frontend/functions/_lib/html.js`** whenever you change what those pages
   render — it changes every cache key at once and the deploy lands instantly.
-- To check a Pages deploy before the cache clears, fetch the preview hostname
-  (`https://<hash>.epstein-chd.pages.dev/...`) — separate cache, real code.
-- Browsers cache these pages too (`max-age=3600`), so a stale-looking page in
-  Chrome after a deploy may just be the local cache; append a query string.
+- Do not use an authenticated Pages preview to validate unpublished content.
+  Project-level Access must challenge historical previews, while newly built
+  previews additionally redirect to the apex before route code runs. Use the
+  canonical post-deploy smoke gate and bump `PAGE_CACHE_VERSION` for changed
+  SSR output.
+- Browsers must revalidate these pages (`max-age=0`), while Cloudflare/shared
+  caches may retain them for one hour (`s-maxage=3600`). Publication withdrawal
+  cannot revoke a copy that a browser, crawler, archive, or third party already
+  downloaded.
 
 ## Server-rendered pages (frontend/functions/)
 
@@ -246,8 +249,8 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
   or the theme silently stops applying.
 - A Pages Function **cannot reach the API through the zone**: a subrequest to
   `https://epsteinproject.org/api/...` silently returned nothing and the page
-  rendered empty. Use the workers.dev origin
-  (`https://epstein-files-api.protonuser597.workers.dev/api/...`).
+  rendered empty. Use `env.API.fetch()` through the Pages service binding in
+  `frontend/wrangler.toml`; do not re-enable the public workers.dev origin.
 
 ## Entity data (as of 2026-07-27)
 
@@ -322,8 +325,8 @@ Pages project `epstein` (frontend/). Secrets in gitignored `.env` at repo root �
 
 - Originals are **no longer on local disk** — `documents.local_path` points at
   `/mnt/e/...`, a drive that is not attached. R2 is the only source, reachable
-  via `/api/documents/<id>/file`, which bypasses the rate limiter because it is
-  classed as media delivery.
+  through the policy-aware `/api/documents/<id>/file` route. Media delivery has
+  its own higher rate limiter and must never bypass that binding.
 - `ocr_backfill.py` (repo root) re-OCRs everything with no stored text:
   downloads from R2, renders at 300 DPI, tesseract via TSV for text +
   confidence, results into a resumable local SQLite state file. Then

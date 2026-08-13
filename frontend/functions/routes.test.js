@@ -69,7 +69,8 @@ describe('canonical Pages routes', () => {
       const html = await missing.text();
       expect(missing.status).toBe(404);
       expect(missing.headers.get('cache-control')).toBe('no-store');
-      expect(html).toContain('<link rel="canonical" href="https://epsteinproject.org/">');
+      expect(html).toContain('<meta name="robots" content="noindex, follow">');
+      expect(html).not.toContain('<link rel="canonical"');
       expect(html).toContain('Browse the document index');
       expect(cache.writes).toHaveLength(0);
     } finally {
@@ -149,14 +150,15 @@ describe('canonical Pages routes', () => {
       await Promise.all(pending);
 
       expect(response.status).toBe(200);
-      expect(response.headers.get('content-security-policy')).toContain(
-        "media-src 'self' https://media.epsteinproject.org"
+      expect(response.headers.get('content-security-policy')).toContain("media-src 'self'");
+      expect(response.headers.get('content-security-policy')).not.toContain('media.epsteinproject.org');
+      expect(response.headers.get('cache-control')).toBe(
+        'public, max-age=0, s-maxage=3600, must-revalidate'
       );
-      expect(response.headers.get('cache-control')).toBe('public, max-age=3600');
       expect(html).toContain('<link rel="canonical" href="https://epsteinproject.org/documents/22425">');
       expect(html).toContain('"@type":"VideoObject"');
-      expect(html).toContain('<video controls preload="metadata"');
-      expect(html).toContain('/file?stream=1');
+      expect(html).toContain('<video class="record-media record-video" controls preload="metadata"');
+      expect(html).toContain('/file?stream=1&delivery=private-worker-v1');
       expect(html).toContain('<h2>Transcript</h2>');
       expect(html).toContain('No transcript has been extracted for this media file.');
       expect(cache.writes).toHaveLength(1);
@@ -206,8 +208,12 @@ describe('canonical Pages routes', () => {
       expect(response.status).toBe(200);
       expect(html).toContain('<link rel="canonical" href="https://epsteinproject.org/house-oversight/HOUSE_OVERSIGHT_026678">');
       expect(html).toContain('"@type":"VideoObject"');
-      expect(html).toContain('<video controls preload="metadata"');
-      expect(html).toContain('/api/documents/15999/file?stream=1');
+      expect(html).toContain('<h2>Video preview</h2>');
+      expect(html).toContain('<video class="record-media record-video" controls preload="metadata"');
+      expect(html).toContain('/api/documents/15999/file?stream=1&delivery=private-worker-v1');
+      expect(html).toContain('/api/documents/15999/file?download=1');
+      expect(html).toContain('Download the byte-identical released file');
+      expect(html).not.toContain('<h2>Original video</h2>');
       expect(html).toContain('type="video/mp4"');
     } finally {
       cache.restore();

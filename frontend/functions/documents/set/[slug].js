@@ -2,6 +2,9 @@ import {
   documentItems, pageParam, renderCollectionResponse,
 } from '../../_lib/collection.js';
 import { notFoundResponse, setLabel } from '../../_lib/html.js';
+import {
+  hasPublicationExclusions, notExcludedSql, publicationPolicy,
+} from '../../_lib/publication.js';
 
 const PAGE_SIZE = 100;
 
@@ -34,6 +37,8 @@ const SETS = {
 const ALIASES = { 'data-set-8': ['Data Set 8'] };
 
 export async function onRequestGet({ params, env, request }) {
+  const policy = publicationPolicy(env);
+  const excluded = notExcludedSql('id', policy.documentIds);
   const slug = params.slug;
   if (!Object.prototype.hasOwnProperty.call(SETS, slug)) {
     return notFoundResponse('Collection not found');
@@ -43,13 +48,13 @@ export async function onRequestGet({ params, env, request }) {
   const placeholders = values.map(() => '?').join(', ');
 
   const count = await env.DB
-    .prepare(`SELECT COUNT(*) AS count FROM documents WHERE data_set IN (${placeholders})`)
-    .bind(...values).first();
+    .prepare(`SELECT COUNT(*) AS count FROM documents WHERE data_set IN (${placeholders})${excluded.clause}`)
+    .bind(...values, ...excluded.bindings).first();
   const page = pageParam(request, PAGE_SIZE, count.count);
   const docs = await env.DB.prepare(
     'SELECT id, filename, title, document_type, data_set, page_count FROM documents '
-    + `WHERE data_set IN (${placeholders}) ORDER BY id DESC LIMIT ? OFFSET ?`
-  ).bind(...values, PAGE_SIZE, (page - 1) * PAGE_SIZE).all();
+    + `WHERE data_set IN (${placeholders})${excluded.clause} ORDER BY id DESC LIMIT ? OFFSET ?`
+  ).bind(...values, ...excluded.bindings, PAGE_SIZE, (page - 1) * PAGE_SIZE).all();
 
   const label = SETS[slug] || setLabel(slug);
 
@@ -63,5 +68,6 @@ export async function onRequestGet({ params, env, request }) {
     page,
     pageSize: PAGE_SIZE,
     spaHash: 'documents/0',
+    cacheControl: hasPublicationExclusions(policy) ? 'no-store' : undefined,
   });
 }

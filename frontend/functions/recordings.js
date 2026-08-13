@@ -1,9 +1,23 @@
 import { documentItems, renderCollectionResponse } from './_lib/collection.js';
+import { hasPublicationExclusions, notExcludedSql, publicationPolicy } from './_lib/publication.js';
+
+function collectionExclusions(policy) {
+  const byId = notExcludedSql('id', policy.documentIds);
+  const bates = policy.houseOversightBates;
+  if (!bates.length) return byId;
+  return {
+    clause: byId.clause
+      + ` AND (filename IS NULL OR UPPER(filename) NOT IN (${bates.map(() => '?').join(', ')}))`,
+    bindings: [...byId.bindings, ...bates],
+  };
+}
 
 export async function onRequestGet({ env }) {
+  const policy = publicationPolicy(env);
+  const excluded = collectionExclusions(policy);
   const [count, docs] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) AS count FROM documents WHERE document_type = 'audio'").first(),
-    env.DB.prepare("SELECT id, filename, title, document_type, data_set, page_count FROM documents WHERE document_type = 'audio' ORDER BY id DESC LIMIT 100").all(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM documents WHERE document_type = 'audio'" + excluded.clause).bind(...excluded.bindings).first(),
+    env.DB.prepare("SELECT id, filename, title, document_type, data_set, page_count FROM documents WHERE document_type = 'audio'" + excluded.clause + " ORDER BY id DESC LIMIT 100").bind(...excluded.bindings).all(),
   ]);
   return renderCollectionResponse({
     path: '/recordings',
@@ -13,5 +27,6 @@ export async function onRequestGet({ env }) {
     items: documentItems(docs.results),
     total: count.count,
     spaHash: 'maxwell',
+    cacheControl: hasPublicationExclusions(policy) ? 'no-store' : undefined,
   });
 }

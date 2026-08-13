@@ -20,6 +20,7 @@ export function pageParam(request, pageSize, total) {
 export function renderCollectionResponse({
   path, title, description, intro, items, total, spaHash,
   page = 1, pageSize = 100, links = null,
+  cacheControl,
 }) {
   const canonical = `https://epsteinproject.org${path}`;
   const pageCount = Number.isFinite(total) && pageSize > 0
@@ -91,7 +92,7 @@ ${pagination}
     spaHash,
     ogType: 'website',
     structuredData,
-  }), { headers: htmlResponseHeaders() });
+  }), { headers: htmlResponseHeaders(cacheControl) });
 }
 
 export function documentItems(rows) {

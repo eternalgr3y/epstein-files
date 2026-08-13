@@ -1,2 +1,6 @@
 # Optional: keep large speech-to-text/model dependencies out of the web image.
+# Reproducible Python 3.11 installs use requirements-transcription.lock.txt. Regenerate it with:
+# uv pip compile requirements-transcription.txt --universal --python-version 3.11 --generate-hashes --output-file requirements-transcription.lock.txt
+# Install only when transcription is needed:
+# python -m pip install --require-hashes -r requirements-transcription.lock.txt
 faster-whisper==1.2.1

@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+frontend/app.js text eol=lf
+frontend/index.html text eol=lf
+frontend/_headers text eol=lf
+frontend/_redirects text eol=lf
+frontend/static/*.css text eol=lf
+frontend/functions/** text eol=lf
+nginx/nginx.conf text eol=lf

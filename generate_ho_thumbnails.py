@@ -9,6 +9,7 @@ version to R2 so the worker can serve that instead.
 """
 import io
 import json
+import os
 import subprocess
 import sys
 import time
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from PIL import Image
 
-API = "https://epstein-files-api.protonuser597.workers.dev/api"
+API = os.getenv("EPSTEIN_API_URL", "https://epsteinproject.org/api").rstrip("/")
 BUCKET = "epstein-files"
 THUMB_WIDTH = 420
 JPEG_QUALITY = 72
