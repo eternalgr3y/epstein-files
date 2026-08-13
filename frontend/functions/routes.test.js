@@ -102,6 +102,28 @@ describe('canonical Pages routes', () => {
     }
   });
 
+  test('canonicalizes lowercase House Oversight Bates paths before querying D1', async () => {
+    let prepared = false;
+    const response = await houseDocumentPage({
+      params: { bates: 'house_oversight_033437' },
+      request: new Request('https://epsteinproject.org/house-oversight/house_oversight_033437'),
+      env: {
+        DB: {
+          prepare() {
+            prepared = true;
+            throw new Error('D1 must not be queried before the canonical redirect');
+          },
+        },
+      },
+    });
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get('location')).toBe(
+      'https://epsteinproject.org/house-oversight/HOUSE_OVERSIGHT_033437'
+    );
+    expect(prepared).toBe(false);
+  });
+
   test('renders a canonical video page with media schema, CSP, and honest transcript state', async () => {
     const cache = cacheHarness();
     const pending = [];

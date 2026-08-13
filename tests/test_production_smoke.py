@@ -1,7 +1,13 @@
 import unittest
 from unittest.mock import patch
 
-from production_smoke import NoRedirect, content_range, hashed_app_asset, request_url
+from production_smoke import (
+    NoRedirect,
+    content_range,
+    hashed_app_asset,
+    is_jpeg_payload,
+    request_url,
+)
 from qa_request_budget import RequestBudget, RequestBudgetExceeded
 
 
@@ -17,6 +23,11 @@ class ProductionSmokeTests(unittest.TestCase):
         self.assertEqual(content_range("bytes 0-1023/20955328421"), (0, 1023, 20955328421))
         self.assertIsNone(content_range("bytes */20955328421"))
         self.assertIsNone(content_range("garbage"))
+
+    def test_estate_thumbnail_requires_a_jpeg_signature(self):
+        self.assertTrue(is_jpeg_payload(b"\xff\xd8\xff\xe0rest-of-image"))
+        self.assertFalse(is_jpeg_payload(b"<!doctype html>"))
+        self.assertFalse(is_jpeg_payload(b""))
 
     def test_no_redirect_handler_keeps_canonical_checks_observable(self):
         handler = NoRedirect()

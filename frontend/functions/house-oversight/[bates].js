@@ -2,9 +2,16 @@ import { cleanDocTitle, esc, htmlResponseHeaders, notFoundResponse, pageCacheKey
 
 export async function onRequestGet(context) {
   const { params, env, request } = context;
-  const bates = params.bates;
-  if (!/^[A-Z_\d]+$/.test(bates || '')) {
+  const rawBates = String(params.bates || '');
+  const bates = rawBates.toUpperCase();
+  if (!/^HOUSE_OVERSIGHT_\d+$/.test(bates)) {
     return notFoundResponse();
+  }
+  if (rawBates !== bates) {
+    return Response.redirect(
+      `https://epsteinproject.org/house-oversight/${encodeURIComponent(bates)}`,
+      301,
+    );
   }
 
   const cache = caches.default;
