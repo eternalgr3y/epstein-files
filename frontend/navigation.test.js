@@ -494,4 +494,38 @@ describe('frontend navigation request lifecycle', () => {
       harness.restore();
     }
   });
+
+  test('canonicalizes a lowercase House Bates hash and loads the record', async () => {
+    const requested = [];
+    const fetchImpl = (input) => {
+      const url = String(input);
+      requested.push(url);
+      if (url === '/api/stats') {
+        return Promise.resolve(Response.json({ data_sets: [] }));
+      }
+      if (url === '/api/house-oversight/documents/HOUSE_OVERSIGHT_033437') {
+        return Promise.resolve(Response.json({
+          bates: 'HOUSE_OVERSIGHT_033437',
+          title: 'HOUSE_OVERSIGHT_033437',
+          page_count: 1,
+          pages: [],
+          entities: [],
+        }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    };
+
+    const harness = await runApp('#house-oversight/house_oversight_033437', fetchImpl);
+    try {
+      await Bun.sleep(0);
+      await Bun.sleep(0);
+      const html = harness.elements.get('results-view').innerHTML;
+      expect(harness.location.hash).toBe('#house-oversight/HOUSE_OVERSIGHT_033437');
+      expect(requested).toContain('/api/house-oversight/documents/HOUSE_OVERSIGHT_033437');
+      expect(html).toContain('House Oversight Document');
+      expect(html).toContain('HOUSE_OVERSIGHT_033437');
+    } finally {
+      harness.restore();
+    }
+  });
 });

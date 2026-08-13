@@ -579,8 +579,12 @@
                 if (offset === null) { showRouteNotFound(); return; }
                 showHouseOversight(offset, true);
             } else if (rest.length === 1) {
-                const bates = decodeHashPart(rest[0]);
+                const decodedBates = decodeHashPart(rest[0]);
+                const bates = decodedBates?.toUpperCase();
                 if (!bates || !/^HOUSE_OVERSIGHT_\d+$/.test(bates)) { showRouteNotFound(); return; }
+                if (decodedBates !== bates) {
+                    history.replaceState(null, '', `#house-oversight/${encodeURIComponent(bates)}`);
+                }
                 viewHouseOversightDoc(bates, true);
             } else {
                 showRouteNotFound();
