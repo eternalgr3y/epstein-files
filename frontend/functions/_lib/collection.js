@@ -22,17 +22,22 @@ export function renderCollectionResponse({
   page = 1, pageSize = 100, links = null,
   cacheControl,
 }) {
-  const canonical = `https://epsteinproject.org${path}`;
   const pageCount = Number.isFinite(total) && pageSize > 0
     ? Math.max(1, Math.ceil(Number(total) / pageSize))
     : 1;
   const pageUrl = (n) => (n <= 1 ? path : `${path}?page=${n}`);
+  const canonical = `https://epsteinproject.org${pageUrl(page)}`;
   const from = (page - 1) * pageSize + 1;
   const to = (page - 1) * pageSize + items.length;
 
-  // Numbered links to the immediate neighbours plus the ends, so every page is
-  // reachable in a few hops rather than only sequentially.
-  const near = new Set([1, pageCount, page - 1, page, page + 1, page - 2, page + 2]);
+  // Link nearby pages plus exponentially wider jumps. Keeping the set bounded
+  // avoids dumping hundreds of anchors into every index, while reducing a
+  // 195-page collection from roughly 49 sequential hops to at most four.
+  const near = new Set([1, pageCount, page]);
+  for (let jump = 1; jump < pageCount; jump *= 2) {
+    near.add(page - jump);
+    near.add(page + jump);
+  }
   const numbered = [...near]
     .filter((n) => n >= 1 && n <= pageCount)
     .sort((a, b) => a - b);

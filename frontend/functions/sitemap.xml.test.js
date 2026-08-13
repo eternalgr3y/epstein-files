@@ -13,7 +13,45 @@ function sitemapDb() {
   };
 }
 
+function populatedSitemapDb() {
+  let call = 0;
+  return {
+    prepare() {
+      call += 1;
+      const rows = call === 1
+        ? [
+            { id: 1, lastmod: '2026-07-27' },
+            { id: 2, lastmod: '2026-09-01' },
+          ]
+        : [
+            { bates_number: 'HOUSE_OVERSIGHT_000001', lastmod: null },
+            { bates_number: 'HOUSE_OVERSIGHT_000002', lastmod: '2026-09-02' },
+          ];
+      return {
+        bind() { return { all: async () => ({ results: rows }) }; },
+      };
+    },
+  };
+}
+
 describe('sitemap publication exclusions', () => {
+  test('uses significant template dates without masking newer record updates', async () => {
+    const response = await onRequestGet({
+      env: { DB: populatedSitemapDb() },
+      request: new Request('https://epsteinproject.org/sitemap.xml'),
+      cache: { async match() { return null; }, async put() {} },
+      waitUntil() {},
+    });
+    const xml = await response.text();
+
+    expect(xml).toMatch(/<loc>https:\/\/epsteinproject\.org\/documents\/1<\/loc>\s*<lastmod>2026-08-13<\/lastmod>/);
+    expect(xml).toMatch(/<loc>https:\/\/epsteinproject\.org\/documents\/2<\/loc>\s*<lastmod>2026-09-01<\/lastmod>/);
+    expect(xml).toMatch(/<loc>https:\/\/epsteinproject\.org\/house-oversight\/HOUSE_OVERSIGHT_000001<\/loc>\s*<lastmod>2026-08-13<\/lastmod>/);
+    expect(xml).toMatch(/<loc>https:\/\/epsteinproject\.org\/house-oversight\/HOUSE_OVERSIGHT_000002<\/loc>\s*<lastmod>2026-09-02<\/lastmod>/);
+    expect(xml).toMatch(/<loc>https:\/\/epsteinproject\.org\/documents\/set\/court-records<\/loc>\s*<lastmod>2026-08-13<\/lastmod>/);
+    expect(xml).toMatch(/<loc>https:\/\/epsteinproject\.org\/videos<\/loc>\s*<lastmod>2026-08-13<\/lastmod>/);
+    expect(xml).toMatch(/<loc>https:\/\/epsteinproject\.org\/about<\/loc>\s*<changefreq>/);
+  });
   test('requires browser revalidation while retaining the shared one-hour cache', async () => {
     const cache = {
       async match() { return null; },

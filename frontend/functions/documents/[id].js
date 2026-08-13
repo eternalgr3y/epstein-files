@@ -140,8 +140,17 @@ export async function onRequestGet(context) {
     'house-oversight-doj': 'House Oversight — DOJ production',
     'maxwell-interview': 'Maxwell interview',
   };
+  const CRAWLABLE_SET_SLUGS = new Set([
+    'data-set', 'data-set-2', 'data-set-3', 'data-set-4', 'data-set-5',
+    'data-set-6', 'data-set-7', 'data-set-8', 'court-records',
+    'doj-disclosures', 'house-oversight-doj', 'maxwell-interview',
+  ]);
   const provenance = SET_LABELS[doc.data_set]
     || (/^data-set/.test(doc.data_set || '') ? 'DOJ evidence release' : 'Public release');
+  const setSlug = doc.data_set === 'Data Set 8' ? 'data-set-8' : doc.data_set;
+  const setHref = CRAWLABLE_SET_SLUGS.has(setSlug)
+    ? `/documents/set/${encodeURIComponent(setSlug)}`
+    : '';
 
   // has_text is unreliable on its own (see hasTextExpr in src/worker.js); the
   // presence of extracted text is the honest signal.
@@ -157,6 +166,10 @@ export async function onRequestGet(context) {
   const confidencePct = preview && Number(doc.ocr_confidence) > 0
     ? `${Math.round(Number(doc.ocr_confidence) * 100)}%`
     : '';
+  const fileSize = Number(doc.file_size);
+  const fileSizeLabel = Number.isSafeInteger(fileSize) && fileSize > 0
+    ? `${fileSize.toLocaleString('en-US')} bytes`
+    : '';
 
   const bodyHtml = `
 <article class="record">
@@ -168,7 +181,8 @@ ${mediaHtml}
 <dl>
 ${doc.document_type ? `<dt>Format</dt><dd>${esc(doc.document_type)}</dd>` : ''}
 ${rawFile ? `<dt>File</dt><dd>${esc(rawFile)}</dd>` : ''}
-${doc.data_set ? `<dt>Set</dt><dd>${esc(setLabel(doc.data_set))}</dd>` : ''}
+${fileSizeLabel ? `<dt>Released file size</dt><dd>${esc(fileSizeLabel)}</dd>` : ''}
+${doc.data_set ? `<dt>Set</dt><dd>${setHref ? `<a href="${setHref}">${esc(setLabel(doc.data_set))}</a>` : esc(setLabel(doc.data_set))}</dd>` : ''}
 ${doc.page_count ? `<dt>Pages</dt><dd>${esc(doc.page_count)}</dd>` : ''}
 <dt>Text</dt><dd>${esc(textStatus)}</dd>
 ${confidencePct ? `<dt>Text confidence</dt><dd>${esc(confidencePct)}</dd>` : ''}
@@ -178,7 +192,8 @@ ${preview
   ? `<h2>Text as released</h2><p class="ocr-note">Machine-read from the scan. Names, dates and numbers can be misread &mdash; check anything you rely on against the <a href="/about">original page</a>.</p><pre data-nosnippet>${esc(preview)}${text?.full_text?.length > 2000 ? '\n\n[…]' : ''}</pre>`
   : (isVideo || isAudio)
     ? '<h2>Transcript</h2><p>No transcript has been extracted for this media file.</p>'
-    : '<h2>Text as released</h2><p>This scan produced no machine-readable text. The original file is still available above.</p>'}
+    : '<h2>Text as released</h2><p>This scan produced no machine-readable text. The released file is available below.</p>'}
+${!isVideo && !isAudio ? `<p class="onward"><a href="/api/documents/${id}/file">View the released file</a></p>` : ''}
 ${prevDoc || nextDoc ? `<nav class="siblings" aria-label="Adjacent records in this release">
 ${prevDoc ? `<a href="/documents/${prevDoc.id}" rel="prev">&larr; ${esc(String(prevDoc.filename).replace(/\.[a-z0-9]+$/i, ''))}</a>` : '<span></span>'}
 ${nextDoc ? `<a href="/documents/${nextDoc.id}" rel="next">${esc(String(nextDoc.filename).replace(/\.[a-z0-9]+$/i, ''))} &rarr;</a>` : '<span></span>'}

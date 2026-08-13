@@ -108,7 +108,7 @@ describe('frontend navigation and heading semantics', () => {
     expect(app).toContain('const announceDocument = () => announceView(');
     expect(app).toContain('entity.canonical_name,');
     expect(app).toContain("announceView('About', 'About this archive and its methodology.')");
-    expect(app).toContain("const BASE_TITLE = 'Epstein Project — Public Archive of Jeffrey Epstein Case Records';");
+    expect(app).toContain('const BASE_TITLE = document.title;');
     expect(app).toContain('function goHome(skipPush = false, moveFocus = true)');
     expect(app).toContain("const heading = homeView.querySelector('h1')");
     expect(app).toContain('handleHash(true);');
